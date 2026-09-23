@@ -338,7 +338,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
           // and losing attachments is the failure mode worth avoiding.
-          (config as any).mirror_inbound_media !== false,
+          config.mirror_inbound_media !== false,
           phoneNumberId
         )
       }
@@ -746,18 +746,64 @@ async function processMessage(
   // The webhook checks schema capabilities at insert time so a deployment
   // ahead of the migration still lands messages, just without the extra
   // metadata (reply context, interactive id).
-  if (replyToInternalId !== null) msgRow.reply_to_message_id = replyToInternalId
+  msgRow.reply_to_message_id = replyToInternalId
   if (interactiveReplyId !== null) msgRow.interactive_reply_id = interactiveReplyId
 
-  // Check if message was already delivered (idempotency against Meta retries)
-  const { data: existingMsg } = await supabaseAdmin()
-    .from('messages')
-    .select('id')
-    .eq('conversation_id', conversation.id)
-    .eq('message_id', message.id)
-    .limit(1)
+  // Idempotent insert with fallback:
+  // Prefer atomic upsert on (conversation_id, message_id).
+  // If the live database lacks the unique constraint (error 42P10), fall back to manual duplicate check + insert.
+  let insertedRows: { id: string }[] | null = null
+  let isReplay = false
 
-  if (existingMsg && existingMsg.length > 0) {
+  const upsertRes = await supabaseAdmin()
+    .from('messages')
+    .upsert(
+      msgRow,
+      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
+    )
+    .select('id')
+
+  if (upsertRes.error) {
+    const isConstraintError =
+      upsertRes.error.code === '42P10' ||
+      upsertRes.error.message?.includes('ON CONFLICT') ||
+      upsertRes.error.message?.includes('column')
+
+    if (isConstraintError) {
+      const { data: existingMsg } = await supabaseAdmin()
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversation.id)
+        .eq('message_id', message.id)
+        .limit(1)
+
+      if (existingMsg && existingMsg.length > 0) {
+        isReplay = true
+      } else {
+        const cleanRow = { ...msgRow }
+        delete cleanRow.reply_to_message_id
+        delete cleanRow.interactive_reply_id
+        const insertRes = await supabaseAdmin()
+          .from('messages')
+          .insert(cleanRow)
+          .select('id')
+
+        if (insertRes.error) {
+          console.error('Error inserting message:', insertRes.error, JSON.stringify(cleanRow))
+          return
+        }
+        insertedRows = insertRes.data
+      }
+    } else {
+      console.error('Error inserting message:', upsertRes.error, JSON.stringify(msgRow))
+      return
+    }
+  } else {
+    insertedRows = upsertRes.data
+    isReplay = !insertedRows || insertedRows.length === 0
+  }
+
+  if (isReplay) {
     console.info(
       '[webhook] duplicate inbound message ignored (idempotent replay):',
       message.id
@@ -765,30 +811,27 @@ async function processMessage(
     return
   }
 
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
-    .from('messages')
-    .insert(msgRow)
-    .select('id')
-
-  if (msgError) {
-    console.error('Error inserting message:', msgError, JSON.stringify(msgRow))
-    return
-  }
-
-  // Update conversation — bump unread count and refresh last-message preview
+  // Update conversation. Prefer atomic DB-side RPC (migration 037).
+  // If the function doesn't exist on this deployment, fall back to direct update.
   const lastMsgText = contentText || `[${message.type}]`
-  const { error: convError } = await supabaseAdmin()
-    .from('conversations')
-    .update({
-      unread_count: (conversation.unread_count ?? 0) + 1,
-      last_message: lastMsgText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', conversation.id)
+  const { error: convError } = await supabaseAdmin().rpc(
+    'bump_conversation_on_inbound',
+    {
+      p_conversation_id: conversation.id,
+      p_last_message_text: lastMsgText,
+    }
+  )
 
   if (convError) {
-    console.error('Error updating conversation on inbound:', convError)
+    await supabaseAdmin()
+      .from('conversations')
+      .update({
+        unread_count: (conversation.unread_count ?? 0) + 1,
+        last_message: lastMsgText,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
   }
 
   // A customer writing again re-opens the thread (issue #409). Kept as a

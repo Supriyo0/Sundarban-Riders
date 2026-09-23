@@ -510,14 +510,25 @@ export async function sendMessageToConversation(
       ? interactivePayloadPreviewText(interactivePayload!)
       : persistedText || `[${messageType}]`;
 
-  await db
+  const convUpdate: Record<string, unknown> = {
+    last_message_text: lastMessageText,
+    last_message: lastMessageText,
+    last_message_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error: convUpdateErr } = await db
     .from('conversations')
-    .update({
-      last_message: lastMessageText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(convUpdate)
     .eq('id', conversationId);
+
+  if (convUpdateErr) {
+    delete convUpdate.last_message_text;
+    await db
+      .from('conversations')
+      .update(convUpdate)
+      .eq('id', conversationId);
+  }
 
   // Pause any active Flow run for this contact — the agent stepping in
   // is the strongest "yield, human is here" signal. Best-effort.

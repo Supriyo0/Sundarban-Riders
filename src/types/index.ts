@@ -227,10 +227,13 @@ export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
 export interface Message {
   id: string;
   conversation_id: string;
+  account_id?: string;
+  contact_id?: string;
   sender_type: SenderType;
   sender_id?: string;
   content_type: ContentType;
   content_text?: string;
+  body?: string;
   media_url?: string;
   /**
    * MIME type of `media_url`'s content, as Meta reported it. Inbound
@@ -280,6 +283,7 @@ export interface MessageReaction {
 
 export interface WhatsAppConfig {
   id: string;
+  account_id?: string;
   user_id: string;
   phone_number_id: string;
   waba_id?: string;

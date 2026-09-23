@@ -7,7 +7,8 @@ export async function GET() {
   try {
     const status = await getWhatsAppQRStatus();
     return NextResponse.json(status);
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Failed to get QR status" }, { status: 500 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to get QR status";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

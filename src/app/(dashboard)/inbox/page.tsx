@@ -245,8 +245,8 @@ function InboxPageInner() {
               c.id === newMsg.conversation_id
                 ? {
                     ...c,
-                    last_message: newMsg.content_text ?? (newMsg as any).body ?? "",
-                    last_message_text: newMsg.content_text ?? (newMsg as any).body ?? "",
+                    last_message: newMsg.content_text ?? newMsg.body ?? "",
+                    last_message_text: newMsg.content_text ?? newMsg.body ?? "",
                     last_message_at: newMsg.created_at,
                     unread_count:
                       activeConversation?.id === newMsg.conversation_id

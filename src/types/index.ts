@@ -159,10 +159,16 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 
 export interface Conversation {
   id: string;
-  user_id: string;
+  /** account_id is the canonical tenancy column on the deployed schema. */
+  account_id?: string;
+  /** user_id present in codebase-expected schema but may not exist in DB. */
+  user_id?: string;
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
+  /** Canonical name in deployed DB. Populated by the webhook on inbound. */
+  last_message?: string;
+  /** Alias expected by codebase \u2014 may not exist on all DB deployments. */
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;

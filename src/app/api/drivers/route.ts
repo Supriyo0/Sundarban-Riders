@@ -13,7 +13,29 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ drivers: data || [] });
+    const drivers = (data || []).map((d) => {
+      let district = d.district || "";
+      let block = d.block || "";
+      let aadhar_no = d.aadhar_no || d.license_number || "";
+
+      if ((!district || !block || !aadhar_no) && d.current_location_name) {
+        try {
+          const meta = JSON.parse(d.current_location_name);
+          district = district || meta.district || "";
+          block = block || meta.block || "";
+          aadhar_no = aadhar_no || meta.aadhar_no || "";
+        } catch {}
+      }
+
+      return {
+        ...d,
+        district,
+        block,
+        aadhar_no,
+      };
+    });
+
+    return NextResponse.json({ drivers });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -27,7 +49,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
     }
 
-    const { name, phone, toto_number } = body;
+    const { name, phone, toto_number, district, block, aadhar_no } = body;
 
     if (!name || typeof name !== "string" || !name.trim()) {
       return NextResponse.json({ error: "চালকের নাম প্রদান করুন" }, { status: 400 });
@@ -43,6 +65,16 @@ export async function POST(request: Request) {
     const cleanDigits = rawPhone.replace(/[^0-9]/g, "");
     const last10 = cleanDigits.slice(-10);
 
+    const distStr = (district || "").toString().trim();
+    const blockStr = (block || "").toString().trim();
+    const aadharStr = (aadhar_no || "").toString().trim();
+
+    const metaString = JSON.stringify({
+      district: distStr,
+      block: blockStr,
+      aadhar_no: aadharStr,
+    });
+
     const admin = supabaseAdmin();
 
     // Check if driver already exists with this phone number (matching 10 digits or exact)
@@ -55,15 +87,17 @@ export async function POST(request: Request) {
 
     if (existing) {
       // Update existing driver
+      const updateData: Record<string, unknown> = {
+        name: name.trim(),
+        toto_number: toto_number.trim().toUpperCase(),
+        license_number: aadharStr || existing.license_number,
+        current_location_name: metaString,
+        updated_at: new Date().toISOString(),
+      };
+
       const { data: updated, error: updateErr } = await admin
         .from("drivers")
-        .update({
-          name: name.trim(),
-          toto_number: toto_number.trim().toUpperCase(),
-          is_active: true,
-          is_available: true,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq("id", existing.id)
         .select()
         .single();
@@ -72,23 +106,35 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      return NextResponse.json({ driver: updated, message: "চালক আপডেট করা হয়েছে" });
+      return NextResponse.json({
+        driver: {
+          ...updated,
+          district: distStr,
+          block: blockStr,
+          aadhar_no: aadharStr,
+        },
+        message: "চালক তথ্য আপডেট করা হয়েছে",
+      });
     }
 
     // Insert new driver
+    const insertPayload: Record<string, unknown> = {
+      name: name.trim(),
+      phone: rawPhone,
+      toto_number: toto_number.trim().toUpperCase(),
+      vehicle_type: "toto",
+      is_active: false,
+      is_available: false,
+      agreed_terms: false,
+      license_number: aadharStr,
+      current_location_name: metaString,
+      rating: 5,
+      total_trips: 0,
+    };
+
     const { data: created, error: insertErr } = await admin
       .from("drivers")
-      .insert({
-        name: name.trim(),
-        phone: rawPhone,
-        toto_number: toto_number.trim().toUpperCase(),
-        vehicle_type: "toto",
-        is_active: true,
-        is_available: true,
-        agreed_terms: true,
-        rating: 5,
-        total_trips: 0,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
@@ -96,7 +142,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
 
-    return NextResponse.json({ driver: created, message: "নতুন চালক সফলভাবে যুক্ত হয়েছে" }, { status: 201 });
+    return NextResponse.json({
+      driver: {
+        ...created,
+        district: distStr,
+        block: blockStr,
+        aadhar_no: aadharStr,
+      },
+      message: "নতুন চালক সফলভাবে যুক্ত হয়েছে",
+    }, { status: 201 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });

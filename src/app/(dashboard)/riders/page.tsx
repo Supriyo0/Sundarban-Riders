@@ -12,6 +12,8 @@ import {
   RefreshCw,
   Power,
   SlidersHorizontal,
+  MapPin,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +34,11 @@ interface Driver {
   name: string;
   phone: string;
   toto_number: string;
+  district?: string;
+  block?: string;
+  aadhar_no?: string;
+  license_number?: string;
+  current_location_name?: string;
   vehicle_type?: string;
   is_active: boolean;
   is_available: boolean;
@@ -54,6 +61,9 @@ export default function RidersPage() {
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newTotoNumber, setNewTotoNumber] = useState("");
+  const [newDistrict, setNewDistrict] = useState("");
+  const [newBlock, setNewBlock] = useState("");
+  const [newAadharNo, setNewAadharNo] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Helper to determine status
@@ -78,7 +88,25 @@ export default function RidersPage() {
           .order("created_at", { ascending: false });
 
         if (error) throw error;
-        setDrivers((data as Driver[]) || []);
+
+        // Parse fallback metadata
+        const parsed = ((data as Driver[]) || []).map((d) => {
+          let district = d.district || "";
+          let block = d.block || "";
+          let aadhar_no = d.aadhar_no || d.license_number || "";
+
+          if ((!district || !block || !aadhar_no) && d.current_location_name) {
+            try {
+              const meta = JSON.parse(d.current_location_name);
+              district = district || meta.district || "";
+              block = block || meta.block || "";
+              aadhar_no = aadhar_no || meta.aadhar_no || "";
+            } catch {}
+          }
+          return { ...d, district, block, aadhar_no };
+        });
+
+        setDrivers(parsed);
       }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "Failed to load drivers";
@@ -112,10 +140,14 @@ export default function RidersPage() {
   // Filter Drivers
   const filteredDrivers = useMemo(() => {
     return drivers.filter((d) => {
+      const query = searchQuery.toLowerCase();
       const matchesSearch =
-        d.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.phone?.includes(searchQuery) ||
-        d.toto_number?.toLowerCase().includes(searchQuery.toLowerCase());
+        d.name?.toLowerCase().includes(query) ||
+        d.phone?.includes(query) ||
+        d.toto_number?.toLowerCase().includes(query) ||
+        d.district?.toLowerCase().includes(query) ||
+        d.block?.toLowerCase().includes(query) ||
+        d.aadhar_no?.includes(query);
 
       const status = getDriverStatus(d);
       const matchesStatus =
@@ -175,7 +207,7 @@ export default function RidersPage() {
   const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newPhone.trim() || !newTotoNumber.trim()) {
-      toast.error("সবগুলো তথ্য সঠিকভাবে পূরণ করুন");
+      toast.error("চালকের নাম, ফোন ও টোটো নম্বর আবশ্যক");
       return;
     }
 
@@ -188,6 +220,9 @@ export default function RidersPage() {
           name: newName.trim(),
           phone: newPhone.trim(),
           toto_number: newTotoNumber.trim().toUpperCase(),
+          district: newDistrict.trim(),
+          block: newBlock.trim(),
+          aadhar_no: newAadharNo.trim(),
         }),
       });
 
@@ -201,6 +236,9 @@ export default function RidersPage() {
       setNewName("");
       setNewPhone("");
       setNewTotoNumber("");
+      setNewDistrict("");
+      setNewBlock("");
+      setNewAadharNo("");
       loadDrivers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "চালক যুক্ত করা যায়নি";
@@ -221,7 +259,7 @@ export default function RidersPage() {
             </h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            সুন্দরবন রাইডার্সের সমস্ত নিবন্ধিত চালক, টোটো নম্বর এবং লাইভ ডিউটি স্ট্যাটাস
+            সুন্দরবন রাইডার্সের সমস্ত নিবন্ধিত চালক, জেলা, ব্লক, আধার নম্বর এবং লাইভ ডিউটি স্ট্যাটাস
           </p>
         </div>
 
@@ -306,7 +344,7 @@ export default function RidersPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="নাম, ফোন নম্বর বা টোটো নম্বর দিয়ে খুঁজুন..."
+                placeholder="নাম, ফোন, টোটো নম্বর, জেলা, ব্লক বা আধার দিয়ে খুঁজুন..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 bg-muted border-border text-foreground"
@@ -378,7 +416,7 @@ export default function RidersPage() {
                 >
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
-                      <div>
+                      <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-foreground text-base">
                             {driver.name}
@@ -396,7 +434,7 @@ export default function RidersPage() {
                           </span>
                         </div>
 
-                        <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                        <div className="space-y-1 text-sm text-muted-foreground">
                           <div className="flex items-center gap-2">
                             <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>{driver.phone}</span>
@@ -407,6 +445,20 @@ export default function RidersPage() {
                               {driver.toto_number}
                             </span>
                           </div>
+
+                          {(driver.district || driver.block) && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <MapPin className="h-3.5 w-3.5 text-emerald-500" />
+                              <span>{[driver.district, driver.block].filter(Boolean).join(" • ")}</span>
+                            </div>
+                          )}
+
+                          {driver.aadhar_no && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                              <CreditCard className="h-3.5 w-3.5 text-amber-500" />
+                              <span>আধার: {driver.aadhar_no}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -424,7 +476,7 @@ export default function RidersPage() {
                     <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-medium">
                         <ShieldCheck className="h-4 w-4" />
-                        <span>চুক্তি সম্মত</span>
+                        <span>{driver.agreed_terms ? "চুক্তি স্বাক্ষরিত" : "চুক্তি অপেক্ষমাণ"}</span>
                       </div>
 
                       <Button
@@ -451,16 +503,16 @@ export default function RidersPage() {
 
       {/* Add Driver Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="sm:max-w-[425px] border-border bg-card">
+        <DialogContent className="sm:max-w-[480px] border-border bg-card">
           <DialogHeader>
             <DialogTitle className="text-foreground">নতুন টোটো চালক যুক্ত করুন</DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              চালকের সঠিক ফোন নম্বর ও টোটো নম্বর লিখুন।
+              চালকের সঠিক নাম, ফোন নম্বর, টোটো নম্বর, এলাকা ও আধার নম্বর লিখুন।
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddDriver} className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-foreground">চালকের পূর্ণ নাম</Label>
+              <Label htmlFor="name" className="text-foreground">চালকের পূর্ণ নাম *</Label>
               <Input
                 id="name"
                 placeholder="যেমন: রাজেশ মন্ডল"
@@ -471,27 +523,65 @@ export default function RidersPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="phone" className="text-foreground">হোয়াটসঅ্যাপ ফোন নম্বর</Label>
-              <Input
-                id="phone"
-                placeholder="যেমন: +91 9876543210"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                required
-                className="bg-muted border-border text-foreground"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-foreground">হোয়াটসঅ্যাপ ফোন নম্বর *</Label>
+                <Input
+                  id="phone"
+                  placeholder="যেমন: +91 9876543210"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  required
+                  className="bg-muted border-border text-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="toto" className="text-foreground">টোটো রেজিস্ট্রেশন নম্বর *</Label>
+                <Input
+                  id="toto"
+                  placeholder="যেমন: WB-96-T-1234"
+                  value={newTotoNumber}
+                  onChange={(e) => setNewTotoNumber(e.target.value)}
+                  required
+                  className="bg-muted border-border text-foreground uppercase font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="district" className="text-foreground">জেলা (District)</Label>
+                <Input
+                  id="district"
+                  placeholder="যেমন: দক্ষিণ ২৪ পরগনা"
+                  value={newDistrict}
+                  onChange={(e) => setNewDistrict(e.target.value)}
+                  className="bg-muted border-border text-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="block" className="text-foreground">ব্লক (Block)</Label>
+                <Input
+                  id="block"
+                  placeholder="যেমন: গোসাবা / বাসন্তী"
+                  value={newBlock}
+                  onChange={(e) => setNewBlock(e.target.value)}
+                  className="bg-muted border-border text-foreground"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="toto" className="text-foreground">টোটো রেজিস্ট্রেশন নম্বর</Label>
+              <Label htmlFor="aadhar" className="text-foreground">আধার নম্বর (Aadhar No)</Label>
               <Input
-                id="toto"
-                placeholder="যেমন: WB-96-T-1234"
-                value={newTotoNumber}
-                onChange={(e) => setNewTotoNumber(e.target.value)}
-                required
-                className="bg-muted border-border text-foreground uppercase font-mono"
+                id="aadhar"
+                placeholder="১২ সংখ্যার আধার নম্বর (যেমন: 1234 5678 9012)"
+                value={newAadharNo}
+                onChange={(e) => setNewAadharNo(e.target.value)}
+                maxLength={16}
+                className="bg-muted border-border text-foreground font-mono"
               />
             </div>
 

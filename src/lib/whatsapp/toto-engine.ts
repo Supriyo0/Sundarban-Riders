@@ -86,6 +86,19 @@ export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্
 
 💫 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে... "সুন্দরবন রাইডার" 🙏ধন্যবাদ`;
 
+export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী* 🛺
+==============================
+নমস্কার! সুন্দরবন রাইডার প্ল্যাটফর্মে পরিষেবা শুরু করার পূর্বে চালক চুক্তি ও শর্তাবলি পড়ে সম্মতি দিন:
+
+১. আপনি একজন স্বাধীন সেবা প্রদানকারী (Independent Service Provider)।
+২. যেকোনো দুর্ঘটনার দায় সম্পূর্ণ চালকের, সুন্দরবন রাইডার্স কোনোভাবেই দায়ী থাকবে না।
+৩. যাত্রী নিরাপত্তা ও ট্রাফিক নিয়ম মানা বাধ্যতামূলক।
+৪. যাত্রীদের সাথে মার্জিত ও বিনম্র আচরণ বজায় রাখতে হবে।
+৫. প্ল্যাটফর্ম টেকনোলজি ফি প্রযোজ্য হতে পারে।
+৬. নিয়মানুবর্তিতা ও আইনি সুরক্ষায় সুন্দরবন রাইডার্স পূর্ণ অধিকার সংরক্ষণ করে।
+
+> আপনি কি উপরোক্ত সকল শর্তাবলীতে সম্মত আছেন?`;
+
 export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 সুন্দরবন রাইডারে স্বাগতম 🙏
 
 🚘আমাদের পরিবারে যুক্ত হওয়ার জন্য আপনাকে অসংখ্য ধন্যবাদ ।
@@ -114,6 +127,10 @@ interface DriverRecord {
   is_approved?: boolean;
   is_blocked?: boolean;
   is_online?: boolean;
+  is_active?: boolean;
+  is_available?: boolean;
+  agreed_terms?: boolean;
+  agreed_at?: string;
   toto_number?: string;
   vehicle_number?: string;
 }
@@ -245,8 +262,11 @@ export async function processTotoMessage(
     const extraNotifications = [
       {
         toPhone: booking.customer_phone,
-        type: "text" as const,
+        type: "interactive_buttons" as const,
         bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🚘 টোটো নম্বর: ${driver?.toto_number || driver?.vehicle_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+        buttons: [
+          { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
+        ],
       },
     ];
 
@@ -347,10 +367,69 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
-  // FLOW C: CUSTOMER CANCELLATION HANDLER
+  // FLOW C: CUSTOMER CANCELLATION HANDLER (Immediate Driver Alert)
   // -------------------------------------------------------------
   if (payload === "cancel_ride" || incomingText === "cancel" || incomingText === "বাতিল") {
     customerBookingStates.delete(cleanPhone);
+
+    // 1. Fetch latest active booking (pending, assigned, confirmed)
+    const { data: activeBooking } = await supabase
+      .from("bookings")
+      .select("*, drivers(*)")
+      .eq("customer_phone", cleanPhone)
+      .in("status", ["pending", "assigned", "confirmed"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const extraNotifications: Array<{
+      toPhone: string;
+      type: "text" | "interactive_buttons";
+      bodyText: string;
+      buttons?: Array<{ id: string; title: string }>;
+    }> = [];
+
+    if (activeBooking) {
+      // Mark booking cancelled
+      await supabase
+        .from("bookings")
+        .update({
+          status: "cancelled",
+          cancelled_by: "customer",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", activeBooking.id);
+
+      // If a driver was assigned, immediately free the driver and notify them via WhatsApp!
+      if (activeBooking.driver_id) {
+        await supabase
+          .from("drivers")
+          .update({ is_available: true, is_active: true })
+          .eq("id", activeBooking.driver_id);
+
+        let driverPhone = activeBooking.drivers?.phone;
+        if (!driverPhone) {
+          const { data: dRow } = await supabase
+            .from("drivers")
+            .select("phone")
+            .eq("id", activeBooking.driver_id)
+            .maybeSingle();
+          driverPhone = dRow?.phone;
+        }
+
+        if (driverPhone) {
+          extraNotifications.push({
+            toPhone: driverPhone,
+            type: "interactive_buttons" as const,
+            bodyText: `⚠️ রাইড বাতিল নোটিফিকেশন ⚠️\n=======================\n🆔 বুকিং নং: #${activeBooking.booking_number || activeBooking.id.slice(0, 8)}\n👤 যাত্রী: ${activeBooking.customer_name || "গ্রাহক"}\n📍 পিকআপ: ${activeBooking.pickup_location || "পিকআপ পয়েন্ট"}\n=======================\n❌ যাত্রী এই রাইডটি বাতিল করেছেন।\n🟢 আপনার ডিউটি স্ট্যাটাস পুনরায় অনলাইন করা হয়েছে এবং আপনি নতুন বুকিং গ্রহণের জন্য প্রস্তুত আছেন।`,
+            buttons: [
+              { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+            ],
+          });
+        }
+      }
+    }
+
     const newCancels = (customer?.cancellation_count || 0) + 1;
     void Promise.resolve(
       supabase
@@ -362,19 +441,14 @@ export async function processTotoMessage(
         .eq("phone", cleanPhone)
     ).catch(() => {});
 
-    // Cancel any pending booking
-    void Promise.resolve(
-      supabase
-        .from("bookings")
-        .update({ status: "cancelled", cancelled_by: "customer" })
-        .eq("customer_phone", cleanPhone)
-        .eq("status", "pending")
-    ).catch(() => {});
-
     return {
       toPhone: rawPhone,
-      type: "text",
-      bodyText: `⚠️ 🚫 গুরুত্বপূর্ণ তথ্য 🚫 ⚠️\nপ্রিয় গ্রাহক,\n❌ ৩ বারের বেশি বুকিং বাতিল (Cancel) করলে আপনার এই নম্বর থেকে আর সুন্দরবন রাইডারের কোনো গাড়ি 🚖 বুক করতে পারবেন না।\n(আপনার বর্তমান বাতিল সংখ্যা: ${newCancels}/৩)\n\n✅ বুকিং পরিষেবা সচল রাখতে দয়া করে সম্পূর্ণ নিশ্চিত হয়ে বুকিং করুন।\n🤝 আমাদের সাথে থাকার জন্য আপনাকে অসংখ্য ধন্যবাদ।\n❤️ — সুন্দরবন রাইডার — ❤️`,
+      type: "interactive_buttons",
+      bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।\n=======================\n❌ ৩ বারের বেশি বুকিং বাতিল করলে আপনার নম্বরটি সাময়িকভাবে স্থগিত হতে পারে।\n(আপনার বর্তমান বাতিল সংখ্যা: ${newCancels}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
+      buttons: [
+        { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+      ],
+      extraNotifications,
     };
   }
 
@@ -546,7 +620,23 @@ export async function processTotoMessage(
     incomingText.includes("take ride")
   ) {
     if (isRegisteredDriver && driver) {
-      // Driver is registered -> turn online and show offline toggle button
+      // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button
+      if (!driver.agreed_terms) {
+        const driverTerms =
+          settings.driver_terms_bengali ||
+          DEFAULT_TOTO_DRIVER_DISCLAIMER;
+
+        return {
+          toPhone: rawPhone,
+          type: "interactive_buttons",
+          bodyText: driverTerms,
+          buttons: [
+            { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
+          ],
+        };
+      }
+
+      // Driver has already agreed to terms -> turn online and show offline toggle button
       void Promise.resolve(
         supabase
           .from("drivers")
@@ -578,6 +668,35 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
+  // FLOW G.1: DRIVER AGREE TO TERMS (Accept Button)
+  // -------------------------------------------------------------
+  if (
+    payload === "driver_agree_terms" ||
+    (isRegisteredDriver && driver && !driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ"))
+  ) {
+    if (driver) {
+      await supabase
+        .from("drivers")
+        .update({
+          agreed_terms: true,
+          agreed_at: new Date().toISOString(),
+          is_active: true,
+          is_available: true,
+        })
+        .eq("id", driver.id);
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🟢 ধন্যবাদ! চালক চুক্তি সম্পন্ন হয়েছে এবং আপনি এখন অনলাইন আছেন!\nশীঘ্রই আপনার কাছে নতুন রাইড বা বুকিংয়ের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি সাময়িকভাবে বন্ধ করতে নিচের 'অফলাইন যান' বোতামে চাপুন)`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+        ],
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
   // FLOW H: DRIVER GO OFFLINE
   // -------------------------------------------------------------
   if (
@@ -586,12 +705,10 @@ export async function processTotoMessage(
     incomingText.includes("offline")
   ) {
     if (driver) {
-      void Promise.resolve(
-        supabase
-          .from("drivers")
-          .update({ is_active: false, is_available: false })
-          .eq("id", driver.id)
-      ).catch(() => {});
+      await supabase
+        .from("drivers")
+        .update({ is_active: false, is_available: false })
+        .eq("id", driver.id);
     }
 
     return {
@@ -607,6 +724,47 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   // DEFAULT: MAIN WELCOME MENU (100% Bengali)
   // -------------------------------------------------------------
+  if (isRegisteredDriver && driver) {
+    // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button
+    if (!driver.agreed_terms) {
+      const driverTerms =
+        settings.driver_terms_bengali ||
+        DEFAULT_TOTO_DRIVER_DISCLAIMER;
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: driverTerms,
+        buttons: [
+          { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
+        ],
+      };
+    }
+
+    // FROM NEXT TIME: Rider has already agreed -> Just goes "🛵 রাইড নিন"
+    const isOnline = Boolean(driver.is_active && driver.is_available);
+    if (isOnline) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🟢 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনি বর্তমানে সুন্দরবন রাইডার-এ অনলাইনে আছেন এবং বুকিং গ্রহণের জন্য প্রস্তুত।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+        ],
+      };
+    } else {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🙏 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনার আজকের ডিউটি শুরু করতে নিচের '🛵 রাইড নিন' বোতামে চাপুন:`,
+        buttons: [
+          { id: "take_ride", title: "🛵 রাইড নিন" },
+        ],
+      };
+    }
+  }
+
+  // Regular Customer Welcome Menu
   const welcomeText = settings.welcome_message_bengali || DEFAULT_TOTO_WELCOME_MESSAGE;
 
   return {

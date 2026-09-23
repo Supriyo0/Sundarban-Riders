@@ -1,7 +1,8 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendInteractiveButtons, sendTextMessage } from '@/lib/whatsapp/meta-api'
+import { processTotoMessage } from '@/lib/whatsapp/toto-engine'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
@@ -313,7 +314,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
           // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
+          config.mirror_inbound_media !== false,
+          phoneNumberId
         )
       }
     }
@@ -584,7 +586,8 @@ async function processMessage(
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
-  mirrorMedia: boolean
+  mirrorMedia: boolean,
+  phoneNumberId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -892,6 +895,69 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+
+  // Toto WhatsApp Bot Dispatch (Bengali Interactive Toto Dispatcher)
+  try {
+    const totoAction = await processTotoMessage({
+      fromPhone: message.from,
+      senderName: contact.profile?.name,
+      textBody: message.text?.body,
+      buttonPayload:
+        message.interactive?.button_reply?.id ||
+        message.interactive?.list_reply?.id,
+      buttonText:
+        message.interactive?.button_reply?.title ||
+        message.interactive?.list_reply?.title,
+      location: message.location,
+    })
+
+    if (totoAction) {
+      let metaMessageId: string | null = null
+      if (
+        totoAction.type === 'interactive_buttons' &&
+        totoAction.buttons &&
+        totoAction.buttons.length > 0
+      ) {
+        const res = await sendInteractiveButtons({
+          phoneNumberId,
+          accessToken,
+          to: totoAction.toPhone,
+          bodyText: totoAction.bodyText,
+          buttons: totoAction.buttons.slice(0, 3),
+        })
+        metaMessageId = res.messageId
+      } else {
+        const res = await sendTextMessage({
+          phoneNumberId,
+          accessToken,
+          to: totoAction.toPhone,
+          text: totoAction.bodyText,
+        })
+        metaMessageId = res.messageId
+      }
+
+      if (metaMessageId) {
+        await supabaseAdmin().from('messages').insert({
+          conversation_id: conversation.id,
+          sender_type: 'agent',
+          content_type:
+            totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
+          content_text: totoAction.bodyText,
+          message_id: metaMessageId,
+          status: 'sent',
+        })
+        await supabaseAdmin()
+          .from('conversations')
+          .update({
+            last_message_text: totoAction.bodyText,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversation.id)
+      }
+    }
+  } catch (totoErr) {
+    console.error('[webhook] Toto bot error:', totoErr)
+  }
 }
 
 async function parseMessageContent(

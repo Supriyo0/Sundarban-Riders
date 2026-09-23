@@ -227,7 +227,7 @@ export async function processTotoMessage(
       type: "interactive_buttons",
       bodyText: `📋 সুন্দরবন রাইডার্স — রাইড ডিসক্লেইমার ও শর্তাবলী\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${disclaimer}\n\n> ঘোষণা: উপরের সমস্ত শর্তাবলী পড়ে আমি সম্পূর্ণ রাজি আছি।`,
       buttons: [
-        { id: "agree_disclaimer", title: "সম্মত আছি 👉 (হ্যাঁ)" },
+        { id: "agree_disclaimer", title: "সম্মত আছি (হ্যাঁ)" },
         { id: "cancel_ride", title: "❌ বাতিল" },
       ],
     };
@@ -246,7 +246,7 @@ export async function processTotoMessage(
       type: "interactive_buttons",
       bodyText: `🚖 সুন্দরবন রাইডার্স চালক নিবন্ধন ও ঘোষণা:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${driverTerms}`,
       buttons: [
-        { id: "agree_driver_terms", title: "☑️ সম্মত আছি ও আবেদন" },
+        { id: "agree_driver_terms", title: "☑️ সম্মত আছি" },
         { id: "cancel_ride", title: "❌ বাতিল" },
       ],
     };
@@ -261,7 +261,7 @@ export async function processTotoMessage(
     bodyText: `🙏 নমস্কার! "সুন্দরবন রাইডার"-এ আপনাকে স্বাগতম।\nআমরা সুন্দরবনের সহজ, দ্রুত ও নিরাপদ টোটো বুকিং প্ল্যাটফর্ম।\n\nঅনুগ্রহ করে নিচের অপশন নির্বাচন করুন:`,
     buttons: [
       { id: "book_toto", title: "🛺 টোটো বুক করুন" },
-      { id: "driver_join", title: "🛵 চালক হিসেবে যুক্ত হোন" },
+      { id: "driver_join", title: "🛵 চালক নিবন্ধন" },
     ],
   };
 }

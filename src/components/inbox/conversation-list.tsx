@@ -182,7 +182,9 @@ export function ConversationList({
       result = result.filter((c) => {
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
-        const lastMsg = c.last_message_text?.toLowerCase() ?? "";
+        // Support both column name variants (schema compat)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lastMsg = ((c.last_message_text ?? (c as any).last_message) as string | undefined)?.toLowerCase() ?? "";
         return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
       });
     }
@@ -481,7 +483,9 @@ function ConversationItem({
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p className="truncate text-xs text-muted-foreground">
-            {conversation.last_message_text || t("noMessagesYet")}
+            {/* Support both column name variants for schema compat */}
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {conversation.last_message_text ?? (conversation as any).last_message ?? t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
             {conversation.unread_count > 0 && (

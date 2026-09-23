@@ -236,13 +236,14 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
   }
 
+  const lastMsgPreview = input.kind === 'template'
+    ? (content_text ?? `[template:${input.templateName}]`)
+    : input.text
   await db
     .from('conversations')
     .update({
-      last_message_text:
-        input.kind === 'template'
-          ? (content_text ?? `[template:${input.templateName}]`)
-          : input.text,
+      last_message_text: lastMsgPreview,
+      last_message: lastMsgPreview,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })

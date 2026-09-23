@@ -468,21 +468,31 @@ export async function sendMessageToConversation(
           )
         : (contentText ?? null);
 
+  // Build message row — only include columns that exist in every schema
+  // version. interactive_payload, reply_to_message_id are added by later
+  // migrations and may not be present on all deployments.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const outboundRow: Record<string, any> = {
+    conversation_id: conversationId,
+    sender_type: 'agent',
+    content_type: messageType,
+    content_text: persistedText,
+    media_url: mediaUrl || null,
+    template_name: templateName || null,
+    message_id: waMessageId,
+    status: 'sent',
+  }
+  // Conditionally add columns that may be absent on older schema
+  if (messageType === 'interactive' && interactivePayload) {
+    outboundRow.interactive_payload = interactivePayload
+  }
+  if (replyToMessageId) {
+    outboundRow.reply_to_message_id = replyToMessageId
+  }
+
   const { data: messageRecord, error: msgError } = await db
     .from('messages')
-    .insert({
-      conversation_id: conversationId,
-      sender_type: 'agent',
-      content_type: messageType,
-      content_text: persistedText,
-      media_url: mediaUrl || null,
-      template_name: templateName || null,
-      interactive_payload:
-        messageType === 'interactive' ? interactivePayload : null,
-      message_id: waMessageId,
-      status: 'sent',
-      reply_to_message_id: replyToMessageId || null,
-    })
+    .insert(outboundRow)
     .select()
     .single();
 

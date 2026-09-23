@@ -689,20 +689,28 @@ async function processMessage(
         for (const notif of totoAction.extraNotifications) {
           const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
           if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
-            void sendInteractiveButtons({
-              phoneNumberId,
-              accessToken,
-              to: destPhone,
-              bodyText: notif.bodyText,
-              buttons: notif.buttons.slice(0, 3),
-            }).catch((err) => console.error('[webhook] extraNotification button error:', err))
+            try {
+              await sendInteractiveButtons({
+                phoneNumberId,
+                accessToken,
+                to: destPhone,
+                bodyText: notif.bodyText,
+                buttons: notif.buttons.slice(0, 3),
+              })
+            } catch (err) {
+              console.error('[webhook] extraNotification button error:', err)
+            }
           } else {
-            void sendTextMessage({
-              phoneNumberId,
-              accessToken,
-              to: destPhone,
-              text: notif.bodyText,
-            }).catch((err) => console.error('[webhook] extraNotification text error:', err))
+            try {
+              await sendTextMessage({
+                phoneNumberId,
+                accessToken,
+                to: destPhone,
+                text: notif.bodyText,
+              })
+            } catch (err) {
+              console.error('[webhook] extraNotification text error:', err)
+            }
           }
         }
       }

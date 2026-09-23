@@ -237,7 +237,7 @@ export async function processTotoMessage(
 
     if (driver) {
       void Promise.resolve(
-        supabase.from("drivers").update({ status: "busy", is_online: true }).eq("id", driver.id)
+        supabase.from("drivers").update({ is_available: false, is_active: true }).eq("id", driver.id)
       ).catch(() => {});
     }
 
@@ -251,7 +251,7 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "text" as const,
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🚘 টোটো নম্বর: ${driver?.vehicle_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🚘 টোটো নম্বর: ${driver?.toto_number || driver?.vehicle_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
       },
     ];
 
@@ -325,7 +325,7 @@ export async function processTotoMessage(
 
     if (driver) {
       void Promise.resolve(
-        supabase.from("drivers").update({ status: "online", is_online: true }).eq("id", driver.id)
+        supabase.from("drivers").update({ is_available: true, is_active: true }).eq("id", driver.id)
       ).catch(() => {});
     }
 
@@ -464,7 +464,8 @@ export async function processTotoMessage(
       const { data: onlineDrivers } = await supabase
         .from("drivers")
         .select("*")
-        .eq("status", "online");
+        .eq("is_active", true)
+        .eq("is_available", true);
 
       const extraNotifications = (onlineDrivers || []).map((d) => ({
         toPhone: d.phone,
@@ -501,12 +502,33 @@ export async function processTotoMessage(
       settings.customer_disclaimer_bengali ||
       DEFAULT_TOTO_CUSTOMER_DISCLAIMER;
 
+    if (disclaimer.length <= 1024) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: disclaimer,
+        buttons: [
+          { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
+        ],
+      };
+    }
+
+    // Disclaimer exceeds Meta's 1024 char interactive body limit:
+    // 1. Send the full legal terms as text (Meta allows up to 4096 chars)
+    // 2. Immediately follow with the interactive confirmation button
     return {
       toPhone: rawPhone,
-      type: "interactive_buttons",
+      type: "text",
       bodyText: disclaimer,
-      buttons: [
-        { id: "agree_disclaimer", title: "সম্মত আছি 👉 (হ্যাঁ)" },
+      extraNotifications: [
+        {
+          toPhone: rawPhone,
+          type: "interactive_buttons",
+          bodyText: "👆 উপরের ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলীতে আপনি কি রাজি আছেন?\n\nবুকিং এগিয়ে নিতে নিচের বোতামে চাপুন:",
+          buttons: [
+            { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
+          ],
+        },
       ],
     };
   }
@@ -533,7 +555,7 @@ export async function processTotoMessage(
       void Promise.resolve(
         supabase
           .from("drivers")
-          .update({ status: "online", is_online: true })
+          .update({ is_active: true, is_available: true })
           .eq("id", driver.id)
       ).catch(() => {});
 
@@ -572,7 +594,7 @@ export async function processTotoMessage(
       void Promise.resolve(
         supabase
           .from("drivers")
-          .update({ status: "offline", is_online: false })
+          .update({ is_active: false, is_available: false })
           .eq("id", driver.id)
       ).catch(() => {});
     }

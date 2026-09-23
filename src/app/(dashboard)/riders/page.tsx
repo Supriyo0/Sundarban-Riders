@@ -2,25 +2,20 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
 import {
   Car,
   Plus,
   Search,
-  CheckCircle2,
-  XCircle,
   Phone,
   ShieldCheck,
   Star,
   RefreshCw,
   Power,
   SlidersHorizontal,
-  UserCheck,
-  AlertCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -37,16 +32,17 @@ interface Driver {
   name: string;
   phone: string;
   toto_number: string;
-  status: "online" | "offline" | "busy";
-  is_approved?: boolean;
-  total_rides?: number;
+  vehicle_type?: string;
+  is_active: boolean;
+  is_available: boolean;
+  agreed_terms?: boolean;
+  total_trips?: number;
   rating?: number;
   created_at?: string;
 }
 
 export default function RidersPage() {
-  const { account } = useAuth();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,17 +56,30 @@ export default function RidersPage() {
   const [newTotoNumber, setNewTotoNumber] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Helper to determine status
+  const getDriverStatus = (d: Driver): "online" | "busy" | "offline" => {
+    if (!d.is_active) return "offline";
+    if (!d.is_available) return "busy";
+    return "online";
+  };
+
   // Load Drivers
   const loadDrivers = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("drivers")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/drivers");
+      if (res.ok) {
+        const json = await res.json();
+        setDrivers(json.drivers || []);
+      } else {
+        const { data, error } = await supabase
+          .from("drivers")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setDrivers(data || []);
+        if (error) throw error;
+        setDrivers((data as Driver[]) || []);
+      }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : "Failed to load drivers";
       console.error("Error loading drivers:", errorMsg);
@@ -98,7 +107,7 @@ export default function RidersPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [supabase]);
 
   // Filter Drivers
   const filteredDrivers = useMemo(() => {
@@ -108,8 +117,9 @@ export default function RidersPage() {
         d.phone?.includes(searchQuery) ||
         d.toto_number?.toLowerCase().includes(searchQuery.toLowerCase());
 
+      const status = getDriverStatus(d);
       const matchesStatus =
-        statusFilter === "all" ? true : d.status === statusFilter;
+        statusFilter === "all" ? true : status === statusFilter;
 
       return matchesSearch && matchesStatus;
     });
@@ -118,33 +128,46 @@ export default function RidersPage() {
   // Status Metrics
   const stats = useMemo(() => {
     const total = drivers.length;
-    const online = drivers.filter((d) => d.status === "online").length;
-    const busy = drivers.filter((d) => d.status === "busy").length;
-    const offline = drivers.filter((d) => d.status === "offline" || !d.status).length;
+    const online = drivers.filter((d) => d.is_active && d.is_available).length;
+    const busy = drivers.filter((d) => d.is_active && !d.is_available).length;
+    const offline = drivers.filter((d) => !d.is_active).length;
     return { total, online, busy, offline };
   }, [drivers]);
 
   // Toggle Driver Duty Status
   const handleToggleStatus = async (driver: Driver) => {
-    const nextStatus = driver.status === "online" ? "offline" : "online";
+    const nextActive = !driver.is_active;
     try {
-      const { error } = await supabase
-        .from("drivers")
-        .update({ status: nextStatus })
-        .eq("id", driver.id);
+      const res = await fetch("/api/drivers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: driver.id,
+          is_active: nextActive,
+          is_available: nextActive,
+        }),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || "স্ট্যাটাস পরিবর্তন করা যায়নি");
+      }
 
       setDrivers((prev) =>
-        prev.map((d) => (d.id === driver.id ? { ...d, status: nextStatus } : d))
+        prev.map((d) =>
+          d.id === driver.id
+            ? { ...d, is_active: nextActive, is_available: nextActive }
+            : d
+        )
       );
       toast.success(
-        nextStatus === "online"
+        nextActive
           ? `${driver.name} এখন অনলাইন আছেন 🟢`
           : `${driver.name} এখন অফলাইন আছেন 🔴`
       );
     } catch (err: unknown) {
-      toast.error("স্ট্যাটাস পরিবর্তন করা যায়নি");
+      const msg = err instanceof Error ? err.message : "স্ট্যাটাস পরিবর্তন করা যায়নি";
+      toast.error(msg);
     }
   };
 
@@ -158,29 +181,29 @@ export default function RidersPage() {
 
     try {
       setSaving(true);
-      const cleanedPhone = newPhone.trim().replace(/[^0-9+]/g, "");
-
-      const { data, error } = await supabase
-        .from("drivers")
-        .insert({
+      const res = await fetch("/api/drivers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           name: newName.trim(),
-          phone: cleanedPhone,
+          phone: newPhone.trim(),
           toto_number: newTotoNumber.trim().toUpperCase(),
-          status: "online",
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error) throw error;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "চালক যুক্ত করা যায়নি");
+      }
 
-      toast.success("✅ নতুন চালক সফলভাবে যুক্ত হয়েছে!");
+      toast.success(json.message || "✅ চালক সফলভাবে যুক্ত হয়েছে!");
       setIsAddOpen(false);
       setNewName("");
       setNewPhone("");
       setNewTotoNumber("");
       loadDrivers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to add driver";
+      const msg = err instanceof Error ? err.message : "চালক যুক্ত করা যায়নি";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -344,8 +367,9 @@ export default function RidersPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredDrivers.map((driver) => {
-              const isOnline = driver.status === "online";
-              const isBusy = driver.status === "busy";
+              const status = getDriverStatus(driver);
+              const isOnline = status === "online";
+              const isBusy = status === "busy";
 
               return (
                 <Card
@@ -392,7 +416,7 @@ export default function RidersPage() {
                           <span>{driver.rating || 5.0}</span>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {driver.total_rides || 0} টি রাইড
+                          {driver.total_trips || 0} টি রাইড
                         </span>
                       </div>
                     </div>
@@ -405,16 +429,16 @@ export default function RidersPage() {
 
                       <Button
                         size="sm"
-                        variant={isOnline ? "destructive" : "outline"}
+                        variant={driver.is_active ? "destructive" : "outline"}
                         onClick={() => handleToggleStatus(driver)}
                         className={`text-xs h-8 ${
-                          !isOnline
+                          !driver.is_active
                             ? "border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
                             : ""
                         }`}
                       >
                         <Power className="mr-1.5 h-3.5 w-3.5" />
-                        {isOnline ? "অফলাইন করুন" : "অনলাইন করুন"}
+                        {driver.is_active ? "অফলাইন করুন" : "অনলাইন করুন"}
                       </Button>
                     </div>
                   </CardContent>

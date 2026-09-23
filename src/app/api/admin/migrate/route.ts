@@ -1,59 +1,83 @@
 ﻿import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
 
 // One-time migration endpoint to fix schema mismatches.
+// Uses Supabase Management API to run raw DDL.
 // DELETE THIS FILE after running once.
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+async function runSQL(sql: string): Promise<{ok: boolean, body: string}> {
+  // Extract project ref from URL
+  const projectRef = SUPABASE_URL.replace('https://', '').replace('.supabase.co', '')
+  
+  // Try the management API query endpoint
+  const res = await fetch(
+    `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ query: sql }),
+    }
+  )
+  const text = await res.text()
+  return { ok: res.ok, body: text }
+}
+
+async function runSQLDirect(sql: string): Promise<{ok: boolean, body: string}> {
+  // Use PostgREST's RPC endpoint via pg function if available
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/rpc/pg_execute`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_ROLE_KEY,
+        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({ query: sql }),
+    }
+  )
+  const text = await res.text()
+  return { ok: res.ok, body: text.substring(0, 300) }
+}
+
 export async function POST(request: Request) {
   const secret = request.headers.get("x-migrate-secret")
   if (secret !== "sundarban-migrate-2026") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const db = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const statements = [
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id UUID REFERENCES messages(id) ON DELETE SET NULL",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive_reply_id TEXT",
+    "ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive_payload JSONB",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id UUID",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_text TEXT",
+    "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID",
+    "UPDATE conversations SET last_message_text = last_message WHERE last_message_text IS NULL AND last_message IS NOT NULL",
+    "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS user_id UUID",
+    "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS mirror_inbound_media BOOLEAN NOT NULL DEFAULT TRUE",
+    "UPDATE whatsapp_config wc SET user_id = (SELECT am.user_id FROM account_members am WHERE am.account_id = wc.account_id AND am.role = 'owner' LIMIT 1) WHERE wc.user_id IS NULL",
+    `CREATE OR REPLACE FUNCTION public.bump_conversation_on_inbound(p_conversation_id UUID, p_last_message_text TEXT) RETURNS VOID LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$ UPDATE conversations SET unread_count = COALESCE(unread_count, 0) + 1, last_message = p_last_message_text, last_message_text = p_last_message_text, last_message_at = NOW(), updated_at = NOW() WHERE id = p_conversation_id; $$`,
+    "GRANT EXECUTE ON FUNCTION public.bump_conversation_on_inbound(UUID, TEXT) TO service_role",
+  ]
 
   const results: Record<string, string> = {}
 
-  // Helper: try an ALTER statement, ignore if column already exists
-  const tryAlter = async (table: string, sql: string): Promise<string> => {
-    const { error } = await db.from("_migrations_log").select("id").limit(0)
-    // Use raw fetch to Supabase REST since we cannot run raw DDL via JS client
-    // We use the undocumented /rest/v1/rpc/... path
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/run_ddl`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-          body: JSON.stringify({ sql }),
-        }
-      )
-      const text = await res.text()
-      return res.ok ? "ok" : `${res.status}: ${text}`
-    } catch (e) {
-      return `exception: ${e}`
+  for (const sql of statements) {
+    const key = sql.substring(0, 40)
+    // Try management API first
+    let result = await runSQL(sql)
+    if (!result.ok) {
+      // Try direct pg_execute
+      result = await runSQLDirect(sql)
     }
+    results[key] = result.ok ? 'ok' : `FAILED: ${result.body.substring(0, 100)}`
   }
-
-  // 1. messages: missing columns
-  results.msg_reply = await tryAlter("messages", "ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_message_id UUID REFERENCES messages(id) ON DELETE SET NULL")
-  results.msg_interactive_reply_id = await tryAlter("messages", "ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive_reply_id TEXT")
-  results.msg_interactive_payload = await tryAlter("messages", "ALTER TABLE messages ADD COLUMN IF NOT EXISTS interactive_payload JSONB")
-
-  // 2. conversations: missing columns
-  results.conv_user_id = await tryAlter("conversations", "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id UUID")
-  results.conv_last_message_text = await tryAlter("conversations", "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_message_text TEXT")
-  results.conv_assigned_agent = await tryAlter("conversations", "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID")
-
-  // 3. whatsapp_config: missing columns
-  results.wc_user_id = await tryAlter("whatsapp_config", "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS user_id UUID")
-  results.wc_mirror = await tryAlter("whatsapp_config", "ALTER TABLE whatsapp_config ADD COLUMN IF NOT EXISTS mirror_inbound_media BOOLEAN NOT NULL DEFAULT TRUE")
 
   return NextResponse.json({ results })
 }

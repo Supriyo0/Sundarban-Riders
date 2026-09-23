@@ -29,6 +29,34 @@ export interface OutboundWhatsAppAction {
   buttons?: Array<{ id: string; title: string }>;
 }
 
+let cachedSettings: Record<string, string> | null = null;
+let cachedSettingsTime = 0;
+const SETTINGS_TTL_MS = 60 * 1000;
+
+async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedSettings && now - cachedSettingsTime < SETTINGS_TTL_MS) {
+    return cachedSettings;
+  }
+  try {
+    const { data: settingsData } = await supabase
+      .from("system_settings")
+      .select("key, value");
+
+    const settings: Record<string, string> = {};
+    if (settingsData) {
+      settingsData.forEach((s) => {
+        settings[s.key] = s.value;
+      });
+    }
+    cachedSettings = settings;
+    cachedSettingsTime = now;
+    return settings;
+  } catch {
+    return cachedSettings ?? {};
+  }
+}
+
 /**
  * Main State Engine for Sundarban Riders Toto WhatsApp Dispatch & Bot
  */
@@ -38,43 +66,28 @@ export async function processTotoMessage(
   const supabase = getSupabaseAdmin();
   const phone = ctx.fromPhone.replace(/[^0-9+]/g, "");
 
-  // 1. Fetch system settings & Bengali templates
-  const { data: settingsData } = await supabase
-    .from("system_settings")
-    .select("key, value");
-
-  const settings: Record<string, string> = {};
-  if (settingsData) {
-    settingsData.forEach((s) => {
-      settings[s.key] = s.value;
-    });
-  }
+  // 1 & 2 & 3. Parallel fetch: Cached system settings, driver check, customer check
+  const [settings, driverRes, customerRes] = await Promise.all([
+    getCachedSettings(supabase),
+    supabase.from("drivers").select("*").eq("phone", phone).maybeSingle().catch(() => ({ data: null, error: null })),
+    supabase.from("customers").select("*").eq("phone", phone).maybeSingle().catch(() => ({ data: null, error: null })),
+  ]);
 
   const helpline = settings.helpline_number || "8348122122";
-  const baseFare = parseFloat(settings.base_fare || "20");
-  const ratePerKm = parseFloat(settings.rate_per_km || "15");
-
-  // 2. Check if sender is a registered driver
-  const { data: driver } = await supabase
-    .from("drivers")
-    .select("*")
-    .eq("phone", phone)
-    .maybeSingle();
-
-  // 3. Check / Upsert Customer record
-  let { data: customer } = await supabase
-    .from("customers")
-    .select("*")
-    .eq("phone", phone)
-    .maybeSingle();
+  const driver = driverRes?.data ?? null;
+  let customer = customerRes?.data ?? null;
 
   if (!customer) {
-    const { data: newCustomer } = await supabase
-      .from("customers")
-      .insert({ phone, name: ctx.senderName || "সুন্দরবন কাস্টমার", cancellation_count: 0 })
-      .select()
-      .single();
-    customer = newCustomer;
+    try {
+      const { data: newCustomer } = await supabase
+        .from("customers")
+        .insert({ phone, name: ctx.senderName || "সুন্দরবন কাস্টমার", cancellation_count: 0 })
+        .select()
+        .single();
+      customer = newCustomer;
+    } catch {
+      // Mock or non-existent table fallback
+    }
   }
 
   const incomingText = (ctx.textBody || ctx.buttonText || "").toLowerCase().trim();

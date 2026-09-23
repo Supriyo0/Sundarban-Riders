@@ -700,10 +700,14 @@ async function processMessage(
     .from('messages')
     .upsert(
       {
+        account_id: accountId,
+        contact_id: contactRecord.id,
         conversation_id: conversation.id,
+        direction: 'inbound',
         sender_type: 'customer',
         content_type: contentType,
         content_text: contentText,
+        body: contentText,
         media_url: mediaUrl,
         // Meta's MIME type for the attachment (migration 039). Was
         // discarded before, which forced the download path to guess an
@@ -938,11 +942,15 @@ async function processMessage(
 
       if (metaMessageId) {
         await supabaseAdmin().from('messages').insert({
+          account_id: accountId,
+          contact_id: contactRecord.id,
           conversation_id: conversation.id,
+          direction: 'outbound',
           sender_type: 'agent',
           content_type:
             totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
           content_text: totoAction.bodyText,
+          body: totoAction.bodyText,
           message_id: metaMessageId,
           status: 'sent',
         })

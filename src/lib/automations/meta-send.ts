@@ -242,7 +242,6 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   await db
     .from('conversations')
     .update({
-      last_message_text: lastMsgPreview,
       last_message: lastMsgPreview,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

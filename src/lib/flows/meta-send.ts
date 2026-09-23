@@ -141,7 +141,6 @@ export async function engineSendText(
   await db
     .from('conversations')
     .update({
-      last_message_text: args.text,
       last_message: args.text,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -259,7 +258,6 @@ export async function engineSendMedia(
   await db
     .from('conversations')
     .update({
-      last_message_text: preview,
       last_message: preview,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -453,7 +451,6 @@ async function sendInteractiveViaMeta(
   await db
     .from('conversations')
     .update({
-      last_message_text: input.bodyText,
       last_message: input.bodyText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

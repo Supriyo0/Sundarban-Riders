@@ -749,24 +749,15 @@ async function processMessage(
   if (replyToInternalId !== null) msgRow.reply_to_message_id = replyToInternalId
   if (interactiveReplyId !== null) msgRow.interactive_reply_id = interactiveReplyId
 
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
+  // Check if message was already delivered (idempotency against Meta retries)
+  const { data: existingMsg } = await supabaseAdmin()
     .from('messages')
-    .upsert(
-      msgRow,
-      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
-    )
     .select('id')
+    .eq('conversation_id', conversation.id)
+    .eq('message_id', message.id)
+    .limit(1)
 
-  if (msgError) {
-    console.error('Error inserting message:', msgError, JSON.stringify(msgRow))
-    return
-  }
-
-  // Replayed delivery: the message already exists, so acknowledge it as a
-  // no-op. Returning here is what keeps a retry from double-bumping unread,
-  // re-advancing flows, re-firing automations, re-invoking AI handling, and
-  // re-dispatching public webhooks (issue #367).
-  if (!insertedRows || insertedRows.length === 0) {
+  if (existingMsg && existingMsg.length > 0) {
     console.info(
       '[webhook] duplicate inbound message ignored (idempotent replay):',
       message.id
@@ -774,39 +765,30 @@ async function processMessage(
     return
   }
 
-  // Update conversation. The unread bump is done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than as a read-modify-write of the
-  // snapshot loaded above: two inbound messages for the same conversation
-  // can process concurrently, and computing `snapshot + 1` in the app let
-  // both reads see the same value and write the same increment, losing one
-  // (issue #369). The RPC increments in a single UPDATE and refreshes the
-  // last-message summary in the same statement.
-  // Update conversation — bump unread count and refresh last-message
-  // preview. Prefer the DB-side RPC (atomic); if it errors (e.g. the
-  // function doesn't exist yet on this deployment), fall back to a
-  // direct UPDATE that also covers the last_message column name variant.
+  const { data: insertedRows, error: msgError } = await supabaseAdmin()
+    .from('messages')
+    .insert(msgRow)
+    .select('id')
+
+  if (msgError) {
+    console.error('Error inserting message:', msgError, JSON.stringify(msgRow))
+    return
+  }
+
+  // Update conversation — bump unread count and refresh last-message preview
   const lastMsgText = contentText || `[${message.type}]`
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
-      p_conversation_id: conversation.id,
-      p_last_message_text: lastMsgText,
-    }
-  )
+  const { error: convError } = await supabaseAdmin()
+    .from('conversations')
+    .update({
+      unread_count: (conversation.unread_count ?? 0) + 1,
+      last_message: lastMsgText,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
 
   if (convError) {
-    console.error('Error calling bump_conversation_on_inbound, falling back:', convError)
-    // Fallback: direct update covering both column name variants
-    await supabaseAdmin()
-      .from('conversations')
-      .update({
-        unread_count: (conversation.unread_count ?? 0) + 1,
-        last_message: lastMsgText,
-        last_message_text: lastMsgText,
-        last_message_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversation.id)
+    console.error('Error updating conversation on inbound:', convError)
   }
 
   // A customer writing again re-opens the thread (issue #409). Kept as a
@@ -963,27 +945,49 @@ async function processMessage(
 
     if (totoAction) {
       let metaMessageId: string | null = null
+      const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
+
       if (
         totoAction.type === 'interactive_buttons' &&
         totoAction.buttons &&
         totoAction.buttons.length > 0
       ) {
-        const res = await sendInteractiveButtons({
-          phoneNumberId,
-          accessToken,
-          to: totoAction.toPhone,
-          bodyText: totoAction.bodyText,
-          buttons: totoAction.buttons.slice(0, 3),
-        })
-        metaMessageId = res.messageId
+        try {
+          const res = await sendInteractiveButtons({
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            bodyText: totoAction.bodyText,
+            buttons: totoAction.buttons.slice(0, 3),
+          })
+          metaMessageId = res.messageId
+        } catch (btnErr) {
+          console.error('[webhook] Interactive buttons send failed, trying text fallback:', btnErr)
+          const fallbackText = `${totoAction.bodyText}\n\n${totoAction.buttons.map((b) => `• ${b.title}`).join('\n')}`
+          try {
+            const res = await sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              text: fallbackText,
+            })
+            metaMessageId = res.messageId
+          } catch (textErr) {
+            console.error('[webhook] Text fallback send also failed:', textErr)
+          }
+        }
       } else {
-        const res = await sendTextMessage({
-          phoneNumberId,
-          accessToken,
-          to: totoAction.toPhone,
-          text: totoAction.bodyText,
-        })
-        metaMessageId = res.messageId
+        try {
+          const res = await sendTextMessage({
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            text: totoAction.bodyText,
+          })
+          metaMessageId = res.messageId
+        } catch (textErr) {
+          console.error('[webhook] Send text message failed:', textErr)
+        }
       }
 
       if (metaMessageId) {
@@ -1003,7 +1007,8 @@ async function processMessage(
         await supabaseAdmin()
           .from('conversations')
           .update({
-            last_message_text: totoAction.bodyText,
+            last_message: totoAction.bodyText,
+            last_message_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', conversation.id)

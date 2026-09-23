@@ -513,10 +513,6 @@ export async function sendMessageToConversation(
   await db
     .from('conversations')
     .update({
-      // Write both column name variants for schema compatibility:
-      // deployed DB uses last_message; codebase references last_message_text.
-      // Whichever column doesn't exist is silently ignored by PostgREST.
-      last_message_text: lastMessageText,
       last_message: lastMessageText,
       last_message_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

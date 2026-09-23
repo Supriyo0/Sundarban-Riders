@@ -7,7 +7,7 @@ import type { Conversation, Contact, Tag } from "@/types";
  * flattens them onto `contact.tags`.
  */
 export const CONVERSATION_SELECT =
-  "*, contact:contacts(*, contact_tags(tags(*)))";
+  "*, contact:contacts(*)";
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };
@@ -31,13 +31,23 @@ export function normalizeConversation(raw: RawConversation): Conversation {
   if (!rawContact) return base;
 
   const { contact_tags, ...contact } = rawContact;
+  const directTags: Tag[] = Array.isArray(contact.tags)
+    ? (contact.tags as Tag[])
+    : [];
+
+  const joinedTags: Tag[] = Array.isArray(contact_tags)
+    ? contact_tags
+        .map((ct) => ct.tags)
+        .filter((t): t is Tag => t != null)
+    : [];
+
+  const tags = joinedTags.length > 0 ? joinedTags : directTags;
+
   return {
     ...base,
     contact: {
       ...contact,
-      tags: (contact_tags ?? [])
-        .map((ct) => ct.tags)
-        .filter((t): t is Tag => t != null),
+      tags,
     },
   };
 }

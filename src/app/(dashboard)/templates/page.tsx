@@ -26,6 +26,7 @@ export default function TemplatesPage() {
   const [saving, setSaving] = useState(false);
 
   // Templates State
+  const [welcomeMessage, setWelcomeMessage] = useState<string>("");
   const [driverTerms, setDriverTerms] = useState<string>("");
   const [customerDisclaimer, setCustomerDisclaimer] = useState<string>("");
   const [bookingConfirmation, setBookingConfirmation] = useState<string>("");
@@ -41,6 +42,7 @@ export default function TemplatesPage() {
 
       if (data && data.length > 0) {
         data.forEach((row) => {
+          if (row.key === "welcome_message_bengali") setWelcomeMessage(row.value);
           if (row.key === "driver_terms_bengali") setDriverTerms(row.value);
           if (row.key === "customer_disclaimer_bengali") setCustomerDisclaimer(row.value);
           if (row.key === "booking_confirmation_template") setBookingConfirmation(row.value);
@@ -64,6 +66,11 @@ export default function TemplatesPage() {
     try {
       setSaving(true);
       const updates = [
+        {
+          key: "welcome_message_bengali",
+          value: welcomeMessage,
+          description: "হোয়াটসঅ্যাপ প্রাথমিক স্বাগতম মেসেজ ও মেনু",
+        },
         {
           key: "driver_terms_bengali",
           value: driverTerms,
@@ -131,6 +138,28 @@ export default function TemplatesPage() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        {/* Welcome Message & Main Menu */}
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-foreground text-base flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              প্রাথমিক স্বাগতম বার্তা ও প্রধান মেনু (Welcome Message & Main Menu)
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              কাস্টমার বা চালক প্রথমবার বা চ্যাটে প্রবেশ করে মেসেজ পাঠালে স্বয়ংক্রিয়ভাবে পাঠানো স্বাগতম বার্তা ও বাটন মেনু
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Textarea
+              rows={10}
+              value={welcomeMessage}
+              onChange={(e) => setWelcomeMessage(e.target.value)}
+              placeholder={`🙏 সুন্দরবন রাইডারে স্বাগতম 🙏\n\n🚘আমাদের পরিবারে যুক্ত হওয়ার জন্য আপনাকে অসংখ্য ধন্যবাদ ।...`}
+              className="bg-muted border-border text-foreground font-sans text-sm leading-relaxed"
+            />
+          </CardContent>
+        </Card>
+
         {/* Helpline Number */}
         <Card className="border-border bg-card">
           <CardHeader>

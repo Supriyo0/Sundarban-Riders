@@ -616,6 +616,104 @@ async function processMessage(
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 
+  // ============================================================
+  // FAST-PATH: Dispatch Toto WhatsApp Bot reply IMMEDIATELY (<200ms)
+  // We trigger the Meta Graph API response concurrently with DB logging
+  // so the user receives their reply with sub-300ms latency!
+  // ============================================================
+  const totoReplyPromise = message.type === 'reaction' ? null : (async () => {
+    try {
+      const totoAction = await processTotoMessage({
+        fromPhone: message.from,
+        senderName: contact.profile?.name,
+        textBody: message.text?.body,
+        buttonPayload:
+          message.interactive?.button_reply?.id ||
+          message.interactive?.list_reply?.id,
+        buttonText:
+          message.interactive?.button_reply?.title ||
+          message.interactive?.list_reply?.title,
+        location: message.location,
+      })
+
+      if (!totoAction) return null
+
+      let metaMessageId: string | null = null
+      const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
+
+      if (
+        totoAction.type === 'interactive_buttons' &&
+        totoAction.buttons &&
+        totoAction.buttons.length > 0
+      ) {
+        try {
+          const res = await sendInteractiveButtons({
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            bodyText: totoAction.bodyText,
+            buttons: totoAction.buttons.slice(0, 3),
+          })
+          metaMessageId = res.messageId
+        } catch (btnErr) {
+          console.error('[webhook] Interactive buttons send failed, trying text fallback:', btnErr)
+          const fallbackText = `${totoAction.bodyText}\n\n${totoAction.buttons.map((b) => `• ${b.title}`).join('\n')}`
+          try {
+            const res = await sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              text: fallbackText,
+            })
+            metaMessageId = res.messageId
+          } catch (textErr) {
+            console.error('[webhook] Text fallback send also failed:', textErr)
+          }
+        }
+      } else {
+        try {
+          const res = await sendTextMessage({
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            text: totoAction.bodyText,
+          })
+          metaMessageId = res.messageId
+        } catch (textErr) {
+          console.error('[webhook] Send text message failed:', textErr)
+        }
+      }
+
+      // Dispatch any secondary notifications (e.g. alerts to customer or online drivers)
+      if (totoAction.extraNotifications && totoAction.extraNotifications.length > 0) {
+        for (const notif of totoAction.extraNotifications) {
+          const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
+          if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
+            void sendInteractiveButtons({
+              phoneNumberId,
+              accessToken,
+              to: destPhone,
+              bodyText: notif.bodyText,
+              buttons: notif.buttons.slice(0, 3),
+            }).catch((err) => console.error('[webhook] extraNotification button error:', err))
+          } else {
+            void sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: destPhone,
+              text: notif.bodyText,
+            }).catch((err) => console.error('[webhook] extraNotification text error:', err))
+          }
+        }
+      }
+
+      return { totoAction, metaMessageId }
+    } catch (totoErr) {
+      console.error('[webhook] Toto bot fast-dispatch error:', totoErr)
+      return null
+    }
+  })()
+
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
     accountId,
@@ -841,72 +939,12 @@ async function processMessage(
   await reopenClosedConversation(supabaseAdmin(), conversation)
 
   // ============================================================
-  // Toto WhatsApp Bot Dispatch (Immediate user response)
-  // Run first so the customer receives an instant reply (<300ms)
-  // before longer background flows, automations, or webhooks run.
+  // Record Toto Bot reply in conversation thread
   // ============================================================
-  try {
-    const totoAction = await processTotoMessage({
-      fromPhone: message.from,
-      senderName: contact.profile?.name,
-      textBody: message.text?.body,
-      buttonPayload:
-        message.interactive?.button_reply?.id ||
-        message.interactive?.list_reply?.id,
-      buttonText:
-        message.interactive?.button_reply?.title ||
-        message.interactive?.list_reply?.title,
-      location: message.location,
-    })
-
-    if (totoAction) {
-      let metaMessageId: string | null = null
-      const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
-
-      if (
-        totoAction.type === 'interactive_buttons' &&
-        totoAction.buttons &&
-        totoAction.buttons.length > 0
-      ) {
-        try {
-          const res = await sendInteractiveButtons({
-            phoneNumberId,
-            accessToken,
-            to: recipientPhone,
-            bodyText: totoAction.bodyText,
-            buttons: totoAction.buttons.slice(0, 3),
-          })
-          metaMessageId = res.messageId
-        } catch (btnErr) {
-          console.error('[webhook] Interactive buttons send failed, trying text fallback:', btnErr)
-          const fallbackText = `${totoAction.bodyText}\n\n${totoAction.buttons.map((b) => `• ${b.title}`).join('\n')}`
-          try {
-            const res = await sendTextMessage({
-              phoneNumberId,
-              accessToken,
-              to: recipientPhone,
-              text: fallbackText,
-            })
-            metaMessageId = res.messageId
-          } catch (textErr) {
-            console.error('[webhook] Text fallback send also failed:', textErr)
-          }
-        }
-      } else {
-        try {
-          const res = await sendTextMessage({
-            phoneNumberId,
-            accessToken,
-            to: recipientPhone,
-            text: totoAction.bodyText,
-          })
-          metaMessageId = res.messageId
-        } catch (textErr) {
-          console.error('[webhook] Send text message failed:', textErr)
-        }
-      }
-
-      if (metaMessageId) {
+  if (totoReplyPromise) {
+    try {
+      const totoRes = await totoReplyPromise
+      if (totoRes && totoRes.metaMessageId) {
         await supabaseAdmin().from('messages').insert({
           account_id: accountId,
           contact_id: contactRecord.id,
@@ -914,24 +952,24 @@ async function processMessage(
           direction: 'outbound',
           sender_type: 'agent',
           content_type:
-            totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
-          content_text: totoAction.bodyText,
-          body: totoAction.bodyText,
-          message_id: metaMessageId,
+            totoRes.totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
+          content_text: totoRes.totoAction.bodyText,
+          body: totoRes.totoAction.bodyText,
+          message_id: totoRes.metaMessageId,
           status: 'sent',
         })
         await supabaseAdmin()
           .from('conversations')
           .update({
-            last_message: totoAction.bodyText,
+            last_message: totoRes.totoAction.bodyText,
             last_message_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', conversation.id)
       }
+    } catch (totoErr) {
+      console.error('[webhook] Toto bot logging error:', totoErr)
     }
-  } catch (totoErr) {
-    console.error('[webhook] Toto bot error:', totoErr)
   }
 
   // If this contact was a recent broadcast recipient, flag the reply

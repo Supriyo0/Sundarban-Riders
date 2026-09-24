@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { SwipeToConfirm } from "@/components/mobile/swipe-to-confirm";
@@ -83,6 +82,13 @@ export default function MobileAppPage() {
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
 
+  // Enforce pristine Light Theme for mobile app
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.mode = "light";
+    }
+  }, []);
+
   // 1. Session Persistence Check on Load
   useEffect(() => {
     const saved = localStorage.getItem("sr_mobile_session");
@@ -118,7 +124,7 @@ export default function MobileAppPage() {
       } else {
         setPhase("select_role");
       }
-    }, 1500);
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, []);
@@ -368,25 +374,25 @@ export default function MobileAppPage() {
   };
 
   // -------------------------------------------------------------
-  // VIEW: SPLASH SCREEN
+  // VIEW: SPLASH SCREEN (Light Theme)
   // -------------------------------------------------------------
   if (phase === "splash") {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-950 via-slate-950 to-black text-white flex flex-col items-center justify-center p-6 text-center select-none">
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-slate-50 text-slate-900 flex flex-col items-center justify-center p-6 text-center select-none">
         <div className="relative">
-          <div className="w-24 h-24 rounded-3xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shadow-2xl animate-pulse">
-            <Car className="w-12 h-12 text-emerald-400" />
+          <div className="w-24 h-24 rounded-3xl bg-white border border-emerald-200 flex items-center justify-center shadow-xl shadow-emerald-500/10">
+            <Car className="w-12 h-12 text-emerald-600" />
           </div>
-          <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-amber-400 animate-spin" />
+          <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-amber-500 animate-bounce" />
         </div>
-        <h1 className="mt-6 text-2xl font-black tracking-tight text-white">
+        <h1 className="mt-6 text-2xl font-black tracking-tight text-slate-900">
           সুন্দরবন রাইডার
         </h1>
-        <p className="text-emerald-400 text-xs font-semibold uppercase tracking-widest mt-1">
+        <p className="text-emerald-700 text-xs font-bold uppercase tracking-widest mt-1">
           Smart Toto Mobility • 24x7
         </p>
-        <div className="mt-12 flex items-center gap-2 text-slate-400 text-xs">
-          <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
+        <div className="mt-12 flex items-center gap-2 text-slate-400 text-xs font-medium">
+          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
           <span>লোড হচ্ছে...</span>
         </div>
       </div>
@@ -394,68 +400,68 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: PERMISSIONS ONBOARDING SCREEN
+  // VIEW: PERMISSIONS ONBOARDING SCREEN (Light Theme)
   // -------------------------------------------------------------
   if (phase === "permissions") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-6">
+      <div className="min-h-screen bg-white text-slate-900 flex flex-col justify-between p-6">
         <div className="pt-6 space-y-6">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-sm">
             <ShieldCheck className="w-8 h-8" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
               অ্যাপের প্রয়োজনীয় অনুমতি
             </h2>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-slate-500 text-sm mt-1">
               উবার বা র‍্যাপিডোর মতো সঠিক পরিষেবা নিশ্চিত করতে নিচের অনুমতিগুলো গ্রহণ করা আবশ্যক:
             </p>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 shrink-0">
+          <div className="space-y-3">
+            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
                 <MapPin className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">জিপিএস লোকেশন (GPS)</h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS)</h4>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
                   নিকটস্থ ৫ কিমির মধ্যে বুকিং প্রদান ও ম্যাপের লাইভ রুট নির্দেশনার জন্য।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-400 shrink-0">
+            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+              <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 shrink-0 border border-purple-100">
                 <Bell className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">পুশ নোটিফিকেশন</h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন</h4>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
                   অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও স্ট্যাটাসের তাৎক্ষণিক অ্যালার্ট পেতে।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 shrink-0">
+            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 border border-amber-100">
                 <Volume2 className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">অডিও ও ভাইব্রেশন</h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন</h4>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
                   রাইড আসার সাথে সাথে উচ্চশব্দে রিংটোন বেজে ওঠা ও ভাইব্রেশন নিশ্চিত করতে।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 shrink-0">
+            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0 border border-emerald-100">
                 <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">স্ক্রিন ওয়েক-লক</h4>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <h4 className="text-sm font-bold text-slate-900">স্ক্রিন ওয়েক-লক</h4>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
                   মোবাইল স্লিপ বা লক থাকলেও নতুন বুকিং আসার সাথে সাথে স্ক্রিন অন হতে।
                 </p>
               </div>
@@ -466,7 +472,7 @@ export default function MobileAppPage() {
         <div className="pb-4">
           <Button
             size="lg"
-            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg shadow-emerald-950"
+            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
             onClick={handleGrantPermissions}
           >
             অনুমতি নিশ্চিত করুন ও এগিয়ে যান
@@ -478,19 +484,19 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: ROLE SELECTOR SCREEN
+  // VIEW: ROLE SELECTOR SCREEN (Light Theme)
   // -------------------------------------------------------------
   if (phase === "select_role") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-6">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6">
         <div className="pt-8 text-center">
-          <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto mb-4">
+          <div className="w-16 h-16 rounded-3xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 mx-auto mb-4 shadow-md">
             <Car className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
             সুন্দরবন রাইডারে স্বাগতম
           </h2>
-          <p className="text-slate-400 text-sm mt-1 max-w-xs mx-auto">
+          <p className="text-slate-500 text-sm mt-1 max-w-xs mx-auto font-medium">
             আপনি কীভাবে সুন্দরবন রাইডার ব্যবহার করতে চান?
           </p>
 
@@ -501,20 +507,20 @@ export default function MobileAppPage() {
                 setRole("rider");
                 setPhase("otp_login");
               }}
-              className="w-full p-5 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all active:scale-[0.98] shadow-lg flex items-center justify-between"
+              className="w-full p-5 rounded-2xl bg-white border-2 border-emerald-200 hover:border-emerald-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between"
             >
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
                   <Car className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-white">🛺 টোটো চালক (Rider)</h3>
-                  <p className="text-xs text-slate-300 mt-0.5">
+                  <h3 className="font-bold text-lg text-slate-900">🛺 টোটো চালক (Rider)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
                     রাইড গ্রহণ করুন, দৈনিক আয় বাড়ান ও স্মার্ট ড্রাইভার হন।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6 text-emerald-400 shrink-0" />
+              <ChevronRight className="w-6 h-6 text-emerald-600 shrink-0" />
             </button>
 
             {/* Passenger Card */}
@@ -523,50 +529,50 @@ export default function MobileAppPage() {
                 setRole("passenger");
                 setPhase("otp_login");
               }}
-              className="w-full p-5 rounded-2xl bg-gradient-to-r from-blue-950/80 to-slate-900 border border-blue-500/30 hover:border-blue-400 text-left transition-all active:scale-[0.98] shadow-lg flex items-center justify-between"
+              className="w-full p-5 rounded-2xl bg-white border-2 border-blue-200 hover:border-blue-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between"
             >
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-300">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                   <User className="w-7 h-7" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-white">👤 সাধারণ যাত্রী (Passenger)</h3>
-                  <p className="text-xs text-slate-300 mt-0.5">
+                  <h3 className="font-bold text-lg text-slate-900">👤 সাধারণ যাত্রী (Passenger)</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
                     মাত্র ৫ মিনিটে টোটো বুকিং করুন ও নিরাপদ ভ্রমণ নিশ্চিত করুন।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6 text-blue-400 shrink-0" />
+              <ChevronRight className="w-6 h-6 text-blue-600 shrink-0" />
             </button>
           </div>
         </div>
 
-        <div className="text-center pb-4 text-xs text-slate-500">
-          সুন্দরবন রাইডার • ২৪x৭ নিরাপদ যোগাযোগ
+        <div className="text-center pb-4 text-xs text-slate-400 font-medium">
+          সুন্দরবন রাইডার • ২৪x৭ নিরাপদ পরিবহন
         </div>
       </div>
     );
   }
 
   // -------------------------------------------------------------
-  // VIEW: WHATSAPP OTP LOGIN SCREEN
+  // VIEW: WHATSAPP OTP LOGIN SCREEN (Light Theme)
   // -------------------------------------------------------------
   if (phase === "otp_login") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-6">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6">
         <div className="pt-6 space-y-6">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setPhase("select_role")}
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+              className="text-xs text-slate-500 hover:text-slate-900 font-medium flex items-center gap-1"
             >
               ← ফিরে যান
             </button>
             <span
               className={`text-xs font-bold px-3 py-1 rounded-full ${
                 role === "rider"
-                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                  : "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                  : "bg-blue-100 text-blue-800 border border-blue-200"
               }`}
             >
               {role === "rider" ? "🛺 চালক লগইন" : "👤 যাত্রী লগইন"}
@@ -574,19 +580,19 @@ export default function MobileAppPage() {
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
               WhatsApp OTP দিয়ে লগইন
             </h2>
-            <p className="text-slate-400 text-sm mt-1">
+            <p className="text-slate-500 text-sm mt-1 font-medium">
               আপনার ফোন নম্বরে কোনো SMS চার্জ ছাড়াই সরাসরি হোয়াটসঅ্যাপে কোড যাবে।
             </p>
           </div>
 
           <div className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label className="text-xs text-slate-300">হোয়াটসঅ্যাপ মোবাইল নম্বর</Label>
+              <Label className="text-xs text-slate-700 font-semibold">হোয়াটসঅ্যাপ মোবাইল নম্বর</Label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
                   +91
                 </span>
                 <Input
@@ -595,7 +601,7 @@ export default function MobileAppPage() {
                   value={phoneInput}
                   disabled={otpSent}
                   onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  className="h-14 pl-14 bg-slate-900 border-slate-800 text-white text-lg font-bold rounded-2xl tracking-wider"
+                  className="h-14 pl-14 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500"
                 />
               </div>
             </div>
@@ -603,8 +609,8 @@ export default function MobileAppPage() {
             {otpSent && (
               <div className="space-y-2 pt-2 animate-in fade-in">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-300">৪ সংখ্যার OTP কোড</Label>
-                  <span className="text-xs text-emerald-400 font-mono">
+                  <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার OTP কোড</Label>
+                  <span className="text-xs text-emerald-600 font-mono font-bold">
                     {otpTimer > 0 ? `পুনরায় পাঠাতে: ${otpTimer}s` : ""}
                   </span>
                 </div>
@@ -614,13 +620,13 @@ export default function MobileAppPage() {
                   placeholder="• • • •"
                   value={otpInput}
                   onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  className="h-16 text-center text-2xl font-black tracking-[1em] bg-slate-900 border-emerald-500/40 text-emerald-400 rounded-2xl"
+                  className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
                 />
 
                 {otpTimer === 0 && (
                   <button
                     onClick={handleSendOtp}
-                    className="text-xs text-emerald-400 hover:underline pt-1 block"
+                    className="text-xs text-emerald-600 font-bold hover:underline pt-1 block"
                   >
                     পুনরায় WhatsApp-এ OTP পাঠান
                   </button>
@@ -634,7 +640,7 @@ export default function MobileAppPage() {
           {!otpSent ? (
             <Button
               size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg"
+              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
               onClick={handleSendOtp}
               disabled={loading || phoneInput.length < 10}
             >
@@ -647,7 +653,7 @@ export default function MobileAppPage() {
           ) : (
             <Button
               size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg"
+              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
               onClick={handleVerifyOtp}
               disabled={loading || otpInput.length < 4}
             >
@@ -664,105 +670,105 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: DRIVER KYC ONBOARDING FORM
+  // VIEW: DRIVER KYC ONBOARDING FORM (Light Theme)
   // -------------------------------------------------------------
   if (phase === "kyc_form") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white p-6 pb-12 overflow-y-auto">
+      <div className="min-h-screen bg-slate-50 text-slate-900 p-6 pb-12 overflow-y-auto">
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-400 font-bold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+            <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
               নতুন চালক নিবন্ধন
             </span>
-            <span className="text-xs text-slate-400 font-mono">+91 {phoneInput}</span>
+            <span className="text-xs text-slate-600 font-mono font-semibold">+91 {phoneInput}</span>
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
               চালক তথ্য ও ডকুমেন্ট সাবমিট
             </h2>
-            <p className="text-slate-400 text-xs mt-1">
+            <p className="text-slate-500 text-xs mt-1 font-medium">
               যাচাইকরণের জন্য সঠিক তথ্য ও আধার কার্ডের পরিষ্কার ছবি সংযুক্ত করুন।
             </p>
           </div>
 
           <form onSubmit={handleKycSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-300">পূর্ণ নাম *</Label>
+              <Label className="text-xs text-slate-700 font-semibold">পূর্ণ নাম *</Label>
               <Input
                 placeholder="যেমন: রাজেশ মন্ডল"
                 value={kycName}
                 onChange={(e) => setKycName(e.target.value)}
-                className="h-12 bg-slate-900 border-slate-800 text-white rounded-xl"
+                className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-300">ইমেইল ঠিকানা (অনুমোদনপত্রের জন্য)</Label>
+              <Label className="text-xs text-slate-700 font-semibold">ইমেইল ঠিকানা (অনুমোদনপত্রের জন্য)</Label>
               <Input
                 type="email"
                 placeholder="example@gmail.com"
                 value={kycEmail}
                 onChange={(e) => setKycEmail(e.target.value)}
-                className="h-12 bg-slate-900 border-slate-800 text-white rounded-xl"
+                className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-300">জেলা *</Label>
+                <Label className="text-xs text-slate-700 font-semibold">জেলা *</Label>
                 <Input
                   value={kycDistrict}
                   onChange={(e) => setKycDistrict(e.target.value)}
-                  className="h-12 bg-slate-900 border-slate-800 text-white rounded-xl"
+                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-slate-300">ব্লক *</Label>
+                <Label className="text-xs text-slate-700 font-semibold">ব্লক *</Label>
                 <Input
                   value={kycBlock}
                   onChange={(e) => setKycBlock(e.target.value)}
-                  className="h-12 bg-slate-900 border-slate-800 text-white rounded-xl"
+                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-300">টোটো রেজিস্ট্রেশন নম্বর *</Label>
+              <Label className="text-xs text-slate-700 font-semibold">টোটো রেজিস্ট্রেশন নম্বর *</Label>
               <Input
                 placeholder="যেমন: WB-96-T-8421"
                 value={kycTotoNumber}
                 onChange={(e) => setKycTotoNumber(e.target.value)}
-                className="h-12 bg-slate-900 border-slate-800 text-white font-mono rounded-xl uppercase"
+                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl uppercase shadow-sm"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-300">আধার কার্ড নম্বর (১২ সংখ্যা) *</Label>
+              <Label className="text-xs text-slate-700 font-semibold">আধার কার্ড নম্বর (১২ সংখ্যা) *</Label>
               <Input
                 placeholder="XXXX XXXX XXXX"
                 maxLength={12}
                 value={kycAadharNumber}
                 onChange={(e) => setKycAadharNumber(e.target.value.replace(/\D/g, ""))}
-                className="h-12 bg-slate-900 border-slate-800 text-white font-mono rounded-xl"
+                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm"
               />
             </div>
 
             {/* Document Upload Simulation */}
             <div className="space-y-3 pt-2">
-              <div className="p-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/60 flex items-center justify-between">
+              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-white shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <CreditCard className="w-5 h-5 text-amber-400" />
+                  <CreditCard className="w-5 h-5 text-amber-600" />
                   <div>
-                    <h5 className="text-xs font-bold text-white">আধার কার্ড ছবি *</h5>
-                    <p className="text-[10px] text-slate-400">সামনে ও পেছনের স্পষ্ট ছবি</p>
+                    <h5 className="text-xs font-bold text-slate-900">আধার কার্ড ছবি *</h5>
+                    <p className="text-[10px] text-slate-500 font-medium">সামনে ও পেছনের স্পষ্ট ছবি</p>
                   </div>
                 </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs border-slate-700"
+                  className="h-8 text-xs border-slate-300 font-semibold"
                   onClick={() => {
                     setKycAadharDoc("https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop");
                     toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে");
@@ -773,19 +779,19 @@ export default function MobileAppPage() {
                 </Button>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/60 flex items-center justify-between">
+              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-white shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-purple-400" />
+                  <FileText className="w-5 h-5 text-purple-600" />
                   <div>
-                    <h5 className="text-xs font-bold text-white">২য় ডকুমেন্ট (লাইসেন্স/ভোটার) *</h5>
-                    <p className="text-[10px] text-slate-400">ড্রাইভিং লাইসেন্স বা ভোটার আইডি</p>
+                    <h5 className="text-xs font-bold text-slate-900">২য় ডকুমেন্ট (লাইসেন্স/ভোটার) *</h5>
+                    <p className="text-[10px] text-slate-500 font-medium">ড্রাইভিং লাইসেন্স বা ভোটার আইডি</p>
                   </div>
                 </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs border-slate-700"
+                  className="h-8 text-xs border-slate-300 font-semibold"
                   onClick={() => {
                     setKycSecondaryDoc("https://images.unsplash.com/photo-1554415707-9e4c019feab4?w=600&auto=format&fit=crop");
                     toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে");
@@ -800,7 +806,7 @@ export default function MobileAppPage() {
             <Button
               type="submit"
               size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg mt-4"
+              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20 mt-4"
               disabled={loading}
             >
               {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : "আবেদন সাবমিট করুন"}
@@ -812,35 +818,35 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: KYC PENDING APPROVAL SCREEN
+  // VIEW: KYC PENDING APPROVAL SCREEN (Light Theme)
   // -------------------------------------------------------------
   if (phase === "kyc_pending") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between p-6 text-center">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 text-center">
         <div className="pt-16 space-y-6">
-          <div className="w-20 h-20 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center text-amber-400 mx-auto animate-pulse">
+          <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-300 flex items-center justify-center text-amber-600 mx-auto animate-pulse shadow-md">
             <Clock className="w-10 h-10" />
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
               আবেদন অনুমোদনের অপেক্ষায়
             </h2>
-            <p className="text-slate-400 text-sm mt-2 max-w-xs mx-auto">
+            <p className="text-slate-600 text-sm mt-2 max-w-xs mx-auto font-medium">
               নমস্কার {session?.driverName || "চালক বন্ধু"}! আপনার চালক আবেদন ও আধার ডকুমেন্টস সফলভাবে জমা হয়েছে।
             </p>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-left space-y-2 max-w-xs mx-auto text-xs">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 text-left space-y-2 max-w-xs mx-auto text-xs shadow-sm">
             <div className="flex justify-between">
-              <span className="text-slate-400">টোটো নম্বর:</span>
-              <span className="font-mono font-bold text-white">{session?.totoNumber || "WB-96-T-XXXX"}</span>
+              <span className="text-slate-500">টোটো নম্বর:</span>
+              <span className="font-mono font-bold text-slate-900">{session?.totoNumber || "WB-96-T-XXXX"}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">স্ট্যাটাস:</span>
-              <span className="text-amber-400 font-bold">ভেরিফিকেশন চলছে</span>
+              <span className="text-slate-500">স্ট্যাটাস:</span>
+              <span className="text-amber-600 font-bold">ভেরিফিকেশন চলছে</span>
             </div>
-            <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-800">
+            <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-100 font-medium">
               অ্যাডমিন অনুমোদন করার সাথে সাথে আপনি WhatsApp ও ইমেইলে কনফার্মেশন পাবেন এবং এই স্ক্রিন স্বয়ংক্রিয়ভাবে খুলে যাবে।
             </p>
           </div>
@@ -849,7 +855,7 @@ export default function MobileAppPage() {
         <div className="space-y-3 pb-4">
           <Button
             variant="outline"
-            className="w-full h-12 rounded-xl border-slate-800 text-slate-300"
+            className="w-full h-12 rounded-xl border-slate-300 text-slate-700 font-semibold bg-white"
             onClick={handleSwitchRole}
           >
             👤 যাত্রী হিসেবে টোটো বুক করতে চান?
@@ -868,25 +874,25 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: RIDER HOME / DASHBOARD (Uber/Rapido Flow)
+  // VIEW: RIDER HOME / DASHBOARD (Uber/Rapido Flow in Light Theme)
   // -------------------------------------------------------------
   if (phase === "rider_home") {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between relative overflow-hidden select-none">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between relative overflow-hidden select-none">
         {/* Header Bar */}
-        <div className="p-4 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center justify-between sticky top-0 z-20">
+        <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-black">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl shadow-sm">
               🛺
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="font-bold text-sm text-white">{session?.driverName || "চালকের ড্যাশবোর্ড"}</h3>
-                <span className="flex items-center text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.2 rounded">
-                  <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> 5.0
+                <h3 className="font-bold text-sm text-slate-900">{session?.driverName || "চালকের ড্যাশবোর্ড"}</h3>
+                <span className="flex items-center text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                  <Star className="w-2.5 h-2.5 fill-amber-500 mr-0.5" /> 5.0
                 </span>
               </div>
-              <p className="text-[11px] font-mono text-slate-400">{session?.totoNumber || "WB-96-T-8421"}</p>
+              <p className="text-[11px] font-mono text-slate-500 font-semibold">{session?.totoNumber || "WB-96-T-8421"}</p>
             </div>
           </div>
 
@@ -895,7 +901,7 @@ export default function MobileAppPage() {
             <button
               onClick={handleSwitchRole}
               title="যাত্রী মোডে যান"
-              className="text-xs px-2.5 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center gap-1"
+              className="text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1 hover:bg-blue-100 transition-colors"
             >
               <User className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">যাত্রী মোড</span>
@@ -908,13 +914,13 @@ export default function MobileAppPage() {
                 playSuccessSound();
                 toast.success(!isOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
                 isOnline
-                  ? "bg-emerald-500 text-slate-950 shadow-emerald-500/20"
-                  : "bg-red-500/20 text-red-400 border border-red-500/40"
+                  ? "bg-emerald-600 text-white shadow-emerald-600/20"
+                  : "bg-red-50 text-red-600 border border-red-200"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-slate-950 animate-ping" : "bg-red-500"}`} />
+              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
               {isOnline ? "অনলাইন" : "অফলাইন"}
             </button>
           </div>
@@ -926,40 +932,40 @@ export default function MobileAppPage() {
             {isOnline ? (
               <div className="space-y-4">
                 <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
-                  <div className="absolute inset-0 rounded-full bg-emerald-500/10 animate-ping" />
-                  <div className="absolute inset-4 rounded-full bg-emerald-500/20 animate-pulse" />
-                  <div className="w-20 h-20 rounded-full bg-emerald-500/30 border-2 border-emerald-400 flex items-center justify-center text-3xl shadow-xl shadow-emerald-950">
+                  <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" />
+                  <div className="absolute inset-4 rounded-full bg-emerald-200/60 animate-pulse" />
+                  <div className="w-20 h-20 rounded-full bg-white border-2 border-emerald-500 flex items-center justify-center text-3xl shadow-xl shadow-emerald-500/10">
                     🛺
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white">নতুন রাইডের খোঁজ চলছে...</h3>
-                  <p className="text-xs text-emerald-400 font-medium mt-1">
+                  <h3 className="text-xl font-bold text-slate-900">নতুন রাইডের খোঁজ চলছে...</h3>
+                  <p className="text-xs text-emerald-700 font-semibold mt-1">
                     📍 ৫ কিমি রেডিয়াসের মধ্যে যাত্রী বুকিং করলেই অ্যালার্ট পাবেন
                   </p>
                 </div>
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="w-20 h-20 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-3xl mx-auto text-slate-600">
+                <div className="w-20 h-20 rounded-full bg-white border border-slate-200 flex items-center justify-center text-3xl mx-auto text-slate-400 shadow-sm">
                   ⚪
                 </div>
-                <h3 className="text-lg font-bold text-slate-400">আপনি অফলাইনে আছেন</h3>
-                <p className="text-xs text-slate-500 max-w-xs">
-                  রাইড গ্রহণ শুরু করতে উপরের 'অনলাইন যান' বোতামে চাপ দিন।
+                <h3 className="text-lg font-bold text-slate-700">আপনি অফলাইনে আছেন</h3>
+                <p className="text-xs text-slate-500 max-w-xs font-medium">
+                  রাইড গ্রহণ শুরু করতে উপরের 'অনলাইন' বোতামে চাপ দিন।
                 </p>
               </div>
             )}
 
             {/* Quick Metrics */}
             <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
-              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">আজকের ট্রিপ</span>
-                <div className="text-xl font-bold text-white mt-0.5">৬ টি</div>
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">আজকের ট্রিপ</span>
+                <div className="text-2xl font-black text-slate-900 mt-0.5">৬ টি</div>
               </div>
-              <div className="p-3 rounded-2xl bg-slate-900 border border-slate-800">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold">সংগৃহীত নগদ</span>
-                <div className="text-xl font-bold text-emerald-400 mt-0.5">₹৩৬০.০০</div>
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">সংগৃহীত নগদ</span>
+                <div className="text-2xl font-black text-emerald-600 mt-0.5">₹৩৬০.০০</div>
               </div>
             </div>
           </div>
@@ -969,36 +975,36 @@ export default function MobileAppPage() {
         {activeRide && (
           <div className="flex-1 p-4 flex flex-col justify-between space-y-4">
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between shadow-sm">
                 <div>
-                  <span className="text-xs text-emerald-400 font-bold">
+                  <span className="text-xs text-emerald-700 font-bold uppercase tracking-wider">
                     {activeRide.status === "heading_pickup" ? "যাত্রীর কাছে যাচ্ছেন" : "যাত্রা চলমান 🛺"}
                   </span>
-                  <h4 className="font-bold text-lg text-white mt-0.5">{activeRide.passengerName}</h4>
+                  <h4 className="font-bold text-lg text-slate-900 mt-0.5">{activeRide.passengerName}</h4>
                 </div>
                 <a
                   href={`tel:${activeRide.passengerPhone}`}
-                  className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 shadow-lg active:scale-95"
+                  className="w-12 h-12 rounded-full bg-emerald-600 flex items-center justify-center text-white shadow-md active:scale-95"
                 >
-                  <Phone className="w-5 h-5 fill-slate-950" />
+                  <Phone className="w-5 h-5 fill-white" />
                 </a>
               </div>
 
               {/* Route Card */}
-              <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-start gap-3">
-                  <span className="w-3 h-3 rounded-full bg-emerald-400 mt-1 shrink-0" />
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">পিকআপ লোকেশন</span>
-                    <p className="text-sm font-semibold text-white">{activeRide.pickup}</p>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">পিকআপ লোকেশন</span>
+                    <p className="text-sm font-bold text-slate-900">{activeRide.pickup}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <span className="w-3 h-3 rounded-full bg-red-400 mt-1 shrink-0" />
+                  <span className="w-3.5 h-3.5 rounded-full bg-red-500 mt-1 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">গন্তব্য (Drop)</span>
-                    <p className="text-sm font-semibold text-white">{activeRide.drop}</p>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">গন্তব্য (Drop)</span>
+                    <p className="text-sm font-bold text-slate-900">{activeRide.drop}</p>
                   </div>
                 </div>
 
@@ -1006,9 +1012,9 @@ export default function MobileAppPage() {
                   href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(activeRide.pickup)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="w-full py-3 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 text-xs font-bold flex items-center justify-center gap-2 mt-2"
+                  className="w-full py-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 mt-2 hover:bg-blue-100 transition-colors"
                 >
-                  <Navigation className="w-4 h-4" />
+                  <Navigation className="w-4 h-4 text-blue-600" />
                   গুগল ম্যাপে দিকনির্দেশনা দেখুন
                 </a>
               </div>
@@ -1042,73 +1048,73 @@ export default function MobileAppPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* UBER / RAPIDO STYLE INCOMING RIDE MODAL SHEET */}
+        {/* UBER / RAPIDO STYLE INCOMING RIDE MODAL SHEET (Light Theme)  */}
         {/* ------------------------------------------------------------- */}
         {incomingRide && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end p-4 animate-in slide-in-from-bottom duration-300">
-            <div className="bg-slate-900 border-2 border-emerald-500/50 rounded-3xl p-6 shadow-2xl space-y-6">
+          <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex flex-col justify-end p-4 animate-in slide-in-from-bottom duration-300">
+            <div className="bg-white border-2 border-emerald-500 rounded-3xl p-6 shadow-2xl space-y-6">
               {/* Header with Circular Countdown & Fare */}
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
                     নতুন রাইড অনুরোধ!
                   </span>
-                  <div className="text-3xl font-black text-amber-400 mt-0.5">
-                    ₹{incomingRide.fare}.00 <span className="text-xs text-slate-400 font-normal">নগদ</span>
+                  <div className="text-3xl font-black text-slate-900 mt-0.5">
+                    ₹{incomingRide.fare}.00 <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full ml-1">নগদ ভাড়া</span>
                   </div>
                 </div>
 
                 {/* 30s Countdown Ring */}
                 <div className="relative w-14 h-14 flex items-center justify-center">
                   <svg className="w-full h-full transform -rotate-90">
-                    <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className="text-slate-800" fill="transparent" />
+                    <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className="text-slate-100" fill="transparent" />
                     <circle
                       cx="28"
                       cy="28"
                       r="24"
                       stroke="currentColor"
                       strokeWidth="4"
-                      className="text-emerald-400 transition-all duration-1000"
+                      className="text-emerald-600 transition-all duration-1000"
                       fill="transparent"
                       strokeDasharray={150}
                       strokeDashoffset={150 - (150 * alertCountdown) / 30}
                     />
                   </svg>
-                  <span className="absolute font-black text-sm text-white">{alertCountdown}s</span>
+                  <span className="absolute font-black text-sm text-slate-900">{alertCountdown}s</span>
                 </div>
               </div>
 
               {/* Passenger Info */}
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-slate-800">
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
                     👤
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-white">{incomingRide.passengerName}</h4>
-                    <span className="flex items-center text-xs text-amber-400">
-                      <Star className="w-3 h-3 fill-amber-400 mr-1" /> {incomingRide.passengerRating}
+                    <h4 className="font-bold text-sm text-slate-900">{incomingRide.passengerName}</h4>
+                    <span className="flex items-center text-xs text-amber-600 font-bold">
+                      <Star className="w-3 h-3 fill-amber-500 mr-1" /> {incomingRide.passengerRating}
                     </span>
                   </div>
                 </div>
-                <span className="text-xs text-slate-400 font-mono">#{incomingRide.id}</span>
+                <span className="text-xs text-slate-500 font-mono font-bold">#{incomingRide.id}</span>
               </div>
 
               {/* Route Preview */}
-              <div className="space-y-3 text-xs">
+              <div className="space-y-3 text-xs bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80">
                 <div className="flex items-start gap-3">
-                  <span className="w-3 h-3 rounded-full bg-emerald-400 mt-1 shrink-0" />
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold">পিকআপ: {incomingRide.pickupDistance}</span>
-                    <p className="font-bold text-sm text-white">{incomingRide.pickup}</p>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold">পিকআপ: {incomingRide.pickupDistance}</span>
+                    <p className="font-bold text-sm text-slate-900">{incomingRide.pickup}</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <span className="w-3 h-3 rounded-full bg-red-400 mt-1 shrink-0" />
+                  <span className="w-3.5 h-3.5 rounded-full bg-red-500 mt-1 shrink-0" />
                   <div>
-                    <span className="text-[10px] text-slate-400 uppercase font-bold">গন্তব্য: {incomingRide.tripDistance}</span>
-                    <p className="font-bold text-sm text-white">{incomingRide.drop}</p>
+                    <span className="text-[10px] text-slate-500 uppercase font-bold">গন্তব্য: {incomingRide.tripDistance}</span>
+                    <p className="font-bold text-sm text-slate-900">{incomingRide.drop}</p>
                   </div>
                 </div>
               </div>
@@ -1131,7 +1137,7 @@ export default function MobileAppPage() {
 
                 <Button
                   variant="ghost"
-                  className="w-full text-xs text-red-400 hover:text-red-300 h-10"
+                  className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-10 font-bold"
                   onClick={() => {
                     setIncomingRide(null);
                     toast.info("রাইড প্রত্যাখ্যান করা হয়েছে");
@@ -1148,20 +1154,20 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: PASSENGER HOME / BOOKING SCREEN
+  // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme)
   // -------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between select-none">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
       {/* Passenger Header */}
-      <div className="p-4 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center justify-between sticky top-0 z-20">
+      <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-blue-400 font-bold">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shadow-sm">
             👤
           </div>
           <div>
-            <h3 className="font-bold text-sm text-white">{session?.passengerName || "যাত্রী পোর্টাল"}</h3>
-            <p className="text-[11px] text-emerald-400 flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <h3 className="font-bold text-sm text-slate-900">{session?.passengerName || "যাত্রী পোর্টাল"}</h3>
+            <p className="text-[11px] text-emerald-600 flex items-center gap-1 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               টোটো বুকিং ২৪x৭ প্রস্তুত
             </p>
           </div>
@@ -1172,7 +1178,7 @@ export default function MobileAppPage() {
           <button
             onClick={handleSwitchRole}
             title="চালক মোডে যান"
-            className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1"
+            className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1 hover:bg-emerald-100 transition-colors"
           >
             <Car className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">চালক মোড</span>
@@ -1181,7 +1187,7 @@ export default function MobileAppPage() {
           <button
             onClick={handleLogout}
             title="লগআউট"
-            className="p-2 text-slate-400 hover:text-white"
+            className="p-2 text-slate-500 hover:text-slate-900"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -1191,65 +1197,65 @@ export default function MobileAppPage() {
       {/* Main Booking Interface */}
       <div className="flex-1 p-6 space-y-6">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">টোটো রাইড বুক করুন</h2>
-          <p className="text-slate-400 text-xs mt-1">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
+          <p className="text-slate-500 text-xs mt-1 font-medium">
             আপনার অবস্থান থেকে ৫ কিমির ভেতরের স্মার্ট টোটো চালকদের অনুরোধ পাঠানো হবে।
           </p>
         </div>
 
         {/* Pickup & Drop Inputs */}
-        <div className="space-y-4 p-5 rounded-3xl bg-slate-900 border border-slate-800">
+        <div className="space-y-4 p-5 rounded-3xl bg-white border border-slate-200 shadow-sm">
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-400 font-bold uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" /> পিকআপ অবস্থান
+            <Label className="text-xs text-slate-500 font-bold uppercase flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> পিকআপ অবস্থান
             </Label>
             <Input
               value={pickupText}
               onChange={(e) => setPickupText(e.target.value)}
-              className="h-12 bg-slate-950 border-slate-800 text-white rounded-xl text-sm font-semibold"
+              className="h-12 bg-slate-50 border-slate-200 text-slate-900 rounded-xl text-sm font-semibold focus:bg-white"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-slate-400 font-bold uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-400" /> গন্তব্যের নাম (Drop)
+            <Label className="text-xs text-slate-500 font-bold uppercase flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> গন্তব্যের নাম (Drop)
             </Label>
             <Input
               value={dropText}
               onChange={(e) => setDropText(e.target.value)}
-              className="h-12 bg-slate-950 border-slate-800 text-white rounded-xl text-sm font-semibold"
+              className="h-12 bg-slate-50 border-slate-200 text-slate-900 rounded-xl text-sm font-semibold focus:bg-white"
             />
           </div>
 
-          <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-            <span className="text-slate-400">আনুমানিক ভাড়া:</span>
-            <span className="text-lg font-black text-amber-400">₹৫০.০০ নগদ</span>
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">আনুমানিক ভাড়া:</span>
+            <span className="text-xl font-black text-slate-900">₹৫০.০০ <span className="text-xs text-emerald-600 font-bold">নগদ</span></span>
           </div>
         </div>
 
         {/* Live Booking Status (If Booked) */}
         {passengerBooking ? (
-          <div className="p-5 rounded-3xl bg-emerald-950/40 border border-emerald-500/40 space-y-4 animate-in fade-in">
+          <div className="p-5 rounded-3xl bg-emerald-50 border border-emerald-200 space-y-4 animate-in fade-in shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <span className="font-bold text-sm text-white">রাইড নিশ্চিত হয়েছে!</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span className="font-bold text-sm text-slate-900">রাইড নিশ্চিত হয়েছে!</span>
               </div>
-              <span className="text-xs text-emerald-400 font-mono">#SR-9412</span>
+              <span className="text-xs text-emerald-700 font-mono font-bold">#SR-9412</span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2 text-xs">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2 text-xs shadow-sm">
               <div className="flex justify-between">
-                <span className="text-slate-400">চালক:</span>
-                <span className="font-bold text-white">রাজেশ মন্ডল</span>
+                <span className="text-slate-500 font-medium">চালক:</span>
+                <span className="font-bold text-slate-900">রাজেশ মন্ডল</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">টোটো নম্বর:</span>
-                <span className="font-mono font-bold text-amber-400">WB-96-T-8421</span>
+                <span className="text-slate-500 font-medium">টোটো নম্বর:</span>
+                <span className="font-mono font-bold text-emerald-600">WB-96-T-8421</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">ফোন:</span>
-                <span className="font-mono text-white">9593177885</span>
+                <span className="text-slate-500 font-medium">ফোন:</span>
+                <span className="font-mono font-bold text-slate-900">9593177885</span>
               </div>
             </div>
 
@@ -1266,10 +1272,10 @@ export default function MobileAppPage() {
             </Button>
           </div>
         ) : findingDrivers ? (
-          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-3">
-            <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-            <h4 className="font-bold text-sm text-white">কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...</h4>
-            <p className="text-xs text-slate-400">অনলাইন চালকদের কাছে অনুরোধ পৌঁছে গেছে।</p>
+          <div className="p-6 rounded-3xl bg-white border border-slate-200 text-center space-y-3 shadow-sm">
+            <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
+            <h4 className="font-bold text-sm text-slate-900">কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...</h4>
+            <p className="text-xs text-slate-500 font-medium">অনলাইন চালকদের কাছে অনুরোধ পৌঁছে গেছে।</p>
           </div>
         ) : null}
       </div>
@@ -1279,7 +1285,7 @@ export default function MobileAppPage() {
         <div className="p-4 pb-6">
           <Button
             size="lg"
-            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-xl"
+            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
             disabled={findingDrivers}
             onClick={() => {
               setFindingDrivers(true);

@@ -29,21 +29,24 @@ export function SwipeToConfirm({
   const colors = {
     emerald: {
       bg: "bg-emerald-600",
-      track: "bg-emerald-950/60 border-emerald-500/30",
-      thumb: "bg-white text-emerald-700 shadow-emerald-900/50",
-      progress: "bg-emerald-600/50",
+      track: "bg-emerald-50/90 border-emerald-200 shadow-inner",
+      thumb: "bg-emerald-600 text-white shadow-md shadow-emerald-600/30",
+      progress: "bg-emerald-200/70",
+      textColor: "text-emerald-950 font-bold",
     },
     amber: {
       bg: "bg-amber-600",
-      track: "bg-amber-950/60 border-amber-500/30",
-      thumb: "bg-white text-amber-700 shadow-amber-900/50",
-      progress: "bg-amber-600/50",
+      track: "bg-amber-50/90 border-amber-200 shadow-inner",
+      thumb: "bg-amber-600 text-white shadow-md shadow-amber-600/30",
+      progress: "bg-amber-200/70",
+      textColor: "text-amber-950 font-bold",
     },
     blue: {
-      bg: "bg-blue-600",
-      track: "bg-blue-950/60 border-blue-500/30",
-      thumb: "bg-white text-blue-700 shadow-blue-900/50",
-      progress: "bg-blue-600/50",
+      bg: "bg-blue-50/90 border-blue-200 shadow-inner",
+      track: "bg-blue-50/90 border-blue-200 shadow-inner",
+      thumb: "bg-blue-600 text-white shadow-md shadow-blue-600/30",
+      progress: "bg-blue-200/70",
+      textColor: "text-blue-950 font-bold",
     },
   }[colorScheme];
 
@@ -109,7 +112,7 @@ export function SwipeToConfirm({
   return (
     <div
       ref={containerRef}
-      className={`relative h-16 w-full select-none overflow-hidden rounded-full border p-1 shadow-inner transition-colors ${
+      className={`relative h-16 w-full select-none overflow-hidden rounded-full border p-1 transition-colors ${
         colors.track
       } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       onMouseDown={(e) => handleStart(e.clientX)}
@@ -122,19 +125,19 @@ export function SwipeToConfirm({
       />
 
       {/* Label Text */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center text-sm font-bold tracking-wide text-white drop-shadow">
+      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center text-sm tracking-wide ${colors.textColor}`}>
         {isConfirmed ? (
-          <span className="flex items-center gap-2 text-emerald-300">
-            <Check className="h-5 w-5" /> {confirmedLabel}
+          <span className="flex items-center gap-2 text-emerald-800 font-bold">
+            <Check className="h-5 w-5 stroke-[3]" /> {confirmedLabel}
           </span>
         ) : (
-          <span className="opacity-90">{label}</span>
+          <span>{label}</span>
         )}
       </div>
 
       {/* Draggable Thumb */}
       <div
-        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-full shadow-lg transition-transform ${
+        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-full shadow-md transition-transform ${
           colors.thumb
         } ${isDragging ? "scale-105" : ""}`}
         style={{

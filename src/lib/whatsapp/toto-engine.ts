@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { saveFeedbackRecord } from "./feedback-store";
 
 // Helper to get Supabase Admin client
 function getSupabaseAdmin() {
@@ -36,7 +37,7 @@ export interface OutboundWhatsAppAction {
 }
 
 interface CustomerBookingState {
-  step: "awaiting_location" | "awaiting_drop";
+  step: "awaiting_location" | "awaiting_drop" | "awaiting_complaint" | "awaiting_feedback";
   pickupLocation?: string;
   pickupLat?: number;
   pickupLng?: number;
@@ -99,22 +100,7 @@ export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন �
 
 > আপনি কি উপরোক্ত সকল শর্তাবলীতে সম্মত আছেন?`;
 
-export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 সুন্দরবন রাইডারে স্বাগতম 🙏
-
-🚘আমাদের পরিবারে যুক্ত হওয়ার জন্য আপনাকে অসংখ্য ধন্যবাদ ।
-আপনার যাত্রা কে আরও সহজ, সুরক্ষিত ও নিশ্চিত করতে, এই প্রথম মাত্র ৫-৭ মিনিটে অনলাইন স্মার্ট টোটো বুকিং সার্ভিস ২৪ x ৭ !
-
-👉 জরুরি প্রয়োজনে নম্বরটি সেভ এবং শেয়ার করুন আপনার প্রিয়জনদের সাথে 🌷
-
-🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে 👉 সুন্দরবন রাইডার 🎯
-📞 যোগাযোগ মাধ্যম:
-• WhatsApp Only: 8348122122
-• Email: sr.rider122@gmail.com
-
-🙏 ধন্যবাদ🙏
-
-━━━━━━━━━━━━━━━━━━━━━
-🙏 নমস্কার! "সুন্দরবন রাইডার"-এ আপনাকে স্বাগতম।
+export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 নমস্কার! "সুন্দরবন রাইডার"-এ আপনাকে স্বাগতম।
 আমরা সুন্দরবনের সহজ, দ্রুত ও নিরাপদ টোটো বুকিং প্ল্যাটফর্ম।
 
 অনুগ্রহ করে নিচের অপশন নির্বাচন করুন:`;
@@ -238,14 +224,26 @@ export async function processTotoMessage(
       };
     }
 
-    // Assign to this driver
-    await supabase
+    // Assign to this driver atomically (protecting against race conditions)
+    const { data: assignedBooking } = await supabase
       .from("bookings")
       .update({
         status: "assigned",
         driver_id: driver?.id,
       })
-      .eq("id", booking.id);
+      .eq("id", booking.id)
+      .eq("status", "pending")
+      .select()
+      .maybeSingle();
+
+    if (!assignedBooking) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [{ id: "driver_go_offline", title: "🔴 অফলাইন যান" }],
+      };
+    }
 
     if (driver) {
       void Promise.resolve(
@@ -348,9 +346,10 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons" as const,
-        bodyText: `🙏 সুন্দরবন রাইডার ব্যবহারের জন্য অসংখ্য ধন্যবাদ!\n=======================\n🧾 রাইড রসিদ (Ride Receipt)\n🆔 বুকিং নং: #${booking.booking_number || booking.id.slice(0, 8)}\n📍 পিকআপ: ${booking.pickup_location}\n🏁 গন্তব্য: ${booking.drop_location}\n💵 পরিশোধিত ভাড়া: ₹${booking.estimated_fare}.00\n=======================\nআপনার যাত্রা সুখকর ও নিরাপদ হয়েছে আশা করি। আবার দেখা হবে! 🌷`,
+        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :`,
         buttons: [
-          { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+          { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
+          { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
         ],
       },
     ] : [];
@@ -485,11 +484,55 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
-  // FLOW E: LOCATION & DESTINATION INPUT FROM CUSTOMER
+  // FLOW E: LOCATION & DESTINATION INPUT FROM CUSTOMER & FEEDBACK
   // -------------------------------------------------------------
   const bookingState = customerBookingStates.get(cleanPhone);
   if (bookingState && !payload) {
-    if (bookingState.step === "awaiting_location") {
+    if (bookingState.step === "awaiting_complaint" && incomingText) {
+      customerBookingStates.delete(cleanPhone);
+      const complaintText = ctx.textBody?.trim() || incomingText;
+      const ticketNo = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      await saveFeedbackRecord({
+        type: "complaint",
+        ticket: `#${ticketNo}`,
+        customer_phone: cleanPhone,
+        customer_name: ctx.senderName || customer?.name || "গ্রাহক",
+        message: complaintText,
+        status: "pending",
+      });
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `✅ আপনার অভিযোগটি সফলভাবে নথিভুক্ত করা হয়েছে!\n=======================\n🆔 টিকেট নং: #${ticketNo}\n📞 কন্টাক্ট: ${cleanPhone}\n=======================\nআমাদের অ্যাডমিন টিম দ্রুত বিষয়টি পর্যালোচনা করে ব্যবস্থা নেবে। সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ! 🙏`,
+        buttons: [
+          { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+        ],
+      };
+    } else if (bookingState.step === "awaiting_feedback" && incomingText) {
+      customerBookingStates.delete(cleanPhone);
+      const feedbackText = ctx.textBody?.trim() || incomingText;
+      const ticketNo = `SUG-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      await saveFeedbackRecord({
+        type: "suggestion",
+        ticket: `#${ticketNo}`,
+        customer_phone: cleanPhone,
+        customer_name: ctx.senderName || customer?.name || "গ্রাহক",
+        message: feedbackText,
+        status: "reviewed",
+      });
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🌷 অসংখ্য ধন্যবাদ! 🌷\n=======================\nআপনার মূল্যবান পরামর্শ ও মতামতের জন্য আমরা আন্তরিকভাবে কৃতজ্ঞ। সুন্দরবন রাইডারকে আরও উন্নত করতে আপনার পরামর্শটি গুরুত্বের সাথে বিবেচনা করা হবে। 🙏✨`,
+        buttons: [
+          { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+        ],
+      };
+    } else if (bookingState.step === "awaiting_location") {
       let pickup = "";
       if (ctx.location?.latitude && ctx.location?.longitude) {
         pickup = ctx.location.name || ctx.location.address || `${ctx.location.latitude}, ${ctx.location.longitude}`;
@@ -602,6 +645,45 @@ export async function processTotoMessage(
     };
   }
 
+  // -------------------------------------------------------------
+  // FLOW I: CUSTOMER COMPLAINTS & FEEDBACK TRIGGERS
+  // -------------------------------------------------------------
+  if (
+    payload === "customer_complaint" ||
+    incomingText.includes("অভিযোগ") ||
+    incomingText === "complaint"
+  ) {
+    customerBookingStates.set(cleanPhone, {
+      step: "awaiting_complaint",
+      timestamp: Date.now(),
+    });
+
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `📢 অভিযোগ নিবন্ধন 📢\n=======================\nঅনুগ্রহ করে আপনার অভিযোগ বা সমস্যার কথা এখানে বিস্তারিত লিখে পাঠান। আমাদের কাস্টমার সাপোর্ট টিম দ্রুত বিষয়টি সমাধান করবে:`,
+    };
+  }
+
+  if (
+    payload === "customer_feedback" ||
+    incomingText.includes("পরামর্শ") ||
+    incomingText.includes("মতামত") ||
+    incomingText === "feedback" ||
+    incomingText === "suggestion"
+  ) {
+    customerBookingStates.set(cleanPhone, {
+      step: "awaiting_feedback",
+      timestamp: Date.now(),
+    });
+
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `💡 মতামত ও পরামর্শ 💡\n=======================\nআমাদের সেবাকে আরও উন্নত করতে আপনার মূল্যবান মতামত বা পরামর্শটি এখানে লিখে জানান:`,
+    };
+  }
+
   // Check if driver is registered and approved
   const isRegisteredDriver = Boolean(
     driver &&
@@ -611,11 +693,14 @@ export async function processTotoMessage(
   );
 
   // -------------------------------------------------------------
-  // FLOW G: TAKE RIDE (RIDER / DRIVER FLOW)
+  // FLOW G: TAKE RIDE / RIDER LOGIN
   // -------------------------------------------------------------
   if (
     payload === "take_ride" ||
+    payload === "rider_login" ||
     payload === "driver_join" ||
+    incomingText.includes("রাইডার লগইন") ||
+    incomingText.includes("লগইন") ||
     incomingText.includes("রাইড নিন") ||
     incomingText.includes("take ride")
   ) {
@@ -653,15 +738,13 @@ export async function processTotoMessage(
         ],
       };
     } else {
-      // User is NOT registered as a rider -> loop back to welcome menu
-      const welcomeText = settings.welcome_message_bengali || DEFAULT_TOTO_WELCOME_MESSAGE;
+      // User is NOT registered as a rider -> inform them and allow booking
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: welcomeText,
+        bodyText: `⚠️ দুঃখিত! আপনার নম্বরটি চালক হিসেবে নিবন্ধিত নয়। সুন্দরবন রাইডার চালক হিসেবে যুক্ত হতে হেল্পলাইনে (${helpline}) যোগাযোগ করুন।\n\nআপনি চাইলে এখনই টোটো বুক করতে পারেন:`,
         buttons: [
-          { id: "book_toto", title: "🛺 টোটো বুক করুন" },
-          { id: "take_ride", title: "🛵 রাইড নিন" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
       };
     }
@@ -714,9 +797,9 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nপুনরায় ডিউটি শুরু করতে নিচের '🛵 রাইড নিন' বোতামে চাপুন।`,
+      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nপুনরায় ডিউটি শুরু করতে নিচের '🛺 রাইডার লগইন' বোতামে চাপুন।`,
       buttons: [
-        { id: "take_ride", title: "🛵 রাইড নিন" },
+        { id: "take_ride", title: "🛺 রাইডার লগইন" },
       ],
     };
   }
@@ -741,7 +824,7 @@ export async function processTotoMessage(
       };
     }
 
-    // FROM NEXT TIME: Rider has already agreed -> Just goes "🛵 রাইড নিন"
+    // FROM NEXT TIME: Rider has already agreed -> Just goes "🛺 রাইডার লগইন"
     const isOnline = Boolean(driver.is_active && driver.is_available);
     if (isOnline) {
       return {
@@ -756,9 +839,9 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🙏 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনার আজকের ডিউটি শুরু করতে নিচের '🛵 রাইড নিন' বোতামে চাপুন:`,
+        bodyText: `🙏 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনার আজকের ডিউটি শুরু করতে নিচের '🛺 রাইডার লগইন' বোতামে চাপুন:`,
         buttons: [
-          { id: "take_ride", title: "🛵 রাইড নিন" },
+          { id: "take_ride", title: "🛺 রাইডার লগইন" },
         ],
       };
     }
@@ -772,8 +855,8 @@ export async function processTotoMessage(
     type: "interactive_buttons",
     bodyText: welcomeText,
     buttons: [
-      { id: "book_toto", title: "🛺 টোটো বুক করুন" },
-      { id: "take_ride", title: "🛵 রাইড নিন" },
+      { id: "take_ride", title: "🛺 রাইডার লগইন" },
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
     ],
   };
 }

@@ -14,6 +14,10 @@ import {
   SlidersHorizontal,
   MapPin,
   CreditCard,
+  CheckCircle,
+  FileText,
+  Clock,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,7 +46,12 @@ interface Driver {
   vehicle_type?: string;
   is_active: boolean;
   is_available: boolean;
+  is_approved?: boolean;
   agreed_terms?: boolean;
+  email?: string;
+  aadhar_card_url?: string;
+  secondary_doc_url?: string;
+  secondary_doc_type?: string;
   total_trips?: number;
   rating?: number;
   created_at?: string;
@@ -200,6 +209,26 @@ export default function RidersPage() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "স্ট্যাটাস পরিবর্তন করা যায়নি";
       toast.error(msg);
+    }
+  };
+
+  // Approve Driver & Trigger Email/WhatsApp Notifications
+  const handleApproveDriver = async (driverId: string) => {
+    try {
+      const res = await fetch("/api/drivers/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driver_id: driverId, approve: true }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(json.message || "চালক সফলভাবে অনুমোদিত হয়েছে!");
+        loadDrivers();
+      } else {
+        toast.error(json.message || "অনুমোদন ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("সার্ভার ত্রুটি");
     }
   };
 
@@ -473,25 +502,76 @@ export default function RidersPage() {
                       </div>
                     </div>
 
+                    {/* KYC Documents Links if submitted */}
+                    {(driver.aadhar_card_url || driver.secondary_doc_url) && (
+                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-3 text-xs">
+                        <span className="text-muted-foreground font-medium">ডকুমেন্টস:</span>
+                        {driver.aadhar_card_url && (
+                          <a
+                            href={driver.aadhar_card_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-500 hover:underline font-medium"
+                          >
+                            <FileText className="h-3 w-3" />
+                            আধার কার্ড
+                            <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                        )}
+                        {driver.secondary_doc_url && (
+                          <a
+                            href={driver.secondary_doc_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-purple-500 hover:underline font-medium"
+                          >
+                            <FileText className="h-3 w-3" />
+                            ২য় ডকুমেন্ট
+                            <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs text-emerald-500 font-medium">
-                        <ShieldCheck className="h-4 w-4" />
-                        <span>{driver.agreed_terms ? "চুক্তি স্বাক্ষরিত" : "চুক্তি অপেক্ষমাণ"}</span>
+                      <div className="flex items-center gap-1.5 text-xs font-medium">
+                        {driver.is_approved === false ? (
+                          <span className="text-amber-500 flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                            <Clock className="h-3.5 w-3.5" />
+                            অনুমোদনের অপেক্ষায়
+                          </span>
+                        ) : (
+                          <span className="text-emerald-500 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            অনুমোদিত চালক
+                          </span>
+                        )}
                       </div>
 
-                      <Button
-                        size="sm"
-                        variant={driver.is_active ? "destructive" : "outline"}
-                        onClick={() => handleToggleStatus(driver)}
-                        className={`text-xs h-8 ${
-                          !driver.is_active
-                            ? "border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
-                            : ""
-                        }`}
-                      >
-                        <Power className="mr-1.5 h-3.5 w-3.5" />
-                        {driver.is_active ? "অফলাইন করুন" : "অনলাইন করুন"}
-                      </Button>
+                      {driver.is_approved === false ? (
+                        <Button
+                          size="sm"
+                          onClick={() => handleApproveDriver(driver.id)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1.5 shadow-sm"
+                        >
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          অনুমোদন করুন
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={driver.is_active ? "destructive" : "outline"}
+                          onClick={() => handleToggleStatus(driver)}
+                          className={`text-xs h-8 ${
+                            !driver.is_active
+                              ? "border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
+                              : ""
+                          }`}
+                        >
+                          <Power className="mr-1.5 h-3.5 w-3.5" />
+                          {driver.is_active ? "অফলাইন করুন" : "অনলাইন করুন"}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

@@ -18,12 +18,21 @@ export async function GET() {
       let block = d.block || "";
       let aadhar_no = d.aadhar_no || d.license_number || "";
 
-      if ((!district || !block || !aadhar_no) && d.current_location_name) {
+      let email = d.email || "";
+      let aadhar_card_url = "";
+      let secondary_doc_url = "";
+      let secondary_doc_type = "";
+
+      if (d.current_location_name) {
         try {
           const meta = JSON.parse(d.current_location_name);
           district = district || meta.district || "";
           block = block || meta.block || "";
           aadhar_no = aadhar_no || meta.aadhar_no || "";
+          email = email || meta.email || "";
+          aadhar_card_url = meta.aadhar_card_url || "";
+          secondary_doc_url = meta.secondary_doc_url || "";
+          secondary_doc_type = meta.secondary_doc_type || "";
         } catch {}
       }
 
@@ -32,6 +41,11 @@ export async function GET() {
         district,
         block,
         aadhar_no,
+        email,
+        aadhar_card_url,
+        secondary_doc_url,
+        secondary_doc_type,
+        is_approved: d.is_approved !== false,
       };
     });
 

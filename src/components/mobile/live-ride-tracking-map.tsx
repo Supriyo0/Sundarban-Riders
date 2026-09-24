@@ -529,8 +529,63 @@ export function LiveRideTrackingMap({
 
   const currentActiveRoute = activeRouteView === "arriving" ? arrivingRoute : dropRoute;
 
+  // Exact Dropping Clock Time and Total Remaining Minutes calculation
+  const totalDropDurationMin = dropRoute?.durationMin || Math.max(6, Math.round(tripDistance * 3.5 + 2));
+  const now = new Date();
+  const estimatedDropDate = new Date(now.getTime() + totalDropDurationMin * 60000);
+  const droppingTimeBangla = estimatedDropDate.toLocaleTimeString("bn-BD", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const droppingTimeEnglish = estimatedDropDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300">
+      {/* ------------------------------------------------------------- */}
+      {/* 0. PROMINENT DROPPING TIME & ROUTE BANNER (Requested by User) */}
+      {/* ------------------------------------------------------------- */}
+      <div className="bg-gradient-to-r from-emerald-600 via-teal-700 to-slate-900 text-white p-4 rounded-3xl shadow-xl border border-emerald-400/30 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md flex items-center justify-center text-amber-300 shrink-0 border border-white/20 shadow-inner">
+              <Clock className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-200 block">
+                🏁 আনুমানিক ড্রপ টাইম (Dropping Time)
+              </span>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-2xl font-black text-white tracking-tight">{droppingTimeBangla}</span>
+                <span className="text-xs font-bold text-emerald-300">({droppingTimeEnglish})</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-right shrink-0">
+            <span className="inline-block text-[10px] font-bold text-amber-300 bg-amber-400/20 border border-amber-300/40 px-2.5 py-1 rounded-xl">
+              ~{totalDropDurationMin} মিনিট বাকি
+            </span>
+          </div>
+        </div>
+
+        {/* Drop Destination & Route Summary */}
+        <div className="bg-black/25 backdrop-blur-sm rounded-2xl p-3 border border-white/10 space-y-1.5 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-emerald-200 font-bold uppercase tracking-wider flex items-center gap-1">
+              <RouteIcon className="w-3 h-3 text-emerald-300" />
+              <span>রোড রুট (Road Route):</span>
+            </span>
+            <span className="text-[11px] font-bold text-white">
+              দূরত্ব: {tripDistance} কিমি
+            </span>
+          </div>
+          <p className="font-bold text-sm text-white truncate flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0 inline-block" />
+            <span>গন্তব্য: {dropText}</span>
+          </p>
+          <p className="text-[11px] text-slate-300 font-medium truncate">
+            🛣️ {dropRoute?.routeSummaryBengali || "ডায়মন্ড হারবার রোড (NH-117) ➔ মূল সংযোগ সড়ক হয়ে গন্তব্য"}
+          </p>
+        </div>
+      </div>
+
       {/* ------------------------------------------------------------- */}
       {/* 1. LIVE ROAD NAVIGATION & AUTO ROUTE SWITCH BAR               */}
       {/* ------------------------------------------------------------- */}

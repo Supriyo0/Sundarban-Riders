@@ -42,6 +42,10 @@ import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-ma
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
 import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
+import { SundarbanLogo } from "@/components/brand/sundarban-logo";
+import { AppSplashScreen } from "@/components/brand/app-splash-screen";
+import { MobileAppHeader } from "@/components/layout/mobile-app-header";
+import { MobileBottomNav, MobileNavTab } from "@/components/layout/mobile-bottom-nav";
 
 interface MobileSession {
   phone: string;
@@ -58,6 +62,8 @@ export default function MobileAppPage() {
   const [phase, setPhase] = useState<string>("splash");
   const [role, setRole] = useState<"rider" | "passenger">("rider");
   const [session, setSession] = useState<MobileSession | null>(null);
+  const [bottomNavTab, setBottomNavTab] = useState<MobileNavTab>("home");
+  const [isSoundMuted, setIsSoundMuted] = useState(false);
 
   // OTP Form State
   const [phoneInput, setPhoneInput] = useState("");
@@ -517,28 +523,35 @@ export default function MobileAppPage() {
   };
 
   // -------------------------------------------------------------
-  // VIEW: SPLASH SCREEN (Light Theme)
+  // VIEW: SPLASH / LOADING SCREEN (World-Class Dynamic Branding)
   // -------------------------------------------------------------
   if (phase === "splash") {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-slate-50 text-slate-900 flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="relative">
-          <div className="w-24 h-24 rounded-3xl bg-white border border-emerald-200 flex items-center justify-center shadow-xl shadow-emerald-500/10">
-            <Car className="w-12 h-12 text-emerald-600" />
-          </div>
-          <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-amber-500 animate-bounce" />
-        </div>
-        <h1 className="mt-6 text-2xl font-black tracking-tight text-slate-900">
-          সুন্দরবন রাইডার
-        </h1>
-        <p className="text-emerald-700 text-xs font-bold uppercase tracking-widest mt-1">
-          Smart Toto Mobility • 24x7
-        </p>
-        <div className="mt-12 flex items-center gap-2 text-slate-400 text-xs font-medium">
-          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-          <span>লোড হচ্ছে...</span>
-        </div>
-      </div>
+      <AppSplashScreen
+        minDurationMs={1800}
+        onComplete={() => {
+          const saved = localStorage.getItem("sr_mobile_session");
+          const perms = localStorage.getItem("sr_permissions_granted");
+          if (!perms) {
+            setPhase("permissions");
+          } else if (saved) {
+            try {
+              const parsed = JSON.parse(saved) as MobileSession;
+              setSession(parsed);
+              setRole(parsed.role);
+              if (parsed.role === "rider") {
+                setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
+              } else {
+                setPhase("passenger_home");
+              }
+            } catch {
+              setPhase("select_role");
+            }
+          } else {
+            setPhase("select_role");
+          }
+        }}
+      />
     );
   }
 
@@ -547,78 +560,82 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "permissions") {
     return (
-      <div className="min-h-screen bg-white text-slate-900 flex flex-col justify-between p-6">
-        <div className="pt-6 space-y-6">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-sm">
-            <ShieldCheck className="w-8 h-8" />
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-5 select-none">
+        <div className="pt-3 space-y-5 max-w-md mx-auto w-full">
+          <div className="flex items-center justify-between">
+            <SundarbanLogo size="sm" variant="full" />
+            <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              অনুমতি কনফিগারেশন
+            </span>
           </div>
+
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h2 className="text-2xl font-black tracking-tight text-slate-900">
               অ্যাপের প্রয়োজনীয় অনুমতি
             </h2>
-            <p className="text-slate-500 text-sm mt-1">
-              উবার বা র‍্যাপিডোর মতো সঠিক পরিষেবা নিশ্চিত করতে নিচের অনুমতিগুলো গ্রহণ করা আবশ্যক:
+            <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+              উবার বা র‍্যাপিডোর মতো সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+          <div className="space-y-2.5">
+            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
               <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
                 <MapPin className="w-5 h-5" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS)</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  নিকটস্থ ৫ কিমির মধ্যে বুকিং প্রদান ও ম্যাপের লাইভ রুট নির্দেশনার জন্য।
+                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                  নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা ও আসল সড়কের লাইভ রুট দেখার জন্য।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
               <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 shrink-0 border border-purple-100">
                 <Bell className="w-5 h-5" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও স্ট্যাটাসের তাৎক্ষণিক অ্যালার্ট পেতে।
+                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                  অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক অ্যালার্ট।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
               <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 border border-amber-100">
                 <Volume2 className="w-5 h-5" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  রাইড আসার সাথে সাথে উচ্চশব্দে রিংটোন বেজে ওঠা ও ভাইব্রেশন নিশ্চিত করতে।
+                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                  রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট সাউন্ড কিউ বেজে উঠবে।
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 shadow-sm">
+            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
               <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0 border border-emerald-100">
                 <Zap className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-slate-900">স্ক্রিন ওয়েক-লক</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                  মোবাইল স্লিপ বা লক থাকলেও নতুন বুকিং আসার সাথে সাথে স্ক্রিন অন হতে।
+                <h4 className="text-sm font-bold text-slate-900">স্মার্ট ওয়েক-লক</h4>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                  রাইড চলমান অবস্থায় স্ক্রিন অফ হয়ে ম্যাপ ট্র্যাকিং বিচ্ছিন্ন হওয়া রোধ করে।
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="pb-4">
+        <div className="pb-3 max-w-md mx-auto w-full pt-4">
           <Button
             size="lg"
-            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+            className="w-full h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20 active:scale-98 transition-all"
             onClick={handleGrantPermissions}
           >
-            অনুমতি নিশ্চিত করুন ও এগিয়ে যান
+            অনুমতি নিশ্চিত করুন ও প্রবেশ করুন
             <ArrowRight className="w-5 h-5 ml-2" />
           </Button>
         </div>
@@ -627,43 +644,49 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: ROLE SELECTOR SCREEN (Light Theme)
+  // VIEW: ROLE SELECTOR SCREEN (Modern Branding & Vibrant Cards)
   // -------------------------------------------------------------
   if (phase === "select_role") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6">
-        <div className="pt-8 text-center">
-          <div className="w-16 h-16 rounded-3xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 mx-auto mb-4 shadow-md">
-            <Car className="w-8 h-8" />
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
+        <div className="pt-6 text-center max-w-md mx-auto w-full">
+          <div className="flex justify-center mb-6">
+            <SundarbanLogo size="xl" animated={true} />
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-            সুন্দরবন রাইডারে স্বাগতম
+
+          <h2 className="text-2xl font-black tracking-tight text-slate-900">
+            স্বাগতম সুন্দরবন রাইডার্সে
           </h2>
-          <p className="text-slate-500 text-sm mt-1 max-w-xs mx-auto font-medium">
-            আপনি কীভাবে সুন্দরবন রাইডার ব্যবহার করতে চান?
+          <p className="text-slate-500 text-xs mt-1 max-w-xs mx-auto font-medium">
+            কাকদ্বীপ, নামখানা, ডায়মন্ড হারবার ও সুন্দরবন অঞ্চলের প্রধান স্মার্ট ই-টোটো প্ল্যাটফর্ম।
           </p>
 
-          <div className="mt-8 space-y-4">
-            {/* Rider Card */}
+          <div className="mt-7 space-y-3.5">
+            {/* Rider (Driver) Partner Card */}
             <button
               onClick={() => {
                 setRole("rider");
                 setPhase("otp_login");
               }}
-              className="w-full p-5 rounded-2xl bg-white border-2 border-emerald-200 hover:border-emerald-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between"
+              className="w-full p-4.5 rounded-3xl bg-white border-2 border-emerald-200 hover:border-emerald-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between group"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-                  <Car className="w-7 h-7" />
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center text-3xl shadow-md shrink-0 group-hover:scale-105 transition-transform">
+                  🛺
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-slate-900">🛺 টোটো চালক (Rider)</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    রাইড গ্রহণ করুন, দৈনিক আয় বাড়ান ও স্মার্ট ড্রাইভার হন।
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-base text-slate-900">টোটো চালক দাদা</h3>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      Rider Partner
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 font-medium leading-snug">
+                    নতুন রাইড গ্রহণ করুন, দৈনিক ক্যাশ আয় বাড়ান ও স্মার্ট চালক হন।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6 text-emerald-600 shrink-0" />
+              <ChevronRight className="w-5 h-5 text-emerald-600 shrink-0 group-hover:translate-x-1 transition-transform" />
             </button>
 
             {/* Passenger Card */}
@@ -672,26 +695,31 @@ export default function MobileAppPage() {
                 setRole("passenger");
                 setPhase("otp_login");
               }}
-              className="w-full p-5 rounded-2xl bg-white border-2 border-blue-200 hover:border-blue-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between"
+              className="w-full p-4.5 rounded-3xl bg-white border-2 border-sky-200 hover:border-sky-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between group"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
-                  <User className="w-7 h-7" />
+              <div className="flex items-center gap-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-700 text-white flex items-center justify-center text-2xl shadow-md shrink-0 group-hover:scale-105 transition-transform">
+                  👤
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg text-slate-900">👤 সাধারণ যাত্রী (Passenger)</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    মাত্র ৫ মিনিটে টোটো বুকিং করুন ও নিরাপদ ভ্রমণ নিশ্চিত করুন।
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-base text-slate-900">সাধারণ যাত্রী</h3>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
+                      Passenger
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 font-medium leading-snug">
+                    দ্রুত টোটো বুক করুন, লাইভ রোড রুট দেখুন ও নিরাপদে পৌঁছান।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-6 h-6 text-blue-600 shrink-0" />
+              <ChevronRight className="w-5 h-5 text-sky-600 shrink-0 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         </div>
 
-        <div className="text-center pb-4 text-xs text-slate-400 font-medium">
-          সুন্দরবন রাইডার • ২৪x৭ নিরাপদ পরিবহন
+        <div className="text-center pb-2 text-[11px] text-slate-400 font-semibold max-w-md mx-auto w-full">
+          ⚡ সুন্দরবন রাইডার্স • ২৪×৭ নিরাপদ ও অনুমোদিত ই-টোটো নেটওয়ার্ক
         </div>
       </div>
     );
@@ -702,32 +730,33 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "otp_login") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6">
-        <div className="pt-6 space-y-6">
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
+        <div className="pt-4 space-y-6 max-w-md mx-auto w-full">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setPhase("select_role")}
-              className="text-xs text-slate-500 hover:text-slate-900 font-medium flex items-center gap-1"
+              className="text-xs text-slate-500 hover:text-slate-900 font-bold flex items-center gap-1 p-1 -ml-1 rounded-lg transition-colors"
             >
-              ← ফিরে যান
+              ← ভূমিকা পরিবর্তন
             </button>
-            <span
-              className={`text-xs font-bold px-3 py-1 rounded-full ${
-                role === "rider"
-                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  : "bg-blue-100 text-blue-800 border border-blue-200"
-              }`}
-            >
-              {role === "rider" ? "🛺 চালক লগইন" : "👤 যাত্রী লগইন"}
-            </span>
+            <SundarbanLogo size="sm" variant="badge" showTagline={false} />
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              WhatsApp OTP দিয়ে লগইন
+            <span
+              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                role === "rider"
+                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                  : "bg-sky-100 text-sky-800 border border-sky-200"
+              }`}
+            >
+              {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন"}
+            </span>
+            <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-2">
+              WhatsApp OTP দিয়ে প্রবেশ
             </h2>
-            <p className="text-slate-500 text-sm mt-1 font-medium">
-              আপনার ফোন নম্বরে কোনো SMS চার্জ ছাড়াই সরাসরি হোয়াটসঅ্যাপে কোড যাবে।
+            <p className="text-slate-500 text-xs mt-1 font-medium">
+              আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।
             </p>
           </div>
 
@@ -1022,51 +1051,54 @@ export default function MobileAppPage() {
   if (phase === "rider_home") {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between relative overflow-hidden select-none">
-        {/* Header Bar */}
-        <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-xl shadow-sm">
+        {/* Modern App Header */}
+        <MobileAppHeader
+          role="rider"
+          userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
+          isSoundMuted={isSoundMuted}
+          onToggleSound={() => {
+            setIsSoundMuted(!isSoundMuted);
+            toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
+          }}
+          onSwitchRole={handleSwitchRole}
+          onSosClick={() => setShowSosModal(true)}
+          onLogout={handleLogout}
+        />
+
+        {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
+        <div className="bg-white/95 backdrop-blur-md px-4 py-2.5 border-b border-slate-200 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-lg shadow-2xs">
               🛺
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="font-bold text-sm text-slate-900">{session?.driverName || "চালকের ড্যাশবোর্ড"}</h3>
-                <span className="flex items-center text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                  <Star className="w-2.5 h-2.5 fill-amber-500 mr-0.5" /> 5.0
+                <span className="font-extrabold text-xs text-slate-900">{session?.driverName || "টোটো চালক দাদা"}</span>
+                <span className="flex items-center text-[9px] text-amber-700 font-bold bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+                  ★ 5.0
                 </span>
               </div>
-              <p className="text-[11px] font-mono text-slate-500 font-semibold">{session?.totoNumber || "WB-96-T-8421"}</p>
+              <span className="text-[10px] font-mono font-bold text-slate-500">{session?.totoNumber || "WB-96-T-8421"}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Quick Switch to Passenger Mode */}
-            <button
-              onClick={handleSwitchRole}
-              title="যাত্রী মোডে যান"
-              className="text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1 hover:bg-blue-100 transition-colors"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">যাত্রী মোড</span>
-            </button>
-
-            {/* Online / Offline Toggle */}
-            <button
-              onClick={() => {
-                setIsOnline(!isOnline);
-                playSuccessSound();
-                toast.success(!isOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
-              }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                isOnline
-                  ? "bg-emerald-600 text-white shadow-emerald-600/20"
-                  : "bg-red-50 text-red-600 border border-red-200"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
-              {isOnline ? "অনলাইন" : "অফলাইন"}
-            </button>
-          </div>
+          {/* Online / Offline Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOnline(!isOnline);
+              if (!isSoundMuted) playSuccessSound();
+              toast.success(!isOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+            }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+              isOnline
+                ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
+                : "bg-red-50 text-red-600 border border-red-200"
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
+            <span>{isOnline ? "অনলাইন (ডিউটি)" : "অফলাইন"}</span>
+          </button>
         </div>
 
         {/* Radar & Status Area (When Idle) */}
@@ -1392,6 +1424,16 @@ export default function MobileAppPage() {
             </div>
           </div>
         )}
+
+        {/* Mobile Bottom Navigation Dock for Rider */}
+        <MobileBottomNav
+          activeTab={bottomNavTab}
+          onTabChange={(t) => {
+            if (t === "safety") setShowSosModal(true);
+            else setBottomNavTab(t);
+          }}
+          role="rider"
+        />
       </div>
     );
   }
@@ -1696,44 +1738,22 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
-      {/* Passenger Header */}
-      <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shadow-sm">
-            👤
-          </div>
-          <div>
-            <h3 className="font-bold text-sm text-slate-900">{session?.passengerName || "যাত্রী পোর্টাল"}</h3>
-            <p className="text-[11px] text-emerald-600 flex items-center gap-1 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              টোটো বুকিং ২৪x৭ প্রস্তুত
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Quick Switch to Rider Mode */}
-          <button
-            onClick={handleSwitchRole}
-            title="চালক মোডে যান"
-            className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1 hover:bg-emerald-100 transition-colors"
-          >
-            <Car className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">চালক মোড</span>
-          </button>
-
-          <button
-            onClick={handleLogout}
-            title="লগআউট"
-            className="p-2 text-slate-500 hover:text-slate-900"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Modern App Header */}
+      <MobileAppHeader
+        role="passenger"
+        userName={session?.passengerName || "যাত্রী বন্ধু"}
+        isSoundMuted={isSoundMuted}
+        onToggleSound={() => {
+          setIsSoundMuted(!isSoundMuted);
+          toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
+        }}
+        onSwitchRole={handleSwitchRole}
+        onSosClick={() => setShowSosModal(true)}
+        onLogout={handleLogout}
+      />
 
       {/* Main Booking Interface */}
-      <div className="flex-1 p-4 sm:p-6 space-y-4">
+      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-24">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
           <p className="text-slate-500 text-xs mt-0.5 font-medium">
@@ -1952,6 +1972,16 @@ export default function MobileAppPage() {
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Navigation Dock for Passenger */}
+      <MobileBottomNav
+        activeTab={bottomNavTab}
+        onTabChange={(t) => {
+          if (t === "safety") setShowSosModal(true);
+          else setBottomNavTab(t);
+        }}
+        role="passenger"
+      />
     </div>
   );
 }

@@ -143,6 +143,7 @@ export function InteractiveBookingMap({
   const [selectedTier, setSelectedTier] = useState<RideTier>("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
+  const [showMapPreview, setShowMapPreview] = useState<boolean>(false);
 
   // Road Routing Data from /api/route
   const [roadRouteSummary, setRoadRouteSummary] = useState<string>(
@@ -454,12 +455,14 @@ export function InteractiveBookingMap({
       }
 
       mapInstanceRef.current = map;
-      if (isMounted) {
+      if (isMounted && showMapPreview) {
         updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords);
       }
     }
 
-    initMap();
+    if (showMapPreview) {
+      initMap();
+    }
 
     return () => {
       isMounted = false;
@@ -468,7 +471,13 @@ export function InteractiveBookingMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [realDrivers, mapLayer]);
+  }, [realDrivers, mapLayer, showMapPreview]);
+
+  // Initial Route & Fare calculation on component load
+  useEffect(() => {
+    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, selectedTier, paymentMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 2. Real Browser GPS Auto-Fetch: Sets customer real-time location as pickup
   const fetchCurrentLocation = useCallback(() => {
@@ -668,69 +677,99 @@ export function InteractiveBookingMap({
   return (
     <div className="space-y-3.5">
       {/* ----------------------------------------------------------- */}
-      {/* 1. Interactive Map Container (Uber / Rapido Caliber)        */}
+      {/* 1. Fast Availability & Proximity Bar (Uber/Rapido Style)     */}
       {/* ----------------------------------------------------------- */}
-      <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
-        <div ref={mapContainerRef} className="w-full h-full z-10" />
-
-        {/* Top Floating Bar: Real Registered Drivers Badge */}
-        <div className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-md border border-slate-200 flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-          <span className="text-xs font-bold text-slate-800">
-            {realDrivers.length > 0
-              ? `${realDrivers.length}টি নিবন্ধিত টোটো সক্রিয়`
-              : "নিকটবর্তী টোটো খুঁজছে..."}
-          </span>
-        </div>
-
-        {/* Top-Right Map Controls: Satellite Toggle & Fit Route */}
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setMapLayer((prev) => (prev === "streets" ? "hybrid" : "streets"))}
-            title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "ম্যাপ ভিউ"}
-            className="h-9 px-2.5 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
-          >
-            <Layers className="w-3.5 h-3.5 text-blue-600" />
-            <span>{mapLayer === "streets" ? "স্যাটেলাইট" : "রোড"}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleFitBounds}
-            title="সম্পূর্ণ রুট দেখুন"
-            className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Bottom Floating Bar: Proximity ETA Banner */}
-        {nearestDriverInfo && (
-          <div className="absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur-md text-white px-3.5 py-1.5 rounded-2xl shadow-lg border border-slate-700/50 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-medium">
-              কাছের টোটো <strong className="text-emerald-400">{nearestDriverInfo.distanceKm} কিমি</strong> দূরে •{" "}
-              <strong className="text-amber-300">~{nearestDriverInfo.etaMin} মিনিটে</strong> পিকআপ
-            </span>
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">
+            🛺
           </div>
-        )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-900">
+                {realDrivers.length > 0 ? `${realDrivers.length}টি টোটো সক্রিয়` : "সুন্দরবন রাইডার্স"}
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium">
+              {nearestDriverInfo ? `কাছের টোটো ~${nearestDriverInfo.etaMin} মিনিটে পৌঁছাবে` : "নিকটবর্তী সক্রিয় চালকদের দ্রুত বুকিং"}
+            </p>
+          </div>
+        </div>
 
-        {/* Bottom-Right GPS Live Locate Button */}
         <button
           type="button"
-          onClick={fetchCurrentLocation}
-          disabled={isLocating}
-          title="আমার রিয়েলটাইম জিপিএস অবস্থানে যান"
-          className="absolute bottom-3 right-3 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
+          onClick={() => setShowMapPreview((p) => !p)}
+          className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-colors"
         >
-          {isLocating ? (
-            <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
-          ) : (
-            <LocateFixed className="w-5 h-5 text-emerald-600" />
-          )}
+          <span>{showMapPreview ? "ম্যাপ লুকান ▲" : "🗺️ ম্যাপ প্রিভিউ ▼"}</span>
         </button>
       </div>
+
+      {/* Conditionally Render Map Preview only if passenger explicitly toggled it */}
+      {showMapPreview && (
+        <div className="relative w-full h-[320px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100 animate-in fade-in duration-200">
+          <div ref={mapContainerRef} className="w-full h-full z-10" />
+
+          {/* Top Floating Bar: Real Registered Drivers Badge */}
+          <div className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-md border border-slate-200 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+            <span className="text-xs font-bold text-slate-800">
+              {realDrivers.length > 0
+                ? `${realDrivers.length}টি নিবন্ধিত টোটো সক্রিয়`
+                : "নিকটবর্তী টোটো খুঁজছে..."}
+            </span>
+          </div>
+
+          {/* Top-Right Map Controls: Satellite Toggle & Fit Route */}
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMapLayer((prev) => (prev === "streets" ? "hybrid" : "streets"))}
+              title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "ম্যাপ ভিউ"}
+              className="h-9 px-2.5 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
+            >
+              <Layers className="w-3.5 h-3.5 text-blue-600" />
+              <span>{mapLayer === "streets" ? "স্যাটেলাইট" : "রোড"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleFitBounds}
+              title="সম্পূর্ণ রুট দেখুন"
+              className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Bottom Floating Bar: Proximity ETA Banner */}
+          {nearestDriverInfo && (
+            <div className="absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur-md text-white px-3.5 py-1.5 rounded-2xl shadow-lg border border-slate-700/50 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[11px] font-medium">
+                কাছের টোটো <strong className="text-emerald-400">{nearestDriverInfo.distanceKm} কিমি</strong> দূরে •{" "}
+                <strong className="text-amber-300">~{nearestDriverInfo.etaMin} মিনিটে</strong> পিকআপ
+              </span>
+            </div>
+          )}
+
+          {/* Bottom-Right GPS Live Locate Button */}
+          <button
+            type="button"
+            onClick={fetchCurrentLocation}
+            disabled={isLocating}
+            title="আমার রিয়েলটাইম জিপিএস অবস্থানে যান"
+            className="absolute bottom-3 right-3 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
+          >
+            {isLocating ? (
+              <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+            ) : (
+              <LocateFixed className="w-5 h-5 text-emerald-600" />
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ----------------------------------------------------------- */}
       {/* 2. Pickup & Drop Location Search Inputs                     */}
@@ -936,20 +975,22 @@ export function InteractiveBookingMap({
       {/* ----------------------------------------------------------- */}
       {/* 3.5. Live Road Route Indicator (Which Route Will Be Taken)  */}
       {/* ----------------------------------------------------------- */}
-      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 space-y-2 shadow-sm">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-            <Compass className="w-3.5 h-3.5 animate-spin-slow" />
-            <span>গন্তব্যে যাওয়ার রুট (Drop Route via Road)</span>
+      {showMapPreview && (
+        <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 space-y-2 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+              <Compass className="w-3.5 h-3.5 animate-spin-slow" />
+              <span>গন্তব্যে যাওয়ার রুট (Drop Route via Road)</span>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono font-semibold">
+              {isLoadingRoadRoute ? "রুট খোঁজা হচ্ছে..." : `~${roadDurationMin} মিনিট • ${distanceKm} কিমি`}
+            </span>
           </div>
-          <span className="text-[10px] text-slate-400 font-mono font-semibold">
-            {isLoadingRoadRoute ? "রুট খোঁজা হচ্ছে..." : `~${roadDurationMin} মিনিট • ${distanceKm} কিমি`}
-          </span>
+          <p className="text-xs font-black text-slate-100 leading-snug">
+            🛣️ {roadRouteSummary}
+          </p>
         </div>
-        <p className="text-xs font-black text-slate-100 leading-snug">
-          🛣️ {roadRouteSummary}
-        </p>
-      </div>
+      )}
 
       {/* ----------------------------------------------------------- */}
       {/* 4. Uber / Rapido Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}

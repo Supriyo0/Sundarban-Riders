@@ -86,6 +86,8 @@ export default function MobileAppPage() {
   const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
   const [searchCountdown, setSearchCountdown] = useState(300); // 5 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
+  const declinedBookingIdsRef = useRef<Set<string>>(new Set());
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -113,6 +115,37 @@ export default function MobileAppPage() {
     }
     return () => clearTimeout(timer);
   }, [phase, searchStatus, searchCountdown]);
+
+  // Passenger Live Polling: Check if any driver accepted the ride (from App or WhatsApp)
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+
+    if (phase === "passenger_searching" && searchStatus === "searching" && activeBookingId) {
+      const checkBookingAcceptance = async () => {
+        try {
+          const res = await fetch(`/api/bookings?id=${activeBookingId}`);
+          const data = await res.json();
+          if (data.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress")) {
+            const b = data.booking;
+            setPassengerBooking({
+              id: b.booking_number || b.id.slice(0, 8),
+              driverName: b.driver_name || "রাজেশ মন্ডল",
+              driverPhone: b.driver_phone || "9593177885",
+              totoNumber: b.toto_number || "WB-96-T-8421",
+            });
+            setPhase("passenger_home");
+            playSuccessSound();
+            toast.success("চালক রাইড গ্রহণ করেছেন!");
+          }
+        } catch {}
+      };
+
+      checkBookingAcceptance();
+      pollInterval = setInterval(checkBookingAcceptance, 2000);
+    }
+
+    return () => clearInterval(pollInterval);
+  }, [phase, searchStatus, activeBookingId]);
 
   // 1. Session Persistence Check on Load
   useEffect(() => {
@@ -192,26 +225,57 @@ export default function MobileAppPage() {
     }
   }, [incomingRide]);
 
-  // Simulated live demo incoming ride for online driver (after 6 seconds of going online)
+  // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
-    if (phase === "rider_home" && isOnline && !incomingRide && !activeRide) {
-      const demoTimer = setTimeout(() => {
-        setAlertCountdown(30);
-        setIncomingRide({
-          id: `SR-${Math.floor(1000 + Math.random() * 9000)}`,
-          fare: 50,
-          passengerName: "রমেশ দাস",
-          passengerRating: 4.9,
-          passengerPhone: "918348122122",
-          pickup: "গোসাবা ফেরিঘাট",
-          pickupDistance: "১.২ কিমি দূরে",
-          drop: "পাখিরালা বাজার",
-          tripDistance: "৪.৫ কিমি ট্রিপ",
-        });
-      }, 7000);
+    let pollInterval: NodeJS.Timeout;
 
-      return () => clearTimeout(demoTimer);
+    if (phase === "rider_home" && isOnline && !activeRide) {
+      const checkPendingBookings = async () => {
+        try {
+          // If already displaying an incoming ride popup, check if someone else accepted it!
+          if (incomingRide) {
+            const res = await fetch(`/api/bookings?id=${incomingRide.id}`);
+            const data = await res.json();
+            if (data.booking && data.booking.status !== "pending") {
+              // Booking was took by another rider or cancelled! Popup immediately dismisses.
+              setIncomingRide(null);
+              toast.info("এই রাইডটি অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+            }
+            return;
+          }
+
+          // Otherwise check for newly posted pending bookings
+          const res = await fetch("/api/bookings?status=pending");
+          const data = await res.json();
+          if (data.booking && data.booking.status === "pending") {
+            const b = data.booking;
+            if (!declinedBookingIdsRef.current.has(b.id)) {
+              setAlertCountdown(30);
+              setIncomingRide({
+                id: b.id,
+                bookingNumber: b.booking_number,
+                fare: b.estimated_fare || 50,
+                passengerName: b.customer_name || "যাত্রী",
+                passengerRating: 5.0,
+                passengerPhone: b.customer_phone || "918348122122",
+                pickup: b.pickup_location || "পিকআপ পয়েন্ট",
+                pickupDistance: "১.২ কিমি দূরে",
+                drop: b.drop_location || "গন্তব্য",
+                tripDistance: "৪.৫ কিমি ট্রিপ",
+              });
+            }
+          }
+        } catch {
+          // Ignore transient network errors
+        }
+      };
+
+      // Check immediately and then every 2.5 seconds
+      checkPendingBookings();
+      pollInterval = setInterval(checkPendingBookings, 2500);
     }
+
+    return () => clearInterval(pollInterval);
   }, [phase, isOnline, incomingRide, activeRide]);
 
   // Handle Permissions
@@ -1074,8 +1138,20 @@ export default function MobileAppPage() {
                   label="➡️ স্লাইড করে যাত্রা শুরু করুন"
                   confirmedLabel="যাত্রা শুরু হয়েছে 🛺"
                   colorScheme="blue"
-                  onConfirm={() => {
+                  onConfirm={async () => {
+                    try {
+                      await fetch("/api/bookings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "start",
+                          bookingId: activeRide.id,
+                          driverId: session?.driverId,
+                        }),
+                      });
+                    } catch {}
                     setActiveRide({ ...activeRide, status: "on_trip" });
+                    playSuccessSound();
                     toast.success("যাত্রা শুরু হয়েছে! সাবধানে ড্রাইভ করুন।");
                   }}
                 />
@@ -1084,8 +1160,21 @@ export default function MobileAppPage() {
                   label="➡️ স্লাইড করে ট্রিপ সমাপ্ত করুন"
                   confirmedLabel="ট্রিপ সমাপ্ত হয়েছে ✓"
                   colorScheme="emerald"
-                  onConfirm={() => {
-                    toast.success("ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹৫০.০০ সংগ্রহ করুন।");
+                  onConfirm={async () => {
+                    const fare = activeRide.fare || 50;
+                    try {
+                      await fetch("/api/bookings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "complete",
+                          bookingId: activeRide.id,
+                          driverId: session?.driverId,
+                        }),
+                      });
+                    } catch {}
+                    playSuccessSound();
+                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${fare}.00 সংগ্রহ করুন।`);
                     setActiveRide(null);
                   }}
                 />
@@ -1172,13 +1261,42 @@ export default function MobileAppPage() {
                   label="➡️ স্লাইড করে রাইড গ্রহণ করুন"
                   confirmedLabel="রাইড গ্রহণ সফল! ✓"
                   colorScheme="emerald"
-                  onConfirm={() => {
-                    setActiveRide({
-                      ...incomingRide,
-                      status: "heading_pickup",
-                    });
-                    setIncomingRide(null);
-                    toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর অবস্থানে যান।");
+                  onConfirm={async () => {
+                    try {
+                      const res = await fetch("/api/bookings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "accept",
+                          bookingId: incomingRide.id,
+                          driverId: session?.driverId || "",
+                          driverName: session?.driverName || "রাজেশ মন্ডল",
+                          driverPhone: session?.phone || "9593177885",
+                          totoNumber: session?.totoNumber || "WB-96-T-8421",
+                        }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok || data.error === "booking_already_taken") {
+                        setIncomingRide(null);
+                        toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                        return;
+                      }
+
+                      setActiveRide({
+                        ...incomingRide,
+                        status: "heading_pickup",
+                      });
+                      setIncomingRide(null);
+                      playSuccessSound();
+                      toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর অবস্থানে যান।");
+                    } catch {
+                      setActiveRide({
+                        ...incomingRide,
+                        status: "heading_pickup",
+                      });
+                      setIncomingRide(null);
+                      toast.success("রাইড গ্রহণ করা হয়েছে!");
+                    }
                   }}
                 />
 
@@ -1186,6 +1304,9 @@ export default function MobileAppPage() {
                   variant="ghost"
                   className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-10 font-bold"
                   onClick={() => {
+                    if (incomingRide?.id) {
+                      declinedBookingIdsRef.current.add(incomingRide.id);
+                    }
                     setIncomingRide(null);
                     toast.info("রাইড প্রত্যাখ্যান করা হয়েছে");
                   }}
@@ -1384,11 +1505,32 @@ export default function MobileAppPage() {
                 <Button
                   size="lg"
                   className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
-                  onClick={() => {
+                  onClick={async () => {
                     setSearchStatus("searching");
                     setSearchCountdown(300);
                     playRideAlertSound();
                     toast.info("পুনরায় ৫ মিনিটের জন্য চালক খোঁজা হচ্ছে...");
+
+                    try {
+                      const res = await fetch("/api/bookings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          customerName: session?.passengerName || "যাত্রী",
+                          customerPhone: session?.phone || "918348122122",
+                          pickupLocation: pickupText,
+                          dropLocation: dropText,
+                          pickupCoords,
+                          dropCoords,
+                          estimatedFare: tripFare,
+                          tripDistance,
+                        }),
+                      });
+                      const data = await res.json();
+                      if (data.booking && data.booking.id) {
+                        setActiveBookingId(data.booking.id);
+                      }
+                    } catch {}
                   }}
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -1615,12 +1757,35 @@ export default function MobileAppPage() {
           <Button
             size="lg"
             className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
-            onClick={() => {
+            onClick={async () => {
               setPhase("passenger_searching");
               setSearchStatus("searching");
               setSearchCountdown(300);
               playRideAlertSound();
               toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
+
+              try {
+                const res = await fetch("/api/bookings", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    customerName: session?.passengerName || "যাত্রী",
+                    customerPhone: session?.phone || "918348122122",
+                    pickupLocation: pickupText,
+                    dropLocation: dropText,
+                    pickupCoords,
+                    dropCoords,
+                    estimatedFare: tripFare,
+                    tripDistance,
+                  }),
+                });
+                const data = await res.json();
+                if (data.booking && data.booking.id) {
+                  setActiveBookingId(data.booking.id);
+                }
+              } catch (err) {
+                console.warn("[app] Failed to create live booking:", err);
+              }
             }}
           >
             🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)

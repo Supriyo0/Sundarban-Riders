@@ -46,6 +46,108 @@ interface CustomerBookingState {
 
 const customerBookingStates = new Map<string, CustomerBookingState>();
 
+export interface DriverLocationState {
+  step: "awaiting_driver_location" | "active";
+  lat?: number;
+  lng?: number;
+  locationName?: string;
+  locationType?: "live" | "manual";
+  expiresAt?: number;
+  updatedAt: number;
+}
+
+export const driverLocationStates = new Map<string, DriverLocationState>();
+
+// Sundarban Known Hubs & Landmarks for fast and offline-resilient matching
+export const SUNDARBAN_LANDMARKS = [
+  { name: "গোসাবা ফেরিঘাট", aliases: ["গোসাবা", "gosaba", "gosaba ferry ghat", "গোসাবা ঘাট"], lat: 22.1652, lng: 88.8065 },
+  { name: "পাখিরালা বাজার", aliases: ["পাখিরালা", "pakhiralay", "pakhirala", "পাখিরালয়", "পাখিরালা মোড়"], lat: 22.1485, lng: 88.8250 },
+  { name: "গদখালি জেটিঘাট", aliases: ["গদখালি", "gadkhali", "gadkhali ghat", "গদখালী"], lat: 22.1932, lng: 88.7841 },
+  { name: "সজনেখালি ফরেস্ট গেট", aliases: ["সজনেখালি", "sajnekhali", "সজনেখালী"], lat: 22.1280, lng: 88.8410 },
+  { name: "দয়াপুর ঘাট", aliases: ["দয়াপুর", "dayapur", "দয়াপুর"], lat: 22.1390, lng: 88.8310 },
+  { name: "সোনাখালি বাসস্ট্যান্ড", aliases: ["সোনাখালি", "sonakhali", "সোনাখালী"], lat: 22.2150, lng: 88.7180 },
+  { name: "আমতলী বাজার", aliases: ["আমতলী", "amtali", "amtoly"], lat: 22.1580, lng: 88.7900 },
+  { name: "রাঙাবেলিয়া মোড়", aliases: ["রাঙাবেলিয়া", "rangabelia", "রাঙাবেলিয়া"], lat: 22.1720, lng: 88.8150 },
+  { name: "ক্যানিং স্টেশন রোড", aliases: ["ক্যানিং", "canning", "ক্যানিং স্টেশন"], lat: 22.3120, lng: 88.6570 },
+  { name: "বালি ১ নং বাজার", aliases: ["বালি", "bali", "বালি বাজার"], lat: 22.1150, lng: 88.8050 },
+  { name: "ঝড়খালি বাজার", aliases: ["ঝড়খালি", "jharkhali", "ঝরখালি"], lat: 22.0150, lng: 88.7000 },
+  { name: "বাসন্তী বাজার", aliases: ["বাসন্তী", "basanti"], lat: 22.1980, lng: 88.7100 },
+];
+
+export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
+export function getNearestLandmark(lat: number, lng: number): string {
+  let closest = SUNDARBAN_LANDMARKS[0];
+  let minD = 999999;
+  for (const lm of SUNDARBAN_LANDMARKS) {
+    const d = calculateDistanceKm(lat, lng, lm.lat, lm.lng);
+    if (d < minD) {
+      minD = d;
+      closest = lm;
+    }
+  }
+  if (minD < 1.5) {
+    return closest.name;
+  }
+  return `অবস্থান (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+}
+
+export async function geocodeLocation(query: string): Promise<{ lat: number; lng: number; name: string }> {
+  const cleanQ = query.toLowerCase().trim();
+  // 1. Check known Sundarban landmarks
+  for (const lm of SUNDARBAN_LANDMARKS) {
+    if (cleanQ.includes(lm.name.toLowerCase()) || lm.aliases.some((a) => cleanQ.includes(a.toLowerCase()))) {
+      return { lat: lm.lat, lng: lm.lng, name: lm.name };
+    }
+  }
+
+  // 2. Query Google Maps Geocoding API if configured
+  const googleKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (googleKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query + ", South 24 Parganas, West Bengal, India")}&key=${googleKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === "OK" && data.results?.[0]?.geometry?.location) {
+        const loc = data.results[0].geometry.location;
+        const name = data.results[0].formatted_address || query;
+        return { lat: loc.lat, lng: loc.lng, name: name.split(",")[0] || query };
+      }
+    } catch {}
+  }
+
+  // 3. Fallback: OpenStreetMap Nominatim
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ", South 24 Parganas, West Bengal")}&format=json&limit=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "SundarbanRiders/1.0 (dispatch@sundarbanriders.com)" },
+    });
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        name: data[0].display_name?.split(",")[0] || query,
+      };
+    }
+  } catch {}
+
+  // 4. Default to center of Gosaba if completely unknown
+  return { lat: 22.1652, lng: 88.8065, name: query };
+}
+
 let cachedSettings: Record<string, string> | null = null;
 let cachedSettingsTime = 0;
 const SETTINGS_TTL_MS = 60 * 1000;
@@ -119,6 +221,9 @@ interface DriverRecord {
   agreed_at?: string;
   toto_number?: string;
   vehicle_number?: string;
+  latitude?: number;
+  longitude?: number;
+  current_location_name?: string;
 }
 
 interface CustomerRecord {
@@ -265,16 +370,36 @@ export async function processTotoMessage(
       ? `https://www.google.com/maps/dir/?api=1&destination=${pickupLoc.replace(/\s+/g, '')}`
       : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pickupLoc)}`;
 
-    const extraNotifications = [
+    const extraNotifications: NonNullable<OutboundWhatsAppAction["extraNotifications"]> = [
       {
         toPhone: booking.customer_phone,
-        type: "interactive_buttons" as const,
+        type: "interactive_buttons",
         bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🚘 টোটো নম্বর: ${driver?.toto_number || driver?.vehicle_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],
       },
     ];
+
+    // Inform other online drivers on WhatsApp that this booking was taken
+    try {
+      const { data: otherDrivers } = await supabase
+        .from("drivers")
+        .select("phone")
+        .neq("phone", rawPhone);
+
+      if (otherDrivers && otherDrivers.length > 0) {
+        for (const od of otherDrivers) {
+          if (od.phone) {
+            extraNotifications.push({
+              toPhone: od.phone,
+              type: "text",
+              bodyText: `ℹ️ বুকিং আপডেট: #${booking.booking_number} রাইডটি চালক ${driver?.name || "অন্য একজন চালক"} গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+            });
+          }
+        }
+      }
+    } catch {}
 
     return {
       toPhone: rawPhone,
@@ -397,15 +522,121 @@ export async function processTotoMessage(
 
     driver.agreed_terms = true;
 
+    // Immediately prompt for driver location (Live or Typed)
+    driverLocationStates.set(cleanPhone, {
+      step: "awaiting_driver_location",
+      updatedAt: Date.now(),
+    });
+
     return {
       toPhone: rawPhone,
-      type: "interactive_buttons",
-      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\nআপনি সুন্দরবন রাইডার চালক হিসেবে নিবন্ধিত আছেন। ডিউটি শুরু করতে বা টোটো বুক করতে নিচের অপশন বেছে নিন:`,
-      buttons: [
-        { id: "take_ride", title: "🛺 রাইডার লগইন" },
-        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
-      ],
+      type: "text",
+      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\n📍 এবার আপনার বর্তমান অবস্থান (Driver Location) প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যে থাকা যাত্রীদের বুকিং পেতে আপনার অবস্থান প্রয়োজন।\n\n👉 নিচের যে কোনো একটি উপায়ে আপনার অবস্থান শেয়ার করুন:\n১) WhatsApp-এর Attach (📎) আইকন থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা আপনার বর্তমান বাসস্ট্যান্ড/বাজারের নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার", "ক্যানিং")।`,
     };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW B.1.1: DRIVER LOCATION RECEIVER (Live Location or Typed Text)
+  // -------------------------------------------------------------
+  const driverLocState = driverLocationStates.get(cleanPhone);
+  if (
+    isRegisteredDriver &&
+    driver &&
+    (driverLocState?.step === "awaiting_driver_location" || ctx.location) &&
+    payload !== "cancel_ride" &&
+    payload !== "driver_go_offline" &&
+    payload !== "book_toto" &&
+    !payload.startsWith("driver_accept_") &&
+    !payload.startsWith("driver_decline_") &&
+    !payload.startsWith("driver_start_") &&
+    !payload.startsWith("driver_complete_")
+  ) {
+    let lat: number | undefined;
+    let lng: number | undefined;
+    let locName: string | undefined;
+    let locType: "live" | "manual" = "manual";
+
+    if (ctx.location?.latitude && ctx.location?.longitude) {
+      lat = ctx.location.latitude;
+      lng = ctx.location.longitude;
+      locType = "live";
+      locName = ctx.location.name || ctx.location.address || getNearestLandmark(lat, lng);
+    } else if (incomingText && incomingText !== "লগইন" && incomingText !== "রাইডার লগইন") {
+      const typedQuery = ctx.textBody?.trim() || incomingText;
+      const geocoded = await geocodeLocation(typedQuery);
+      lat = geocoded.lat;
+      lng = geocoded.lng;
+      locName = geocoded.name;
+      locType = "manual";
+    }
+
+    if (lat !== undefined && lng !== undefined && locName) {
+      const durationMs = locType === "live" ? 15 * 60 * 1000 : 30 * 60 * 1000;
+      const expiresAt = Date.now() + durationMs;
+
+      driverLocationStates.set(cleanPhone, {
+        step: "active",
+        lat,
+        lng,
+        locationName: locName,
+        locationType: locType,
+        expiresAt,
+        updatedAt: Date.now(),
+      });
+
+      const metaObj = {
+        name: locName,
+        lat,
+        lng,
+        type: locType,
+        expiresAt: new Date(expiresAt).toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      try {
+        await supabase
+          .from("drivers")
+          .update({
+            latitude: lat,
+            longitude: lng,
+            current_location_name: JSON.stringify(metaObj),
+            is_active: true,
+            is_available: true,
+          })
+          .eq("id", driver.id);
+      } catch {
+        await supabase
+          .from("drivers")
+          .update({
+            current_location_name: JSON.stringify(metaObj),
+            is_active: true,
+            is_available: true,
+          })
+          .eq("id", driver.id);
+      }
+
+      void Promise.resolve(
+        supabase.from("toto_riders").update({
+          last_known_lat: lat,
+          last_known_lng: lng,
+          last_location_updated_at: new Date().toISOString(),
+          duty_status: "online_available",
+        }).eq("phone_number", cleanPhone)
+      ).catch(() => {});
+
+      const typeLabel = locType === "live" ? "লাইভ লোকেশন" : "ম্যাপ লোকেশন";
+      const validityText = locType === "live" ? "১৫ মিনিট (WhatsApp লাইভ)" : "৩০ মিনিট";
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🟢 আপনার ${typeLabel} সফলভাবে যুক্ত হয়েছে!\n=======================\n📍 বর্তমান অবস্থান: ${locName}\n🗺️ ম্যাপ কোঅর্ডিনেট: (${lat.toFixed(4)}, ${lng.toFixed(4)})\n⏱️ লোকেশন মেয়াদ: ${validityText}\n🛺 ডিউটি স্ট্যাটাস: অনলাইন ও প্রস্তুত\n=======================\nকাছাকাছি ৫ কিমির মধ্যে কোনো যাত্রী বুকিং করলে আপনি সঙ্গে সঙ্গে নোটিফিকেশন পাবেন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    }
   }
 
   // -------------------------------------------------------------
@@ -437,7 +668,24 @@ export async function processTotoMessage(
         };
       }
 
-      // Driver has already agreed to terms -> turn online and show offline toggle & booking button
+      // Check if location is expired or missing
+      const driverLoc = driverLocationStates.get(cleanPhone);
+      const isLocationExpired = !driverLoc || (driverLoc.expiresAt && Date.now() > driverLoc.expiresAt);
+
+      if (isLocationExpired) {
+        driverLocationStates.set(cleanPhone, {
+          step: "awaiting_driver_location",
+          updatedAt: Date.now(),
+        });
+
+        return {
+          toPhone: rawPhone,
+          type: "text",
+          bodyText: `🛺 ডিউটি শুরুর পূর্বে অবস্থান প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার যাত্রীদের বুকিং পেতে আপনার বর্তমান অবস্থান প্রয়োজন।\n\n👉 যে কোনো একটি উপায়ে লোকেশন পাঠান:\n১) WhatsApp-এর Attach (📎) থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা বর্তমান এলাকার নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার")।`,
+        };
+      }
+
+      // Driver has valid location -> turn online and show offline toggle & booking button
       void Promise.resolve(
         supabase
           .from("drivers")
@@ -448,7 +696,7 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\nশীঘ্রই আপনার কাছে নতুন রাইড বা বুকিংয়ের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি বন্ধ করতে বা নিজে টোটো বুক করতে নিচের বোতামে চাপুন)`,
+        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\n📍 অবস্থান: ${driverLoc.locationName || "সুন্দরবন"}\nশীঘ্রই আপনার কাছে নতুন রাইডের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি বন্ধ করতে বা নিজে টোটো বুক করতে নিচের বোতামে চাপুন)`,
         buttons: [
           { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
@@ -494,7 +742,40 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
-  // FLOW B.4: FIRST-TIME REGISTERED DRIVER DISCLAIMER (Strictly ONE TIME)
+  // FLOW B.4: CHECK IF LIVE LOCATION TIME HAS EXPIRED
+  // -------------------------------------------------------------
+  const existingDriverLoc = driverLocationStates.get(cleanPhone);
+  const isLocExpired =
+    existingDriverLoc &&
+    existingDriverLoc.expiresAt &&
+    Date.now() > existingDriverLoc.expiresAt;
+
+  if (
+    isRegisteredDriver &&
+    driver &&
+    driver.agreed_terms &&
+    isLocExpired &&
+    payload !== "book_toto" &&
+    payload !== "driver_go_offline" &&
+    !payload.startsWith("driver_accept_") &&
+    !payload.startsWith("driver_decline_") &&
+    !payload.startsWith("driver_start_") &&
+    !payload.startsWith("driver_complete_")
+  ) {
+    driverLocationStates.set(cleanPhone, {
+      step: "awaiting_driver_location",
+      updatedAt: Date.now(),
+    });
+
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `⚠️ আপনার লাইভ লোকেশনের সময় শেষ হয়েছে!\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার নতুন যাত্রীদের বুকিং চালু রাখতে অনুগ্রহ করে পুনরায় আপনার লাইভ লোকেশন অথবা বর্তমান এলাকার নাম পাঠান।\n\n👉 WhatsApp-এর Attach (📎) থেকে 'Location' শেয়ার করুন অথবা এলাকার নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার")।`,
+    };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW B.5: FIRST-TIME REGISTERED DRIVER DISCLAIMER (Strictly ONE TIME)
   // If registered driver sends any message and has NOT agreed to terms yet
   // -------------------------------------------------------------
   if (isRegisteredDriver && driver && !driver.agreed_terms && payload !== "book_toto") {
@@ -720,22 +1001,67 @@ export async function processTotoMessage(
         status: "pending",
       }).select().maybeSingle();
 
-      // Query online drivers
+      // Geocode pickup if coordinates were not provided by GPS
+      let pLat = bookingState.pickupLat;
+      let pLng = bookingState.pickupLng;
+      if (!pLat || !pLng) {
+        const pGeo = await geocodeLocation(pickupLocation);
+        pLat = pGeo.lat;
+        pLng = pGeo.lng;
+      }
+
+      // Query online drivers and filter nearby within 5 km radar
       const { data: onlineDrivers } = await supabase
         .from("drivers")
         .select("*")
         .eq("is_active", true)
         .eq("is_available", true);
 
-      const extraNotifications = (onlineDrivers || []).map((d) => ({
-        toPhone: d.phone,
-        type: "interactive_buttons" as const,
-        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹50.00\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
-        buttons: [
-          { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
-          { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ প্রত্যাখ্যান" },
-        ],
-      }));
+      // Filter drivers within 5km radius of pickup location
+      const nearbyDrivers = (onlineDrivers || []).filter((d) => {
+        if (!pLat || !pLng) return true;
+        let dLat = d.latitude;
+        let dLng = d.longitude;
+        if (!dLat || !dLng) {
+          try {
+            const meta = JSON.parse(d.current_location_name || "{}");
+            dLat = meta.lat;
+            dLng = meta.lng;
+          } catch {}
+        }
+        if (!dLat || !dLng) return true; // Include if unknown coordinates
+        const distKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
+        return distKm <= 5.0; // 5 km radar!
+      });
+
+      const extraNotifications = nearbyDrivers.map((d) => {
+        let distText = "";
+        if (pLat && pLng) {
+          let dLat = d.latitude;
+          let dLng = d.longitude;
+          if (!dLat || !dLng) {
+            try {
+              const meta = JSON.parse(d.current_location_name || "{}");
+              dLat = meta.lat;
+              dLng = meta.lng;
+            } catch {}
+          }
+          if (dLat && dLng) {
+            const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
+            distText = ` [${dKm} কিমি দূরে]`;
+          }
+        }
+
+        return {
+          toPhone: d.phone,
+          type: "interactive_buttons" as const,
+          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹50.00\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+          buttons: [
+            { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
+            { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ প্রত্যাখ্যান" },
+          ],
+        };
+      });
 
       return {
         toPhone: rawPhone,

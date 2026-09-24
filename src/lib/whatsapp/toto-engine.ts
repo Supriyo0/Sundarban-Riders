@@ -146,7 +146,7 @@ export async function processTotoMessage(
       supabase
         .from("drivers")
         .select("*")
-        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10}`)
+        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`)
         .limit(1)
         .maybeSingle()
     ).catch(() => ({ data: null, error: null }));
@@ -160,7 +160,7 @@ export async function processTotoMessage(
       supabase
         .from("customers")
         .select("*")
-        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10}`)
+        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`)
         .limit(1)
         .maybeSingle()
     ).catch(() => ({ data: null, error: null }));
@@ -178,6 +178,14 @@ export async function processTotoMessage(
   const helpline = settings.helpline_number || "8348122122";
   const driver = (driverRes?.data as DriverRecord | null) ?? null;
   const customer = (customerRes?.data as CustomerRecord | null) ?? null;
+
+  // Check if sender is a registered and approved driver
+  const isRegisteredDriver = Boolean(
+    driver &&
+    driver.is_approved !== false &&
+    driver.is_blocked !== true &&
+    driver.status !== "blocked"
+  );
 
   // Background customer sync (non-blocking)
   if (!customer) {
@@ -366,6 +374,145 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
+  // FLOW B.1: DRIVER AGREE TO TERMS (Strictly ONE TIME Acceptance)
+  // -------------------------------------------------------------
+  if (
+    isRegisteredDriver &&
+    driver &&
+    (payload === "driver_agree_terms" ||
+      payload === "agree_disclaimer" ||
+      (!driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ")))
+  ) {
+    // Clear any accidental customer booking state
+    customerBookingStates.delete(cleanPhone);
+
+    // Save one-time agreement in database
+    await supabase
+      .from("drivers")
+      .update({
+        agreed_terms: true,
+        agreed_at: new Date().toISOString(),
+      })
+      .eq("id", driver.id);
+
+    driver.agreed_terms = true;
+
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\nআপনি সুন্দরবন রাইডার চালক হিসেবে নিবন্ধিত আছেন। ডিউটি শুরু করতে বা টোটো বুক করতে নিচের অপশন বেছে নিন:`,
+      buttons: [
+        { id: "take_ride", title: "🛺 রাইডার লগইন" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+      ],
+    };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW B.2: DRIVER DUTY ON (Rider Login)
+  // -------------------------------------------------------------
+  if (
+    payload === "take_ride" ||
+    payload === "rider_login" ||
+    payload === "driver_join" ||
+    incomingText.includes("রাইডার লগইন") ||
+    incomingText.includes("লগইন") ||
+    incomingText.includes("রাইড নিন") ||
+    incomingText.includes("take ride")
+  ) {
+    if (isRegisteredDriver && driver) {
+      // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button
+      if (!driver.agreed_terms) {
+        const driverTerms =
+          settings.driver_terms_bengali ||
+          DEFAULT_TOTO_DRIVER_DISCLAIMER;
+
+        return {
+          toPhone: rawPhone,
+          type: "interactive_buttons",
+          bodyText: driverTerms,
+          buttons: [
+            { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+          ],
+        };
+      }
+
+      // Driver has already agreed to terms -> turn online and show offline toggle & booking button
+      void Promise.resolve(
+        supabase
+          .from("drivers")
+          .update({ is_active: true, is_available: true })
+          .eq("id", driver.id)
+      ).catch(() => {});
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\nশীঘ্রই আপনার কাছে নতুন রাইড বা বুকিংয়ের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি বন্ধ করতে বা নিজে টোটো বুক করতে নিচের বোতামে চাপুন)`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    } else {
+      // User is NOT registered as a rider -> inform them and allow booking
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ দুঃখিত! আপনার নম্বরটি চালক হিসেবে নিবন্ধিত নয়। সুন্দরবন রাইডার চালক হিসেবে যুক্ত হতে হেল্পলাইনে (${helpline}) যোগাযোগ করুন।\n\nআপনি চাইলে এখনই টোটো বুক করতে পারেন:`,
+        buttons: [
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
+  // FLOW B.3: DRIVER GO OFFLINE
+  // -------------------------------------------------------------
+  if (
+    payload === "driver_go_offline" ||
+    incomingText.includes("অফলাইন") ||
+    incomingText.includes("offline")
+  ) {
+    if (driver) {
+      await supabase
+        .from("drivers")
+        .update({ is_active: false, is_available: false })
+        .eq("id", driver.id);
+    }
+
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nপুনরায় ডিউটি শুরু করতে বা টোটো বুকিং করতে নিচের বোতামে চাপুন:`,
+      buttons: [
+        { id: "take_ride", title: "🛺 রাইডার লগইন" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+      ],
+    };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW B.4: FIRST-TIME REGISTERED DRIVER DISCLAIMER (Strictly ONE TIME)
+  // If registered driver sends any message and has NOT agreed to terms yet
+  // -------------------------------------------------------------
+  if (isRegisteredDriver && driver && !driver.agreed_terms && payload !== "book_toto") {
+    const driverTerms =
+      settings.driver_terms_bengali ||
+      DEFAULT_TOTO_DRIVER_DISCLAIMER;
+
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: driverTerms,
+      buttons: [
+        { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+      ],
+    };
+  }
+
+  // -------------------------------------------------------------
   // FLOW C: CUSTOMER CANCELLATION HANDLER (Immediate Driver Alert)
   // -------------------------------------------------------------
   if (payload === "cancel_ride" || incomingText === "cancel" || incomingText === "বাতিল") {
@@ -455,9 +602,10 @@ export async function processTotoMessage(
   // FLOW D: CUSTOMER DISCLAIMER ACCEPTED -> ASK FOR PICKUP LOCATION
   // -------------------------------------------------------------
   if (
-    payload === "agree_disclaimer" ||
-    (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক")) ||
-    incomingText === "হ্যাঁ"
+    !isRegisteredDriver &&
+    (payload === "agree_disclaimer" ||
+      (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক")) ||
+      incomingText === "হ্যাঁ")
   ) {
     customerBookingStates.set(cleanPhone, {
       step: "awaiting_location",
@@ -684,126 +832,6 @@ export async function processTotoMessage(
     };
   }
 
-  // Check if driver is registered and approved
-  const isRegisteredDriver = Boolean(
-    driver &&
-    driver.is_approved !== false &&
-    driver.is_blocked !== true &&
-    driver.status !== "blocked"
-  );
-
-  // -------------------------------------------------------------
-  // FLOW G: TAKE RIDE / RIDER LOGIN
-  // -------------------------------------------------------------
-  if (
-    payload === "take_ride" ||
-    payload === "rider_login" ||
-    payload === "driver_join" ||
-    incomingText.includes("রাইডার লগইন") ||
-    incomingText.includes("লগইন") ||
-    incomingText.includes("রাইড নিন") ||
-    incomingText.includes("take ride")
-  ) {
-    if (isRegisteredDriver && driver) {
-      // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button
-      if (!driver.agreed_terms) {
-        const driverTerms =
-          settings.driver_terms_bengali ||
-          DEFAULT_TOTO_DRIVER_DISCLAIMER;
-
-        return {
-          toPhone: rawPhone,
-          type: "interactive_buttons",
-          bodyText: driverTerms,
-          buttons: [
-            { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
-          ],
-        };
-      }
-
-      // Driver has already agreed to terms -> turn online and show offline toggle button
-      void Promise.resolve(
-        supabase
-          .from("drivers")
-          .update({ is_active: true, is_available: true })
-          .eq("id", driver.id)
-      ).catch(() => {});
-
-      return {
-        toPhone: rawPhone,
-        type: "interactive_buttons",
-        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\nশীঘ্রই আপনার কাছে নতুন রাইড বা বুকিংয়ের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি সাময়িকভাবে বন্ধ করতে নিচের 'অফলাইন যান' বোতামে চাপুন)`,
-        buttons: [
-          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
-        ],
-      };
-    } else {
-      // User is NOT registered as a rider -> inform them and allow booking
-      return {
-        toPhone: rawPhone,
-        type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! আপনার নম্বরটি চালক হিসেবে নিবন্ধিত নয়। সুন্দরবন রাইডার চালক হিসেবে যুক্ত হতে হেল্পলাইনে (${helpline}) যোগাযোগ করুন।\n\nআপনি চাইলে এখনই টোটো বুক করতে পারেন:`,
-        buttons: [
-          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
-        ],
-      };
-    }
-  }
-
-  // -------------------------------------------------------------
-  // FLOW G.1: DRIVER AGREE TO TERMS (Accept Button)
-  // -------------------------------------------------------------
-  if (
-    payload === "driver_agree_terms" ||
-    (isRegisteredDriver && driver && !driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ"))
-  ) {
-    if (driver) {
-      await supabase
-        .from("drivers")
-        .update({
-          agreed_terms: true,
-          agreed_at: new Date().toISOString(),
-          is_active: true,
-          is_available: true,
-        })
-        .eq("id", driver.id);
-
-      return {
-        toPhone: rawPhone,
-        type: "interactive_buttons",
-        bodyText: `🟢 ধন্যবাদ! চালক চুক্তি সম্পন্ন হয়েছে এবং আপনি এখন অনলাইন আছেন!\nশীঘ্রই আপনার কাছে নতুন রাইড বা বুকিংয়ের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি সাময়িকভাবে বন্ধ করতে নিচের 'অফলাইন যান' বোতামে চাপুন)`,
-        buttons: [
-          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
-        ],
-      };
-    }
-  }
-
-  // -------------------------------------------------------------
-  // FLOW H: DRIVER GO OFFLINE
-  // -------------------------------------------------------------
-  if (
-    payload === "driver_go_offline" ||
-    incomingText.includes("অফলাইন") ||
-    incomingText.includes("offline")
-  ) {
-    if (driver) {
-      await supabase
-        .from("drivers")
-        .update({ is_active: false, is_available: false })
-        .eq("id", driver.id);
-    }
-
-    return {
-      toPhone: rawPhone,
-      type: "interactive_buttons",
-      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nপুনরায় ডিউটি শুরু করতে নিচের '🛺 রাইডার লগইন' বোতামে চাপুন।`,
-      buttons: [
-        { id: "take_ride", title: "🛺 রাইডার লগইন" },
-      ],
-    };
-  }
-
   // -------------------------------------------------------------
   // DEFAULT: MAIN WELCOME MENU (100% Bengali)
   // -------------------------------------------------------------
@@ -819,29 +847,31 @@ export async function processTotoMessage(
         type: "interactive_buttons",
         bodyText: driverTerms,
         buttons: [
-          { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
+          { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
         ],
       };
     }
 
-    // FROM NEXT TIME: Rider has already agreed -> Just goes "🛺 রাইডার লগইন"
+    // FROM NEXT TIME: Rider has already agreed to terms -> Show rider duty status and booking options
     const isOnline = Boolean(driver.is_active && driver.is_available);
     if (isOnline) {
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🟢 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনি বর্তমানে সুন্দরবন রাইডার-এ অনলাইনে আছেন এবং বুকিং গ্রহণের জন্য প্রস্তুত।`,
+        bodyText: `🟢 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনি বর্তমানে সুন্দরবন রাইডার-এ অনলাইনে আছেন এবং নতুন বুকিং গ্রহণের জন্য প্রস্তুত।`,
         buttons: [
           { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
       };
     } else {
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🙏 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআপনার আজকের ডিউটি শুরু করতে নিচের '🛺 রাইডার লগইন' বোতামে চাপুন:`,
+        bodyText: `🙏 নমস্কার ${driver.name || "চালক বন্ধু"}!\nআজকের ডিউটি শুরু করতে বা টোটো বুকিং করতে নিচের অপশন বেছে নিন:`,
         buttons: [
           { id: "take_ride", title: "🛺 রাইডার লগইন" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
       };
     }

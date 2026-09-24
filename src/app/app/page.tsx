@@ -84,7 +84,7 @@ export default function MobileAppPage() {
   const [tripDistance, setTripDistance] = useState(2.8);
   const [tripFare, setTripFare] = useState(50);
   const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
-  const [searchCountdown, setSearchCountdown] = useState(15);
+  const [searchCountdown, setSearchCountdown] = useState(300); // 5 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
 
   // Permissions state
@@ -97,7 +97,7 @@ export default function MobileAppPage() {
     }
   }, []);
 
-  // Passenger Radar Search Countdown Effect (15s timeout for nearby driver accept)
+  // Passenger Radar Search Countdown Effect (5 minutes timeout for nearby driver accept)
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (phase === "passenger_searching" && searchStatus === "searching") {
@@ -106,9 +106,9 @@ export default function MobileAppPage() {
           setSearchCountdown((prev) => prev - 1);
         }, 1000);
       } else {
-        // Timeout reached without acceptance!
+        // 5-minute timeout reached without acceptance!
         setSearchStatus("unaccepted");
-        toast.error("দুঃখিত! এই মুহূর্তে কোনো চালক রাইড গ্রহণ করতে পারছেন না।");
+        toast.error("দুঃখিত! বিগত ৫ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি।");
       }
     }
     return () => clearTimeout(timer);
@@ -1236,7 +1236,9 @@ export default function MobileAppPage() {
                 : "bg-red-100 text-red-800 border border-red-200"
             }`}
           >
-            {searchStatus === "searching" ? `অপেক্ষার সময়: ${searchCountdown}s` : "অপেক্ষারত"}
+            {searchStatus === "searching"
+              ? `অপেক্ষার সময়: ${Math.floor(searchCountdown / 60)}:${(searchCountdown % 60).toString().padStart(2, "0")}`
+              : "অপেক্ষারত"}
           </span>
         </div>
 
@@ -1266,16 +1268,16 @@ export default function MobileAppPage() {
                     কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    আশেপাশের ৪ জন অনলাইন টোটো চালকের কাছে আপনার অনুরোধ পাঠানো হয়েছে।
+                    আশেপাশের অনলাইন টোটো চালকদের কাছে আপনার অনুরোধ পাঠানো হচ্ছে (৫ মিনিট অপেক্ষা)।
                   </p>
                 </div>
               </div>
 
-              {/* Progress Countdown Bar */}
+              {/* Progress Countdown Bar (5 min / 300s) */}
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                 <div
                   className="bg-emerald-500 h-full transition-all duration-1000 rounded-full"
-                  style={{ width: `${(searchCountdown / 15) * 100}%` }}
+                  style={{ width: `${(searchCountdown / 300) * 100}%` }}
                 />
               </div>
 
@@ -1384,9 +1386,9 @@ export default function MobileAppPage() {
                   className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
                   onClick={() => {
                     setSearchStatus("searching");
-                    setSearchCountdown(15);
+                    setSearchCountdown(300);
                     playRideAlertSound();
-                    toast.info("পুনরায় ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...");
+                    toast.info("পুনরায় ৫ মিনিটের জন্য চালক খোঁজা হচ্ছে...");
                   }}
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -1616,7 +1618,7 @@ export default function MobileAppPage() {
             onClick={() => {
               setPhase("passenger_searching");
               setSearchStatus("searching");
-              setSearchCountdown(15);
+              setSearchCountdown(300);
               playRideAlertSound();
               toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
             }}

@@ -23,6 +23,9 @@ import {
   IndianRupee,
   ChevronRight,
   Filter,
+  Smartphone,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -65,6 +68,9 @@ export function DriverRadarPanel({
   const myMarkerRef = useRef<any>(null);
   const otherDriversMarkersRef = useRef<any[]>([]);
   const customerMarkersRef = useRef<any[]>([]);
+
+  // 2 Map Options: Inbuilt vs Google Maps
+  const [mapViewOption, setMapViewOption] = useState<"inbuilt" | "google">("inbuilt");
 
   // Navigation Tab between Radar & Trip History
   const [activeTab, setActiveTab] = useState<"radar" | "trips">("radar");
@@ -251,20 +257,17 @@ export function DriverRadarPanel({
     return () => clearInterval(pollTimer);
   }, [driverSession?.driverId]);
 
-  // 4. Render Leaflet Map
+  // 4A. Initialize Leaflet Map ONCE
   useEffect(() => {
     let isMounted = true;
     if (activeTab !== "radar") return;
 
     async function initDriverMap() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
+      if (mapInstanceRef.current) return;
+
       const L = await import("leaflet");
 
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-      }
-
-      // Map centered on driver
       const map = L.map(mapContainerRef.current, {
         center: driverCoords,
         zoom: 14,
@@ -276,29 +279,52 @@ export function DriverRadarPanel({
         attribution: "© Google Maps",
       }).addTo(map);
 
-      // A. Driver's Own Vehicle Marker (Pulsing Emerald with vehicle label)
-      const myVehicleIcon = L.divIcon({
-        className: "driver-my-vehicle-pin",
-        html: `
-          <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-            <div style="background: #047857; color: white; font-weight: 800; font-size: 10px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 2px; border: 1.5px solid white;">
-              ⭐ আমার টোটো (${driverSession?.totoNumber || "আমি"})
-            </div>
-            <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
-              <div style="position: absolute; inset: 0; background: #10b981; opacity: 0.35; border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-              <div style="width: 32px; height: 32px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                🛺
+      mapInstanceRef.current = map;
+    }
+
+    initDriverMap();
+
+    return () => {
+      isMounted = false;
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        myMarkerRef.current = null;
+      }
+    };
+  }, [activeTab]);
+
+  // 4B. Dynamically update Markers on Map without destroying/flickering the map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+
+    import("leaflet").then((L) => {
+      // Driver's own vehicle marker
+      if (!myMarkerRef.current) {
+        const myVehicleIcon = L.divIcon({
+          className: "driver-my-vehicle-pin",
+          html: `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+              <div style="background: #047857; color: white; font-weight: 800; font-size: 10px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 2px; border: 1.5px solid white;">
+                ⭐ আমার টোটো (${driverSession?.totoNumber || "আমি"})
+              </div>
+              <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+                <div style="position: absolute; inset: 0; background: #10b981; opacity: 0.35; border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+                <div style="width: 32px; height: 32px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                  🛺
+                </div>
               </div>
             </div>
-          </div>
-        `,
-        iconSize: [0, 0],
-      });
+          `,
+          iconSize: [0, 0],
+        });
+        myMarkerRef.current = L.marker(driverCoords, { icon: myVehicleIcon, zIndexOffset: 1000 }).addTo(map);
+      } else {
+        myMarkerRef.current.setLatLng(driverCoords);
+      }
 
-      const myMarker = L.marker(driverCoords, { icon: myVehicleIcon, zIndexOffset: 1000 }).addTo(map);
-      myMarkerRef.current = myMarker;
-
-      // B. Plot Other Registered Active Drivers (Blue icons)
+      // Plot Other Registered Active Drivers (Blue icons)
       otherDriversMarkersRef.current.forEach((m) => m.remove());
       otherDriversMarkersRef.current = [];
 
@@ -309,7 +335,6 @@ export function DriverRadarPanel({
           if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
           const dist = calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng);
-
           const otherDriverIcon = L.divIcon({
             className: "driver-other-pin",
             html: `
@@ -333,7 +358,7 @@ export function DriverRadarPanel({
         });
       }
 
-      // C. Plot Nearby Waiting Customers (Orange/Red icons)
+      // Plot Nearby Waiting Customers (Orange/Red icons)
       customerMarkersRef.current.forEach((m) => m.remove());
       customerMarkersRef.current = [];
 
@@ -365,20 +390,8 @@ export function DriverRadarPanel({
           customerMarkersRef.current.push(cm);
         });
       }
-
-      mapInstanceRef.current = map;
-    }
-
-    initDriverMap();
-
-    return () => {
-      isMounted = false;
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [driverCoords, otherDrivers, pendingBookings, filterMode, driverSession?.totoNumber, activeTab]);
+    });
+  }, [driverCoords, otherDrivers, pendingBookings, filterMode, driverSession?.totoNumber]);
 
   // Filtered trips list
   const filteredTrips = driverTrips.filter((t) => {
@@ -388,7 +401,7 @@ export function DriverRadarPanel({
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-36">
       {/* ------------------------------------------------------------- */}
       {/* 0. DRIVER PANEL TOP TAB SWITCHER                              */}
       {/* ------------------------------------------------------------- */}
@@ -474,117 +487,180 @@ export function DriverRadarPanel({
             </div>
           </div>
 
+          {/* 2-Option Switcher: View Inbuilt Map vs View in Google Maps */}
+          <div
+            className="p-1 rounded-2xl grid grid-cols-2 gap-1"
+            style={{
+              background: "rgba(241, 245, 249, 0.95)",
+              border: "1px solid rgba(203, 213, 225, 0.8)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setMapViewOption("inbuilt")}
+              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+                mapViewOption === "inbuilt"
+                  ? "bg-white text-emerald-700 shadow-sm border border-emerald-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+              <span>📱 ইনবিল্ট ম্যাপ দেখুন</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMapViewOption("google")}
+              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+                mapViewOption === "google"
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 text-blue-600" />
+              <span>🌐 গুগল ম্যাপে খুলুন</span>
+            </button>
+          </div>
+
           {/* Interactive Driver Radar Map */}
-          <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
-            <div ref={mapContainerRef} className="w-full h-full z-10" />
+          {mapViewOption === "inbuilt" ? (
+            <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
+              <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-            {/* Top Floating Entity Filter Pills */}
-            <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-              <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-md border border-slate-200 pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={() => setFilterMode("all")}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all ${
-                    filterMode === "all"
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  সব দেখান
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode("customers")}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
-                    filterMode === "customers"
-                      ? "bg-orange-600 text-white shadow-xs"
-                      : "text-orange-700 hover:bg-orange-50"
-                  }`}
-                >
-                  <span>👤 যাত্রী ({pendingBookings.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode("drivers")}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
-                    filterMode === "drivers"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-blue-700 hover:bg-blue-50"
-                  }`}
-                >
-                  <span>🛺 চালক ({otherDrivers.length})</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={updateDriverLocation}
-                title="আমার অবস্থানে সেন্টারিং করুন"
-                className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center pointer-events-auto active:scale-95"
-              >
-                <LocateFixed className="w-5 h-5 text-emerald-600" />
-              </button>
-            </div>
-
-            {/* Selected Entity Popup Sheet inside Map */}
-            {selectedEntity && (
-              <div className="absolute bottom-3 left-3 right-3 z-30 bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xl animate-in slide-in-from-bottom-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                    {selectedEntity.type === "customer" ? "অপেক্ষমান যাত্রী" : "অন্যান্য চালক"}
-                  </span>
+              {/* Top Floating Entity Filter Pills */}
+              <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-md border border-slate-200 pointer-events-auto">
                   <button
                     type="button"
-                    onClick={() => setSelectedEntity(null)}
-                    className="text-xs text-slate-400 hover:text-slate-700 font-bold"
+                    onClick={() => setFilterMode("all")}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all ${
+                      filterMode === "all"
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
-                    ✕ বন্ধ করুন
+                    সব দেখান
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterMode("customers")}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
+                      filterMode === "customers"
+                        ? "bg-orange-600 text-white shadow-xs"
+                        : "text-orange-700 hover:bg-orange-50"
+                    }`}
+                  >
+                    <span>👤 যাত্রী ({pendingBookings.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterMode("drivers")}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
+                      filterMode === "drivers"
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-blue-700 hover:bg-blue-50"
+                    }`}
+                  >
+                    <span>🛺 চালক ({otherDrivers.length})</span>
                   </button>
                 </div>
 
-                {selectedEntity.type === "customer" ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-extrabold text-sm text-slate-900">
-                        👤 {selectedEntity.data.customer_name || "যাত্রী"}
-                      </h4>
-                      <span className="text-sm font-black text-emerald-700">
-                        ₹{selectedEntity.data.estimated_fare || 50}.00
-                      </span>
+                <button
+                  type="button"
+                  onClick={updateDriverLocation}
+                  title="আমার অবস্থানে সেন্টারিং করুন"
+                  className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center pointer-events-auto active:scale-95"
+                >
+                  <LocateFixed className="w-5 h-5 text-emerald-600" />
+                </button>
+              </div>
+
+              {/* Selected Entity Popup Sheet inside Map */}
+              {selectedEntity && (
+                <div className="absolute bottom-3 left-3 right-3 z-30 bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xl animate-in slide-in-from-bottom-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      {selectedEntity.type === "customer" ? "অপেক্ষমান যাত্রী" : "অন্যান্য চালক"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEntity(null)}
+                      className="text-xs text-slate-400 hover:text-slate-700 font-bold"
+                    >
+                      ✕ বন্ধ করুন
+                    </button>
+                  </div>
+
+                  {selectedEntity.type === "customer" ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-extrabold text-sm text-slate-900">
+                          👤 {selectedEntity.data.customer_name || "যাত্রী"}
+                        </h4>
+                        <span className="text-sm font-black text-emerald-700">
+                          ₹{selectedEntity.data.estimated_fare || 50}.00
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        <p>📍 পিকআপ: <span className="font-bold text-slate-800">{selectedEntity.data.pickup_location}</span></p>
+                        <p>🏁 গন্তব্য: <span className="font-bold text-slate-800">{selectedEntity.data.drop_location}</span></p>
+                        <p className="text-emerald-700 font-bold text-[11px] mt-1">
+                          🚀 আপনার থেকে {selectedEntity.distance} কিমি দূরে
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          onAcceptRide(selectedEntity.data);
+                          setSelectedEntity(null);
+                        }}
+                        className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs"
+                      >
+                        ✅ এই রাইডটি গ্রহণ করুন
+                      </Button>
                     </div>
-                    <div className="text-xs text-slate-600">
-                      <p>📍 পিকআপ: <span className="font-bold text-slate-800">{selectedEntity.data.pickup_location}</span></p>
-                      <p>🏁 গন্তব্য: <span className="font-bold text-slate-800">{selectedEntity.data.drop_location}</span></p>
-                      <p className="text-emerald-700 font-bold text-[11px] mt-1">
-                        🚀 আপনার থেকে {selectedEntity.distance} কিমি দূরে
+                  ) : (
+                    <div className="mt-2 space-y-1 text-xs">
+                      <h4 className="font-extrabold text-sm text-slate-900">
+                        🛺 {selectedEntity.data.name || "চালক"} ({selectedEntity.data.toto_number})
+                      </h4>
+                      <p className="text-slate-600">
+                        ফোন: {selectedEntity.data.phone || "অনলাইনে আছেন"}
+                      </p>
+                      <p className="text-blue-700 font-bold">
+                        📍 আপনার থেকে {selectedEntity.distance} কিমি দূরে সক্রিয় আছেন
                       </p>
                     </div>
-                    <Button
-                      onClick={() => {
-                        onAcceptRide(selectedEntity.data);
-                        setSelectedEntity(null);
-                      }}
-                      className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs"
-                    >
-                      ✅ এই রাইডটি গ্রহণ করুন
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="mt-2 space-y-1 text-xs">
-                    <h4 className="font-extrabold text-sm text-slate-900">
-                      🛺 {selectedEntity.data.name || "চালক"} ({selectedEntity.data.toto_number})
-                    </h4>
-                    <p className="text-slate-600">
-                      ফোন: {selectedEntity.data.phone || "অনলাইনে আছেন"}
-                    </p>
-                    <p className="text-blue-700 font-bold">
-                      📍 আপনার থেকে {selectedEntity.distance} কিমি দূরে সক্রিয় আছেন
-                    </p>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Google Maps View with Embed & Navigation */
+            <div className="space-y-3">
+              <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border-2 border-blue-400 shadow-md bg-slate-100">
+                <iframe
+                  title="Google Map Driver Radar View"
+                  src={`https://maps.google.com/maps?q=${driverCoords[0]},${driverCoords[1]}&hl=bn&z=15&output=embed`}
+                  className="w-full h-full border-0"
+                  loading="lazy"
+                  allowFullScreen
+                />
+                <div className="absolute bottom-3 left-3 right-3 z-20">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${driverCoords[0]},${driverCoords[1]}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  >
+                    <Navigation className="w-4 h-4" />
+                    <span>🌐 গুগল ম্যাপস অ্যাপে লাইভ অবস্থান খুলুন</span>
+                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+                  </a>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Waiting Customers Section */}
           <div className="space-y-3">

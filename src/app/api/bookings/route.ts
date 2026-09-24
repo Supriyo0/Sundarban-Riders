@@ -8,6 +8,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Proactively notifies online drivers within 5km radius via WhatsApp
  */
+function formatWhatsAppPhone(p: string | null | undefined): string {
+  if (!p) return "";
+  let digits = p.replace(/[^0-9]/g, "");
+  if (digits.length === 10) return "91" + digits;
+  if (digits.startsWith("0")) return "91" + digits.replace(/^0+/, "");
+  return digits;
+}
+
 async function notifyOnlineDriversViaWhatsApp(
   admin: SupabaseClient,
   booking: any,
@@ -112,35 +120,134 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
 
     // 1. Notify Passenger on WhatsApp
     if (booking.customer_phone) {
-      const custPhone = booking.customer_phone.replace(/[^0-9]/g, "");
+      const custPhone = formatWhatsAppPhone(booking.customer_phone);
       await sendInteractiveButtons({
         phoneNumberId,
         accessToken,
         to: custPhone,
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver.phone}\n🚘 টোটো নম্বর: ${driver.toto_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+        bodyText: "✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: " + (driver.name || "সুন্দরবন চালক") + "\n📞 ফোন: " + (driver.phone || "9593177885") + "\n🚘 টোটো নম্বর: " + (driver.toto_number || "WB-96-T-8421") + "\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।",
         buttons: [{ id: "cancel_ride", title: "❌ বুকিং বাতিল" }],
-      }).catch(() => {});
+      }).catch((e) => console.warn("[notifyRideAccepted] Passenger WhatsApp send error:", e));
     }
 
-    // 2. Proactively update other online drivers: "booking took by other rider"
-    const { data: otherDrivers } = await admin
+    // 2. Proactively update other drivers: "booking taken by other rider"
+    const { data: allDrivers } = await admin
       .from("drivers")
-      .select("phone")
-      .neq("id", driver.id || "");
+      .select("id, phone");
 
-    if (otherDrivers && otherDrivers.length > 0) {
-      for (const od of otherDrivers) {
-        const dPhone = od.phone.replace(/[^0-9]/g, "");
+    if (allDrivers && allDrivers.length > 0) {
+      const myCleanPhone = (driver.phone || "").replace(/\D/g, "").slice(-10);
+      for (const od of allDrivers) {
+        if (!od.phone) continue;
+        const otherClean = od.phone.replace(/\D/g, "").slice(-10);
+        if (driver.id && od.id === driver.id) continue;
+        if (myCleanPhone && otherClean === myCleanPhone) continue;
+
+        const dPhone = formatWhatsAppPhone(od.phone);
         await sendTextMessage({
           phoneNumberId,
           accessToken,
           to: dPhone,
-          text: `ℹ️ বুকিং আপডেট: #${booking.booking_number} রাইডটি চালক ${driver.name || "অন্য একজন চালক"} গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
-        }).catch(() => {});
+          text: "ℹ️ বুকিং আপডেট: #" + booking.booking_number + " রাইডটি চালক " + (driver.name || "অন্য একজন চালক") + " গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।",
+        }).catch((e) => console.warn("[notifyRideAccepted] Driver WhatsApp send error:", e));
       }
     }
   } catch (err) {
     console.error("[dispatch] Error in notifyRideAccepted:", err);
+  }
+}
+
+async function notifyTripStarted(admin: SupabaseClient, booking: any) {
+  try {
+    if (!booking.customer_phone) return;
+    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
+    if (!config?.phone_number_id || !config?.access_token) return;
+    const accessToken = decrypt(config.access_token);
+    const phoneNumberId = config.phone_number_id;
+    const custPhone = formatWhatsAppPhone(booking.customer_phone);
+
+    await sendTextMessage({
+      phoneNumberId,
+      accessToken,
+      to: custPhone,
+      text: "🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।",
+    }).catch(() => {});
+  } catch (err) {
+    console.error("[notifyTripStarted] Error:", err);
+  }
+}
+
+async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
+  try {
+    if (!booking.customer_phone) return;
+    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
+    if (!config?.phone_number_id || !config?.access_token) return;
+    const accessToken = decrypt(config.access_token);
+    const phoneNumberId = config.phone_number_id;
+    const custPhone = formatWhatsAppPhone(booking.customer_phone);
+
+    await sendInteractiveButtons({
+      phoneNumberId,
+      accessToken,
+      to: custPhone,
+      bodyText: "🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! \"সুন্দরবন রাইডার\"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। \"সুন্দরবন রাইডার\" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n\n💵 সংগৃহীত ভাড়া: ₹" + (booking.final_fare || booking.estimated_fare || 50) + ".00\n\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :",
+      buttons: [
+        { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
+        { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
+      ],
+    }).catch(() => {});
+  } catch (err) {
+    console.error("[notifyTripCompleted] Error:", err);
+  }
+}
+
+async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelledBy: string, reason?: string) {
+  try {
+    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
+    if (!config?.phone_number_id || !config?.access_token) return;
+    const accessToken = decrypt(config.access_token);
+    const phoneNumberId = config.phone_number_id;
+    const reasonText = reason ? (" (কারণ: " + reason + ")") : "";
+
+    if (cancelledBy === "driver" && booking.customer_phone) {
+      const custPhone = formatWhatsAppPhone(booking.customer_phone);
+      await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: custPhone,
+        text: "⚠️ দুঃখিত! চালক আপনার রাইড বাতিল করেছেন" + reasonText + "। বুকিং #" + booking.booking_number + " বাতিল হয়েছে।",
+      }).catch(() => {});
+    }
+
+    if (cancelledBy === "customer") {
+      if (booking.driver_id) {
+        const { data: driver } = await admin.from("drivers").select("phone").eq("id", booking.driver_id).maybeSingle();
+        if (driver?.phone) {
+          const dPhone = formatWhatsAppPhone(driver.phone);
+          await sendTextMessage({
+            phoneNumberId,
+            accessToken,
+            to: dPhone,
+            text: "⚠️ যাত্রী রাইড বাতিল করেছেন" + reasonText + "। বুকিং #" + booking.booking_number + " বাতিল হয়েছে। আপনি পরবর্তী রাইডের জন্য প্রস্তুত।",
+          }).catch(() => {});
+        }
+      } else {
+        const { data: drivers } = await admin.from("drivers").select("phone");
+        if (drivers) {
+          for (const d of drivers) {
+            if (!d.phone) continue;
+            await sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: formatWhatsAppPhone(d.phone),
+              text: "ℹ️ বুকিং বাতিল: যাত্রী #" + booking.booking_number + " রাইড বাতিল করেছেন" + reasonText + "। পরবর্তী রাইডের জন্য অপেক্ষা করুন।",
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[notifyTripCancelled] Error:", err);
   }
 }
 
@@ -230,7 +337,7 @@ export async function GET(request: Request) {
         booking: {
           ...enriched,
           driver_name: d?.name || (data as any).driver_name || "সুন্দরবন চালক",
-          driver_phone: d?.phone || (data as any).driver_phone || "9593177885",
+          driver_phone: d?.phone || (data as any).driver_phone || null,
           toto_number: d?.toto_number || (data as any).toto_number || "WB-96-T-8421",
         },
       });
@@ -276,71 +383,8 @@ export async function GET(request: Request) {
         const { data, error } = await query;
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-        let trips = data || [];
+        const trips = data || [];
 
-        // If no past trips found for this driver yet, provide realistic regional Kakdwip/Namkhana trips
-        if (trips.length === 0) {
-          const today = new Date().toISOString();
-          const yesterday = new Date(Date.now() - 86400000).toISOString();
-          trips = [
-            {
-              id: "tr-001",
-              booking_number: "SR-8120",
-              customer_name: "সুব্রত দাস",
-              customer_phone: "9832014567",
-              pickup_location: "কাকদ্বীপ স্টেশন রোড",
-              drop_location: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)",
-              estimated_fare: 55,
-              final_fare: 55,
-              status: "completed",
-              payment_status: "paid",
-              payment_mode: "cash",
-              created_at: today,
-            },
-            {
-              id: "tr-002",
-              booking_number: "SR-7945",
-              customer_name: "প্রিয়াঙ্কা ভৌমিক",
-              customer_phone: "9733129845",
-              pickup_location: "কাকদ্বীপ মহকুমা হাসপাতাল মোড়",
-              drop_location: "গণেশপুর চৌরাস্তা",
-              estimated_fare: 40,
-              final_fare: 40,
-              status: "completed",
-              payment_status: "paid",
-              payment_mode: "cash",
-              created_at: today,
-            },
-            {
-              id: "tr-003",
-              booking_number: "SR-7811",
-              customer_name: "অরিন্দম হালদার",
-              customer_phone: "9434871234",
-              pickup_location: "নামখানা বাসস্ট্যান্ড ও টার্মিনাল",
-              drop_location: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়",
-              estimated_fare: 35,
-              final_fare: 35,
-              status: "completed",
-              payment_status: "paid",
-              payment_mode: "upi",
-              created_at: yesterday,
-            },
-            {
-              id: "tr-004",
-              booking_number: "SR-7650",
-              customer_name: "তপন খাঁড়া",
-              customer_phone: "9832456789",
-              pickup_location: "কাকদ্বীপ বাজার চত্বর",
-              drop_location: "লট ৮ কচুবেড়িয়া ফেরি পয়েন্ট",
-              estimated_fare: 60,
-              final_fare: 0,
-              status: "cancelled",
-              payment_status: "pending",
-              payment_mode: "cash",
-              created_at: yesterday,
-            },
-          ];
-        }
 
         const completedTrips = trips.filter((t) => t.status === "completed");
         const totalEarnings = completedTrips.reduce(
@@ -660,6 +704,34 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
   }
 }
 
+
+async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelledBy: string, reason?: string) {
+  try {
+    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
+    if (!config?.phone_number_id || !config?.access_token) return;
+    const accessToken = decrypt(config.access_token);
+    const phoneNumberId = config.phone_number_id;
+    const reasonText = reason ? ` - ${reason}` : "";
+    if (cancelledBy === "driver" && booking.customer_phone) {
+      const custPhone = booking.customer_phone.replace(/[^0-9]/g, "");
+      await sendTextMessage({ phoneNumberId, accessToken, to: custPhone,
+        text: `⚠️ দুঃখিত! চালক আপনার রাইড বাতিল করেছেন${reasonText}. বুকিং #${booking.booking_number} বাতিল হয়েছে।`,
+      }).catch(() => {});
+    }
+    if (cancelledBy === "customer" && booking.driver_id) {
+      const { data: driver } = await admin.from("drivers").select("phone").eq("id", booking.driver_id).maybeSingle();
+      if (driver?.phone) {
+        const dPhone = driver.phone.replace(/[^0-9]/g, "");
+        await sendTextMessage({ phoneNumberId, accessToken, to: dPhone,
+          text: `⚠️ যাত্রী রাইড বাতিল করেছেন${reasonText}. বুকিং #${booking.booking_number} বাতিল হয়েছে। আপনি পরবর্তী রাইডের জন্য প্রস্তুত।`,
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error("[notifyTripCancelled] Error:", err);
+  }
+}
+
     // -------------------------------------------------------------
     // ACTION: START TRIP
     // -------------------------------------------------------------
@@ -732,6 +804,10 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
             .update({ is_available: true, is_active: true })
             .eq("id", booking.driver_id)
         ).catch(() => {});
+      }
+
+      if (updated) {
+        void notifyTripCancelled(admin, updated, driverId ? "driver" : "customer", body.cancelReason);
       }
 
       return NextResponse.json({ success: true, booking: updated });

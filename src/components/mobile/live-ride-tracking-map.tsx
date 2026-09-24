@@ -25,6 +25,9 @@ import {
   Shuffle,
   AlertTriangle,
   RotateCw,
+  Smartphone,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -129,6 +132,7 @@ export function LiveRideTrackingMap({
   // Current Toto vehicle live position
   const [driverPos, setDriverPos] = useState<[number, number]>(initialDriverPos.current);
   const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
+  const [mapViewOption, setMapViewOption] = useState<"inbuilt" | "google">("inbuilt");
   const [activeRouteView, setActiveRouteView] = useState<"arriving" | "drop">(
     rideStep === "in_trip" || rideStep === "arrived" ? "drop" : "arriving"
   );
@@ -259,76 +263,49 @@ export function LiveRideTrackingMap({
     };
   }, [pickupCoords, dropCoords, rideStep]);
 
-  // 2. Smooth Animated Movement & Continuous Route Deviation Detection
+  // 2. Real Driver GPS Tracking (Polls real live coordinates from database instead of mock movement)
   useEffect(() => {
-    let animInterval: NodeJS.Timeout;
+    let gpsPollInterval: NodeJS.Timeout;
 
-    if (rideStep === "assigned" || rideStep === "arriving") {
-      const roadWaypoints = arrivingRoute?.coordinates;
-      if (!roadWaypoints || roadWaypoints.length < 2) return;
+    const pollDriverRealLocation = async () => {
+      if (!booking?.id) return;
+      try {
+        const res = await fetch(`/api/bookings?id=${booking.id}`);
+        const data = await res.json();
+        if (data.booking) {
+          const d = data.booking.drivers;
+          const lat = d?.latitude ? Number(d.latitude) : null;
+          const lng = d?.longitude ? Number(d.longitude) : null;
 
-      let pointIdx = currentStepIndex;
-      animInterval = setInterval(() => {
-        pointIdx = (pointIdx + 1) % roadWaypoints.length;
-        setCurrentStepIndex(pointIdx);
-        const nextCoord = roadWaypoints[pointIdx];
-        setDriverPos(nextCoord);
+          if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+            setDriverPos((prev) => {
+              if (Math.abs(prev[0] - lat) > 0.0001 || Math.abs(prev[1] - lng) > 0.0001) {
+                const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
+                const remainingKm = calculateDistanceKm(lat, lng, target[0], target[1]);
+                setDistanceToTargetKm(remainingKm);
+                setDriverEtaMin(Math.max(1, Math.round(remainingKm * 2.6)));
 
-        const remainingKm = calculateDistanceKm(
-          nextCoord[0],
-          nextCoord[1],
-          pickupCoords[0],
-          pickupCoords[1]
-        );
-        setDistanceToTargetKm(remainingKm);
-        setDriverEtaMin(Math.max(1, Math.round(remainingKm * 2.5)));
-
-        // Check Deviation: If driver is > 0.12km away from planned route, auto switch route
-        const deviation = getMinDistanceToRoute(nextCoord, roadWaypoints);
-        if (deviation > 0.12 && !isReroutingRef.current) {
-          triggerAutoRouteSwitch(nextCoord, pickupCoords, "arriving");
+                // Check Deviation against planned road route
+                const waypoints = rideStep === "in_trip" ? dropRoute?.coordinates : arrivingRoute?.coordinates;
+                if (waypoints && waypoints.length > 0) {
+                  const deviation = getMinDistanceToRoute([lat, lng], waypoints);
+                  if (deviation > 0.15 && !isReroutingRef.current) {
+                    triggerAutoRouteSwitch([lat, lng], target, rideStep === "in_trip" ? "drop" : "arriving");
+                  }
+                }
+                return [lat, lng];
+              }
+              return prev;
+            });
+          }
         }
+      } catch {}
+    };
 
-        if (pointIdx >= roadWaypoints.length - 1) {
-          setDistanceToTargetKm(0);
-          setDriverEtaMin(0);
-        }
-      }, 2500);
-    } else if (rideStep === "in_trip") {
-      const roadWaypoints = dropRoute?.coordinates;
-      if (!roadWaypoints || roadWaypoints.length < 2) return;
-
-      let pointIdx = currentStepIndex;
-      animInterval = setInterval(() => {
-        pointIdx = (pointIdx + 1) % roadWaypoints.length;
-        setCurrentStepIndex(pointIdx);
-        const nextCoord = roadWaypoints[pointIdx];
-        setDriverPos(nextCoord);
-
-        const remainingKm = calculateDistanceKm(
-          nextCoord[0],
-          nextCoord[1],
-          dropCoords[0],
-          dropCoords[1]
-        );
-        setDistanceToTargetKm(remainingKm);
-        setDriverEtaMin(Math.max(1, Math.round(remainingKm * 2.8)));
-
-        // Check Deviation: If driver is > 0.12km away from planned route, auto switch route
-        const deviation = getMinDistanceToRoute(nextCoord, roadWaypoints);
-        if (deviation > 0.12 && !isReroutingRef.current) {
-          triggerAutoRouteSwitch(nextCoord, dropCoords, "drop");
-        }
-
-        if (pointIdx >= roadWaypoints.length - 1) {
-          setDistanceToTargetKm(0);
-          setDriverEtaMin(0);
-        }
-      }, 2500);
-    }
-
-    return () => clearInterval(animInterval);
-  }, [rideStep, arrivingRoute, dropRoute, pickupCoords, dropCoords, triggerAutoRouteSwitch]);
+    pollDriverRealLocation();
+    gpsPollInterval = setInterval(pollDriverRealLocation, 3000);
+    return () => clearInterval(gpsPollInterval);
+  }, [booking?.id, rideStep, pickupCoords, dropCoords, arrivingRoute, dropRoute, triggerAutoRouteSwitch]);
 
   // 3. Update Leaflet markers and Polylines when routes or driverPos update
   useEffect(() => {
@@ -537,7 +514,7 @@ export function LiveRideTrackingMap({
   const droppingTimeEnglish = estimatedDropDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 
   return (
-    <div className="space-y-3.5 animate-in fade-in duration-300">
+    <div className="space-y-3.5 animate-in fade-in duration-300 pb-36">
       {/* ------------------------------------------------------------- */}
       {/* 0. PROMINENT DROPPING TIME & ROUTE BANNER (Requested by User) */}
       {/* ------------------------------------------------------------- */}
@@ -723,67 +700,131 @@ export function LiveRideTrackingMap({
         </div>
       </div>
 
+      {/* 2-Option Switcher: View Inbuilt Map vs View in Google Maps */}
+      <div
+        className="p-1 rounded-2xl grid grid-cols-2 gap-1"
+        style={{
+          background: "rgba(241, 245, 249, 0.95)",
+          border: "1px solid rgba(203, 213, 225, 0.8)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setMapViewOption("inbuilt")}
+          className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+            mapViewOption === "inbuilt"
+              ? "bg-white text-emerald-700 shadow-sm border border-emerald-200"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
+          <span>📱 ইনবিল্ট ম্যাপ দেখুন</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMapViewOption("google")}
+          className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
+            mapViewOption === "google"
+              ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 text-blue-600" />
+          <span>🌐 গুগল ম্যাপে খুলুন</span>
+        </button>
+      </div>
+
       {/* ------------------------------------------------------------- */}
       {/* 2. LIVE INTERACTIVE TRACKING MAP CONTAINER                     */}
       {/* ------------------------------------------------------------- */}
-      <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border-2 border-emerald-400 shadow-xl bg-slate-100">
-        <div ref={mapContainerRef} className="w-full h-full z-10" />
+      {mapViewOption === "inbuilt" ? (
+        <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border-2 border-emerald-400 shadow-xl bg-slate-100">
+          <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-        {/* Top Status Banner (Uber/Rapido Live Indicator) */}
-        <div className="absolute top-3 left-3 right-16 z-20">
-          <div className="bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl shadow-xl border border-slate-700/60 flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
-            <div className="text-xs truncate">
-              {rideStep === "assigned" || rideStep === "arriving" ? (
-                <span>
-                  চালক আসছেন: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> দূরে •{" "}
-                  <strong className="text-amber-300">~{driverEtaMin} মিনিটে পিকআপ</strong>
-                </span>
-              ) : rideStep === "in_trip" ? (
-                <span>
-                  যাত্রা চলমান: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> বাকি •{" "}
-                  <strong className="text-amber-300">~{driverEtaMin} মিনিটে গন্তব্যে</strong>
-                </span>
-              ) : (
-                <span className="text-emerald-400 font-bold">✓ আপনি গন্তব্যে পৌঁছে গেছেন!</span>
-              )}
+          {/* Top Status Banner (Uber/Rapido Live Indicator) */}
+          <div className="absolute top-3 left-3 right-16 z-20">
+            <div className="bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl shadow-xl border border-slate-700/60 flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              <div className="text-xs truncate">
+                {rideStep === "assigned" || rideStep === "arriving" ? (
+                  <span>
+                    চালক আসছেন: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> দূরে •{" "}
+                    <strong className="text-amber-300">~{driverEtaMin} মিনিটে পিকআপ</strong>
+                  </span>
+                ) : rideStep === "in_trip" ? (
+                  <span>
+                    যাত্রা চলমান: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> বাকি •{" "}
+                    <strong className="text-amber-300">~{driverEtaMin} মিনিটে গন্তব্যে</strong>
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold">✓ আপনি গন্তব্যে পৌঁছে গেছেন!</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Top-Right Map Controls: Satellite Toggle */}
+          <div className="absolute top-3 right-3 z-20">
+            <button
+              type="button"
+              onClick={() => setMapLayer((p) => (p === "streets" ? "hybrid" : "streets"))}
+              title="ম্যাপ ভিউ পরিবর্তন"
+              className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
+            >
+              <Layers className="w-4 h-4 text-blue-600" />
+            </button>
+          </div>
+
+          {/* Bottom Floating Map Controls: Focus on Toto & Fit All */}
+          <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleCenterOnDriver}
+              title="চলমান টোটোতে ফোকাস করুন"
+              className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
+            >
+              <LocateFixed className="w-5 h-5 text-emerald-600" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleFitRoute}
+              title="সম্পূর্ণ রুট দেখুন"
+              className="w-10 h-10 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Google Maps Mode View with Embed & Navigation */
+        <div className="space-y-3">
+          <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border-2 border-blue-400 shadow-xl bg-slate-100">
+            <iframe
+              title="Google Map Live View"
+              src={`https://maps.google.com/maps?q=${(rideStep === "in_trip" ? dropCoords : pickupCoords)[0]},${(rideStep === "in_trip" ? dropCoords : pickupCoords)[1]}&hl=bn&z=15&output=embed`}
+              className="w-full h-full border-0"
+              loading="lazy"
+              allowFullScreen
+            />
+            {/* Overlay Navigation Button */}
+            <div className="absolute bottom-3 left-3 right-3 z-20">
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&origin=${driverPos[0]},${driverPos[1]}&destination=${(rideStep === "in_trip" ? dropCoords : pickupCoords)[0]},${(rideStep === "in_trip" ? dropCoords : pickupCoords)[1]}&travelmode=driving`}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                <Navigation className="w-4 h-4" />
+                <span>🌐 গুগল ম্যাপস অ্যাপে নেভিগেশন খুলুন (Open Google Maps)</span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+              </a>
             </div>
           </div>
         </div>
-
-        {/* Top-Right Map Controls: Satellite Toggle */}
-        <div className="absolute top-3 right-3 z-20">
-          <button
-            type="button"
-            onClick={() => setMapLayer((p) => (p === "streets" ? "hybrid" : "streets"))}
-            title="ম্যাপ ভিউ পরিবর্তন"
-            className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
-          >
-            <Layers className="w-4 h-4 text-blue-600" />
-          </button>
-        </div>
-
-        {/* Bottom Floating Map Controls: Focus on Toto & Fit All */}
-        <div className="absolute bottom-3 right-3 z-20 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={handleCenterOnDriver}
-            title="চলমান টোটোতে ফোকাস করুন"
-            className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
-          >
-            <LocateFixed className="w-5 h-5 text-emerald-600" />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleFitRoute}
-            title="সম্পূর্ণ রুট দেখুন"
-            className="w-10 h-10 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* 3. LIVE JOURNEY STEPPER (Uber/Rapido Interactive Track)        */}
@@ -845,35 +886,6 @@ export function LiveRideTrackingMap({
         </div>
       </div>
 
-      {/* ------------------------------------------------------------- */}
-      {/* 4. 4-DIGIT SECURITY BOARDING OTP PIN CARD (Uber-Style)         */}
-      {/* ------------------------------------------------------------- */}
-      <div className="p-4 rounded-3xl bg-linear-to-r from-emerald-500 to-teal-600 text-white shadow-md flex items-center justify-between">
-        <div>
-          <span className="text-[10px] text-emerald-100 font-bold uppercase tracking-wider block">
-            যাত্রা শুরুর সিকিউরিটি পিন (OTP)
-          </span>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-2xl font-black tracking-widest font-mono">৪ ৮ ২ ১</span>
-            <button
-              type="button"
-              onClick={() => {
-                if (navigator?.clipboard) {
-                  navigator.clipboard.writeText("4821");
-                  toast.success("সিকিউরিটি পিন ৪ ৮ ২ ১ কপি হয়েছে!");
-                }
-              }}
-              className="p-1 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-              title="পিন কপি করুন"
-            >
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-        <div className="text-right text-[11px] text-emerald-100 font-medium max-w-[140px]">
-          চালক গাড়িতে এলে এই ৪ সংখ্যার ওটিপি বলবেন
-        </div>
-      </div>
 
       {/* ------------------------------------------------------------- */}
       {/* 5. DRIVER PROFILE CARD WITH CALL & WHATSAPP CHAT               */}

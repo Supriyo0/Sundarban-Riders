@@ -30,7 +30,7 @@ export function SundarbanLogo({
 
   const currentSize = iconSizes[size];
 
-  // SVG Emblem: Electric Toto with Tiger Speed Waves & Lightning Accents
+  // Emblem: Actual Official Logo Image with glowing styling
   const EmblemSvg = (
     <div
       className={`relative flex items-center justify-center shrink-0 ${animated ? "group" : ""}`}
@@ -41,105 +41,11 @@ export function SundarbanLogo({
         <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500/30 via-teal-400/20 to-amber-400/30 rounded-3xl blur-xl animate-pulse pointer-events-none" />
       )}
 
-      {/* Main Hex/Squircle Shield */}
-      <svg
-        viewBox="0 0 100 100"
-        className="w-full h-full drop-shadow-md select-none"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <linearGradient id="shieldGrad" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#047857" />
-            <stop offset="50%" stopColor="#059669" />
-            <stop offset="100%" stopColor="#0d9488" />
-          </linearGradient>
-
-          <linearGradient id="goldGrad" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#fbbf24" />
-            <stop offset="100%" stopColor="#d97706" />
-          </linearGradient>
-
-          <linearGradient id="canopyGrad" x1="20" y1="25" x2="80" y2="50" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="100%" stopColor="#e2e8f0" />
-          </linearGradient>
-
-          <filter id="badgeShadow" x="-10%" y="-10%" width="120%" height="120%">
-            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#047857" floodOpacity="0.4" />
-          </filter>
-        </defs>
-
-        {/* Squircle Badge Background */}
-        <rect
-          x="6"
-          y="6"
-          width="88"
-          height="88"
-          rx="26"
-          fill="url(#shieldGrad)"
-          stroke="#34d399"
-          strokeWidth="2.5"
-          filter="url(#badgeShadow)"
-        />
-
-        {/* Dynamic Speed Lines (Tiger Aura Stripes) in background */}
-        <path
-          d="M 16 35 L 32 35 M 12 50 L 36 50 M 18 65 L 30 65"
-          stroke="#6ee7b7"
-          strokeWidth="3"
-          strokeLinecap="round"
-          opacity="0.4"
-        />
-
-        {/* Modern Stylized Toto Silhouette */}
-        {/* Canopy Roof */}
-        <path
-          d="M 36 28 C 36 25, 68 25, 76 34 L 80 48 L 34 48 Z"
-          fill="url(#canopyGrad)"
-          stroke="#0f172a"
-          strokeWidth="1.5"
-        />
-        {/* Canopy Front Visor & Tiger Accent Stripe */}
-        <path d="M 52 28 L 56 48" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M 64 30 L 68 48" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" />
-
-        {/* Toto Body Base */}
-        <path
-          d="M 32 48 L 82 48 C 84 48, 86 52, 85 58 L 81 68 C 80 71, 77 73, 74 73 L 34 73 C 31 73, 29 70, 30 67 L 32 48 Z"
-          fill="#10b981"
-          stroke="#064e3b"
-          strokeWidth="2"
-        />
-
-        {/* Front Windshield */}
-        <path
-          d="M 69 34 L 79 46 L 66 46 Z"
-          fill="#38bdf8"
-          opacity="0.8"
-        />
-
-        {/* Wheels with Silver Hubs */}
-        {/* Rear Wheel */}
-        <circle cx="42" cy="74" r="10" fill="#0f172a" stroke="#cbd5e1" strokeWidth="2" />
-        <circle cx="42" cy="74" r="4.5" fill="#f8fafc" />
-        {/* Front Wheel */}
-        <circle cx="74" cy="74" r="10" fill="#0f172a" stroke="#cbd5e1" strokeWidth="2" />
-        <circle cx="74" cy="74" r="4.5" fill="#f8fafc" />
-
-        {/* Electric Energy Lightning Bolt Emblem */}
-        <path
-          d="M 55 12 L 44 26 L 52 26 L 41 42 L 62 23 L 52 23 Z"
-          fill="url(#goldGrad)"
-          stroke="#ffffff"
-          strokeWidth="1.5"
-          filter="drop-shadow(0px 2px 4px rgba(245, 158, 11, 0.7))"
-        />
-
-        {/* Eco Green Energy Leaves/Dots */}
-        <circle cx="22" cy="22" r="3" fill="#a7f3d0" />
-        <circle cx="80" cy="20" r="2.5" fill="#fef08a" />
-      </svg>
+      <img
+        src="/sundarban-logo.png"
+        alt="Sundarban Riders Logo"
+        className="w-full h-full object-contain drop-shadow-md select-none rounded-2xl"
+      />
     </div>
   );
 

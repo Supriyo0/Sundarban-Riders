@@ -42,6 +42,7 @@ import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-ma
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
 import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
+import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";
@@ -106,6 +107,8 @@ export default function MobileAppPage() {
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
+  const isAcceptingRef = useRef<string | null>(null);
+  const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number]>([21.8760, 88.1920]);
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -243,6 +246,42 @@ export default function MobileAppPage() {
     }
   }, [incomingRide]);
 
+  
+  // Proactively watch and broadcast driver live GPS to server
+  useEffect(() => {
+    let watchId: number;
+    if (typeof window !== "undefined" && navigator.geolocation && role === "rider" && isOnline) {
+      watchId = navigator.geolocation.watchPosition(
+        async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setDriverLiveCoords([latitude, longitude]);
+          if (session?.driverId || session?.phone) {
+            try {
+              await fetch("/api/drivers", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: session?.driverId,
+                  phone: session?.phone,
+                  latitude,
+                  longitude,
+                  is_active: isOnline,
+                }),
+              });
+            } catch {}
+          }
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      );
+    }
+    return () => {
+      if (watchId && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [role, isOnline, session?.driverId, session?.phone]);
+
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
@@ -261,10 +300,13 @@ export default function MobileAppPage() {
                 (myDriverId && data.booking.driver_id === myDriverId) ||
                 (myPhone && data.booking.driver_phone?.includes(myPhone));
 
-              // Only dismiss if accepted by another driver or cancelled
-              if (!isAcceptedByMe) {
+              if (data.booking.status === "cancelled") {
+                declinedBookingIdsRef.current.add(incomingRide.id);
                 setIncomingRide(null);
-                toast.info("এই রাইডটি অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                toast.info("যাত্রী রাইড বাতিল করেছেন।");
+              } else if (!isAcceptedByMe) {
+                setIncomingRide(null);
+                toast.info("এই রাইডটি অন্য একজন চালক গ্রহণ করেছেন।");
               }
             }
             return;
@@ -288,6 +330,8 @@ export default function MobileAppPage() {
                 pickupDistance: "১.২ কিমি দূরে",
                 drop: b.drop_location || "গন্তব্য",
                 tripDistance: "৪.৫ কিমি ট্রিপ",
+                pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : [21.8760, 88.1920],
+                dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : [21.8680, 88.1630],
               });
             }
           }
@@ -298,11 +342,30 @@ export default function MobileAppPage() {
 
       // Check immediately and then every 2.5 seconds
       checkPendingBookings();
-      pollInterval = setInterval(checkPendingBookings, 2500);
+      pollInterval = setInterval(checkPendingBookings, incomingRide ? 1000 : 2500);
     }
 
     return () => clearInterval(pollInterval);
   }, [phase, isOnline, incomingRide, activeRide]);
+
+  // Poll active ride for real-time cancellation by customer
+  useEffect(() => {
+    let activeRidePollInterval: NodeJS.Timeout;
+    if (phase === "rider_home" && activeRide?.id) {
+      const checkActiveRideStatus = async () => {
+        try {
+          const res = await fetch(`/api/bookings?id=${activeRide.id}`);
+          const data = await res.json();
+          if (data.booking && data.booking.status === "cancelled") {
+            setActiveRide(null);
+            toast.error("যাত্রী রাইড বাতিল করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।");
+          }
+        } catch {}
+      };
+      activeRidePollInterval = setInterval(checkActiveRideStatus, 3000);
+    }
+    return () => clearInterval(activeRidePollInterval);
+  }, [phase, activeRide]);
 
   // Proactively fetch customer real-time GPS location on app load
   useEffect(() => {
@@ -1058,7 +1121,7 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "rider_home") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between relative overflow-hidden select-none">
+      <div className="min-h-screen text-slate-900 flex flex-col justify-between relative overflow-hidden select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
         {/* Modern App Header */}
         <MobileAppHeader
           role="rider"
@@ -1074,7 +1137,7 @@ export default function MobileAppPage() {
         />
 
         {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
-        <div className="bg-white/95 backdrop-blur-md px-4 py-2.5 border-b border-slate-200 flex items-center justify-between shadow-2xs">
+        <div className="px-4 py-2.5 flex items-center justify-between" style={{background:"rgba(255,255,255,0.88)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(226,232,240,0.6)",boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-lg shadow-2xs">
               🛺
@@ -1111,7 +1174,7 @@ export default function MobileAppPage() {
 
         {/* Radar & Status Area (When Idle) */}
         {!activeRide && (
-          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-24">
             <DriverRadarPanel
               driverSession={session}
               isOnline={isOnline}
@@ -1144,6 +1207,8 @@ export default function MobileAppPage() {
                     passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
                     pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
                     drop: b.drop_location || b.drop || "গন্তব্য",
+                    pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
+                    dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
                     status: "heading_pickup",
                   });
                   setIncomingRide(null);
@@ -1158,6 +1223,8 @@ export default function MobileAppPage() {
                     passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
                     pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
                     drop: b.drop_location || b.drop || "গন্তব্য",
+                    pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
+                    dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
                     status: "heading_pickup",
                   });
                   setIncomingRide(null);
@@ -1182,9 +1249,9 @@ export default function MobileAppPage() {
 
         {/* Active In-Progress Ride View */}
         {activeRide && (
-          <div className="flex-1 p-4 flex flex-col justify-between space-y-4">
+          <div className="flex-1 p-4 pb-36 flex flex-col justify-between space-y-4">
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between shadow-sm">
+              <div className="p-4 rounded-2xl flex items-center justify-between" style={{background:"rgba(240,253,244,0.9)",border:"1px solid rgba(167,243,208,0.8)",boxShadow:"0 4px 16px rgba(16,185,129,0.08), 0 1px 0 rgba(255,255,255,0.8) inset"}}>
                 <div>
                   <span className="text-xs text-emerald-700 font-bold uppercase tracking-wider">
                     {activeRide.status === "heading_pickup" ? "যাত্রীর কাছে যাচ্ছেন" : "যাত্রা চলমান 🛺"}
@@ -1199,8 +1266,18 @@ export default function MobileAppPage() {
                 </a>
               </div>
 
-              {/* Route Card */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
+              {/* Destination Road Map with 2 Options: Inbuilt Map vs Google Map */}
+              <DriverActiveTripMap
+                pickup={activeRide.pickup}
+                drop={activeRide.drop}
+                pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
+                dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
+                driverCoords={driverLiveCoords || [21.8770, 88.1930]}
+                status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
+              />
+
+              {/* Route Summary Details Card */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
                 <div className="flex items-start gap-3">
                   <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
                   <div>
@@ -1216,33 +1293,6 @@ export default function MobileAppPage() {
                     <p className="text-sm font-bold text-slate-900">{activeRide.drop}</p>
                   </div>
                 </div>
-
-                {/* Real Road Route Guidance for Driver */}
-                <div className="bg-slate-900 text-white p-3 rounded-xl border border-slate-800 text-xs space-y-1">
-                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-                    <Compass className="w-3.5 h-3.5 animate-spin-slow" />
-                    <span>{activeRide.status === "heading_pickup" ? "পিকআপে যাওয়ার সড়ক পথ" : "গন্তব্যে যাওয়ার সড়ক পথ"}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-200 font-medium leading-snug">
-                    {activeRide.status === "heading_pickup"
-                      ? `কাকদ্বীপ স্টেশন রোড ➔ ডায়মন্ড হারবার রোড (NH-117) হয়ে ${activeRide.pickup}`
-                      : `${activeRide.pickup} ➔ ডায়মন্ড হারবার রোড (NH-117) হয়ে ${activeRide.drop}`}
-                  </p>
-                </div>
-
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-                    activeRide.status === "heading_pickup" ? activeRide.pickup : activeRide.drop
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full py-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 mt-2 hover:bg-blue-100 transition-colors"
-                >
-                  <Navigation className="w-4 h-4 text-blue-600" />
-                  {activeRide.status === "heading_pickup"
-                    ? "গুগল ম্যাপে পিকআপ রোড দিকনির্দেশনা চালু করুন"
-                    : "গুগল ম্যাপে গন্তব্য রোড দিকনির্দেশনা চালু করুন"}
-                </a>
               </div>
             </div>
 
@@ -1302,8 +1352,8 @@ export default function MobileAppPage() {
         {/* UBER / RAPIDO STYLE INCOMING RIDE MODAL SHEET (Light Theme)  */}
         {/* ------------------------------------------------------------- */}
         {incomingRide && (
-          <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex flex-col justify-end p-4 animate-in slide-in-from-bottom duration-300">
-            <div className="bg-white border-2 border-emerald-500 rounded-3xl p-6 shadow-2xl space-y-6">
+          <div className="fixed inset-0 z-50 flex flex-col justify-end animate-in slide-in-from-bottom duration-300" style={{background:"rgba(15,23,42,0.55)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+            <div className="rounded-t-3xl p-6 space-y-5 border-t border-white/20" style={{background:"rgba(255,255,255,0.97)",boxShadow:"0 -8px 40px rgba(0,0,0,0.18), 0 -1px 0 rgba(255,255,255,0.6) inset"}}>
               {/* Header with Circular Countdown & Fare */}
               <div className="flex items-center justify-between">
                 <div>
@@ -1451,7 +1501,7 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "passenger_searching") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
+      <div className="min-h-screen text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
         {/* Radar Header */}
         <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
@@ -1677,37 +1727,17 @@ export default function MobileAppPage() {
                   <span>🔄 আবার খুঁজুন (Find Again)</span>
                 </Button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    className="h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white"
-                    onClick={() => {
-                      setPhase("passenger_home");
-                      setSearchStatus("searching");
-                      toast.info("বুকিং উইন্ডোতে ফিরে গেছেন");
-                    }}
-                  >
-                    ❌ বুকিং বাতিল করুন
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    className="h-11 rounded-xl text-xs text-blue-700 border-blue-200 font-bold bg-blue-50 hover:bg-blue-100"
-                    onClick={() => {
-                      setPassengerBooking({
-                        id: "SR-9412",
-                        driverName: "রাজেশ মন্ডল",
-                        driverPhone: "9593177885",
-                        totoNumber: "WB-96-T-8421",
-                      });
-                      setPhase("passenger_home");
-                      playSuccessSound();
-                      toast.success("চালক রাইড গ্রহণ করেছেন!");
-                    }}
-                  >
-                    ⚡ চালক গ্রহণ ডেমো
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  className="w-full h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white"
+                  onClick={() => {
+                    setPhase("passenger_home");
+                    setSearchStatus("searching");
+                    toast.info("বুকিং উইন্ডোতে ফিরে গেছেন");
+                  }}
+                >
+                  ❌ বুকিং বাতিল করুন
+                </Button>
               </div>
             </div>
           )}
@@ -1745,7 +1775,7 @@ export default function MobileAppPage() {
   // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme with Interactive Google Map)
   // -------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
+    <div className="min-h-screen text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
       {/* Modern App Header */}
       <MobileAppHeader
         role="passenger"
@@ -1761,7 +1791,7 @@ export default function MobileAppPage() {
       />
 
       {/* Main Booking Interface */}
-      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-24">
+      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-36">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
           <p className="text-slate-500 text-xs mt-0.5 font-medium">
@@ -1958,8 +1988,23 @@ export default function MobileAppPage() {
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
+                    if (activeBookingId || passengerBooking?.id) {
+                      try {
+                        const apiUrl = "/api/bookings";
+                        await fetch(apiUrl, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "cancel",
+                            bookingId: activeBookingId || passengerBooking?.id,
+                            cancelReason: reason,
+                          }),
+                        });
+                      } catch {}
+                    }
                     setPassengerBooking(null);
+                    setActiveBookingId(null);
                     setShowCancelModal(false);
                     toast.info(`রাইড বাতিল করা হয়েছে: ${reason}`);
                   }}

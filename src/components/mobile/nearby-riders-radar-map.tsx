@@ -29,10 +29,20 @@ export function NearbyRidersRadarMap({
         const res = await fetch("/api/drivers");
         const json = await res.json();
         if (json.drivers && Array.isArray(json.drivers)) {
-          // Filter real drivers who have toto numbers
-          const valid = json.drivers.filter(
-            (d: any) => d.name && d.toto_number && d.is_active !== false
-          );
+          // Strictly filter real registered drivers who have real coordinates recorded
+          const valid = json.drivers.filter((d: any) => {
+            const lat = Number(d.latitude);
+            const lng = Number(d.longitude);
+            return (
+              d.name &&
+              d.toto_number &&
+              d.is_active !== false &&
+              !isNaN(lat) &&
+              lat !== 0 &&
+              !isNaN(lng) &&
+              lng !== 0
+            );
+          });
           setRealDrivers(valid);
         }
       } catch (err) {
@@ -129,18 +139,18 @@ export function NearbyRidersRadarMap({
         opacity: 0.8,
       }).addTo(map);
 
-      // Plot REAL Registered Drivers only (NO fake random numbers)
+      // Plot REAL Registered Drivers only (Strictly real data - NO mock data, NO random offsets)
       if (realDrivers.length > 0) {
-        realDrivers.forEach((driver, idx) => {
-          // If driver has real latitude & longitude, use it; otherwise offset near pickup within 1-2 km
-          const lat = driver.latitude || (pickupCoords[0] + (idx === 0 ? 0.005 : -0.006));
-          const lng = driver.longitude || (pickupCoords[1] + (idx === 0 ? 0.004 : 0.005));
+        realDrivers.forEach((driver) => {
+          const lat = Number(driver.latitude);
+          const lng = Number(driver.longitude);
+          if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
           const totoDriverIcon = L.divIcon({
             className: "toto-real-driver-icon",
             html: `
               <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-                <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 1px 6px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
+                <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 2px 7px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
                   🛺 ${driver.name || "টোটো চালক"} (${driver.toto_number})
                 </div>
                 <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">

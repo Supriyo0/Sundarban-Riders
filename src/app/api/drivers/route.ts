@@ -22,6 +22,8 @@ export async function GET() {
       let aadhar_card_url = "";
       let secondary_doc_url = "";
       let secondary_doc_type = "";
+      let latitude = typeof d.latitude === "number" ? d.latitude : (d.latitude ? parseFloat(d.latitude) : null);
+      let longitude = typeof d.longitude === "number" ? d.longitude : (d.longitude ? parseFloat(d.longitude) : null);
 
       if (d.current_location_name) {
         try {
@@ -33,11 +35,15 @@ export async function GET() {
           aadhar_card_url = meta.aadhar_card_url || "";
           secondary_doc_url = meta.secondary_doc_url || "";
           secondary_doc_type = meta.secondary_doc_type || "";
+          if ((latitude === null || isNaN(latitude)) && meta.lat) latitude = parseFloat(meta.lat);
+          if ((longitude === null || isNaN(longitude)) && meta.lng) longitude = parseFloat(meta.lng);
         } catch {}
       }
 
       return {
         ...d,
+        latitude,
+        longitude,
         district,
         block,
         aadhar_no,

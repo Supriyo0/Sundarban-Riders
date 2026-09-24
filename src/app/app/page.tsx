@@ -278,6 +278,26 @@ export default function MobileAppPage() {
     return () => clearInterval(pollInterval);
   }, [phase, isOnline, incomingRide, activeRide]);
 
+  // Proactively fetch customer real-time GPS location on app load
+  useEffect(() => {
+    if (typeof window !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setPickupCoords([latitude, longitude]);
+          fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d && d.name) setPickupText(d.name);
+            })
+            .catch(() => {});
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+    }
+  }, []);
+
   // Handle Permissions
   const handleGrantPermissions = () => {
     localStorage.setItem("sr_permissions_granted", "true");

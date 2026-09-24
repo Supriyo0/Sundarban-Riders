@@ -228,11 +228,13 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
     }
   }
 
-  // 2. Query Google Maps Geocoding API if configured
+  // 2. Query Google Maps Geocoding API if configured (with regional bounding box bias)
   const googleKey = process.env.GOOGLE_MAPS_API_KEY;
   if (googleKey) {
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query + ", South 24 Parganas, West Bengal, India")}&key=${googleKey}`;
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        query + ", South 24 Parganas, West Bengal, India"
+      )}&bounds=21.5,88.10|22.3,88.50&key=${googleKey}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.status === "OK" && data.results?.[0]?.geometry?.location) {
@@ -243,9 +245,11 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
     } catch {}
   }
 
-  // 3. Fallback: OpenStreetMap Nominatim
+  // 3. Fallback: OpenStreetMap Nominatim with Regional Viewbox
   try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ", South 24 Parganas, West Bengal")}&format=json&limit=1`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+      query + ", South 24 Parganas, West Bengal"
+    )}&viewbox=88.1,22.3,88.5,21.5&bounded=0&format=json&limit=1`;
     const res = await fetch(url, {
       headers: { "User-Agent": "SundarbanRiders/1.0 (dispatch@sundarbanriders.com)" },
     });
@@ -259,8 +263,8 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
     }
   } catch {}
 
-  // 4. Default to center of Gosaba if completely unknown
-  return { lat: 22.1652, lng: 88.8065, name: query };
+  // 4. Default to center of Kakdwip Station Road if completely unknown
+  return { lat: 21.8760, lng: 88.1920, name: query };
 }
 
 let cachedSettings: Record<string, string> | null = null;

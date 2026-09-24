@@ -645,7 +645,7 @@ export default function RidersPage() {
                 <Label htmlFor="block" className="text-foreground">ব্লক (Block)</Label>
                 <Input
                   id="block"
-                  placeholder="যেমন: গোসাবা / বাসন্তী"
+                  placeholder="যেমন: কাকদ্বীপ / নামখানা / ডায়মন্ড হারবার"
                   value={newBlock}
                   onChange={(e) => setNewBlock(e.target.value)}
                   className="bg-muted border-border text-foreground"

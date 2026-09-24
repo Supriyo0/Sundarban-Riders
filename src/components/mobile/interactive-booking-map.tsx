@@ -18,18 +18,35 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import "leaflet/dist/leaflet.css";
 
-// Landmark directory for fast, offline-resilient Sundarban location naming
+// Landmark directory for fast, offline-resilient location naming around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
 const SUNDARBAN_LANDMARKS = [
-  { name: "গোসাবা ফেরিঘাট", lat: 22.1652, lng: 88.8065, desc: "গোসাবা প্রধান ফেরি পয়েন্ট" },
-  { name: "পাখিরালা বাজার", lat: 22.1485, lng: 88.8250, desc: "হোটেল ও ট্যুরিজম কেন্দ্র" },
-  { name: "গদখালি জেটিঘাট", lat: 22.1932, lng: 88.7841, desc: "সুন্দরবনের প্রবেশদ্বার ঘাট" },
-  { name: "সজনেখালি ফরেস্ট গেট", lat: 22.1280, lng: 88.8410, desc: "ন্যাশনাল পার্ক ওয়াচটাওয়ার" },
-  { name: "দয়াপুর ঘাট", lat: 22.1390, lng: 88.8310, desc: "দয়াপুর নদী পারাপার" },
-  { name: "সোনাখালি বাজার ও বাসস্ট্যান্ড", lat: 22.2150, lng: 88.7180, desc: "বাস ও টোটো সংযোগস্থল" },
-  { name: "আমতলী বাজার", lat: 22.1580, lng: 88.7900, desc: "বাজার ও গ্রামীণ কেন্দ্র" },
-  { name: "রাঙাবেলিয়া স্কুল মোড়", lat: 22.1720, lng: 88.8150, desc: "রাঙাবেলিয়া দ্বীপ" },
-  { name: "ক্যানিং স্টেশন রোড", lat: 22.3120, lng: 88.6570, desc: "লোকাল ট্রেন ও টার্মিনাল" },
-  { name: "বালি ১ নং বাজার", lat: 22.1150, lng: 88.8050, desc: "বালি দ্বীপ বাজার" }
+  // Kakdwip Hubs
+  { name: "কাকদ্বীপ স্টেশন রোড", lat: 21.8760, lng: 88.1920, desc: "কাকদ্বীপ রেল স্টেশন ও বাজার চত্বর" },
+  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", lat: 21.8680, lng: 88.1630, desc: "গঙ্গাসাগর ও কচুবেড়িয়া ফেরি পয়েন্ট" },
+  { name: "কাকদ্বীপ হাসপাতাল মোড়", lat: 21.8745, lng: 88.1880, desc: "মহকুমা হাসপাতাল ও চৌরাস্তা" },
+  { name: "গণেশপুর মোড়", lat: 21.8540, lng: 88.1980, desc: "কাকদ্বীপ-নামখানা সংযোগস্থল" },
+
+  // Namkhana Hubs
+  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", lat: 21.7674, lng: 88.2325, desc: "নামখানা প্রধান বাস ও ট্রেন টার্মিনাল" },
+  { name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়", lat: 21.7640, lng: 88.2350, desc: "নামখানা সেতু ও সংযোগ সড়ক" },
+  { name: "নারায়ণপুর মোড়", lat: 21.7450, lng: 88.2380, desc: "নামখানা নারায়ণপুর সংযোগস্থল" },
+  { name: "বকখালি সৈকত বাসস্ট্যান্ড", lat: 21.5645, lng: 88.2570, desc: "বকখালি সমুদ্র সৈকত ও হোটেল হাব" },
+  { name: "ফ্রেজারগঞ্জ ফিশিং হারবার", lat: 21.5850, lng: 88.2510, desc: "ফ্রেজারগঞ্জ বন্দর ও সৈকত" },
+
+  // Diamond Harbour Hubs
+  { name: "ডায়মন্ড হারবার স্টেশন ও টার্মিনাল", lat: 22.1912, lng: 88.1903, desc: "ডায়মন্ড হারবার প্রধান টার্মিনাল" },
+  { name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)", lat: 22.1935, lng: 88.1820, desc: "হুগলি নদী পারাপার ও পুরানো কেল্লা" },
+  { name: "ডায়মন্ড হারবার এসডিও মোড়", lat: 22.1980, lng: 88.1950, desc: "প্রশাসনিক ভবন ও মহকুমা আদালত" },
+  { name: "সরিষা আশ্রম মোড়", lat: 22.2530, lng: 88.2040, desc: "সরিষা রামকৃষ্ণ মিশন ও ১১৭ নং জাতীয় সড়ক" },
+
+  // Lakshmikantapur Hubs
+  { name: "লক্ষ্মীকান্তপুর স্টেশন বাজার", lat: 22.1220, lng: 88.3180, desc: "লক্ষ্মীকান্তপুর রেলওয়ে জংশন ও বাজার" },
+  { name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়", lat: 22.1250, lng: 88.3195, desc: "কুলপী-মন্দিরবাজার প্রধান মোড়" },
+  { name: "মথুরাপুর রোড স্টেশন বাজার", lat: 22.1700, lng: 88.3300, desc: "মথুরাপুর রেল স্টেশন চত্বর" },
+  { name: "মন্দিরবাজার থানা মোড়", lat: 22.1480, lng: 88.3350, desc: "মন্দিরবাজার থানা ও ব্লক চত্বর" },
+  { name: "কুলপী থানা ও বাজার মোড়", lat: 22.0830, lng: 88.2430, desc: "কুলপী বাসস্টপ ও ১১৭ নং জাতীয় সড়ক" },
+  { name: "নিশ্চিন্দাপুর স্টেশন বাজার", lat: 21.9830, lng: 88.2120, desc: "কাকদ্বীপ রোড নিশ্চিন্দাপুর মোড়" },
+  { name: "রায়দিঘি বাজার ও জেটিঘাট", lat: 22.0010, lng: 88.4350, desc: "মনি নদী জেটিঘাট ও প্রধান বাজার" },
 ];
 
 // Calculate Haversine distance in km
@@ -55,7 +72,7 @@ function calculateFare(distanceKm: number) {
   return Math.max(20, Math.ceil(rawFare / 5) * 5);
 }
 
-// Find nearest known landmark name if coords are near Sundarban
+// Find nearest known landmark name if coords are near
 function getNearestLandmark(lat: number, lng: number) {
   let closest = SUNDARBAN_LANDMARKS[0];
   let minD = 999999;
@@ -87,8 +104,8 @@ interface InteractiveBookingMapProps {
 
 export function InteractiveBookingMap({
   onRouteSelected,
-  initialPickup = "গোসাবা ফেরিঘাট",
-  initialDrop = "পাখিরালা বাজার",
+  initialPickup = "কাকদ্বীপ স্টেশন রোড",
+  initialDrop = "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)",
 }: InteractiveBookingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -96,16 +113,16 @@ export function InteractiveBookingMap({
   const dropMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
 
-  // Default coordinate center (Gosaba, Sundarbans)
-  const [pickupCoords, setPickupCoords] = useState<[number, number]>([22.1652, 88.8065]);
-  const [dropCoords, setDropCoords] = useState<[number, number]>([22.1485, 88.8250]);
+  // Default coordinate center (Kakdwip - Lot 8 Hub)
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
   const [pickupText, setPickupText] = useState(initialPickup);
 
   // Single source of truth for drop input so backspace / cut / edit NEVER reverts
   const [dropInputValue, setDropInputValue] = useState(initialDrop);
 
-  const [distanceKm, setDistanceKm] = useState(2.8);
-  const [fare, setFare] = useState(50);
+  const [distanceKm, setDistanceKm] = useState(3.5);
+  const [fare, setFare] = useState(55);
   const [isLocating, setIsLocating] = useState(false);
   const [gpsDetected, setGpsDetected] = useState(false);
   const [searchResults, setSearchResults] = useState<typeof SUNDARBAN_LANDMARKS>([]);

@@ -46,7 +46,7 @@ export async function POST(req: Request) {
 
     const metadata = {
       district: district || "দক্ষিণ ২৪ পরগনা",
-      block: block || "গোসাবা",
+      block: block || "কাকদ্বীপ",
       aadhar_no: aadhar_number,
       email: email || "",
       aadhar_card_url: aadhar_doc || null,

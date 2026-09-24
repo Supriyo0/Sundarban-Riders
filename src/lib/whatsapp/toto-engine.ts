@@ -58,20 +58,135 @@ export interface DriverLocationState {
 
 export const driverLocationStates = new Map<string, DriverLocationState>();
 
-// Sundarban Known Hubs & Landmarks for fast and offline-resilient matching
+// Known Hubs & Landmarks around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
 export const SUNDARBAN_LANDMARKS = [
-  { name: "গোসাবা ফেরিঘাট", aliases: ["গোসাবা", "gosaba", "gosaba ferry ghat", "গোসাবা ঘাট"], lat: 22.1652, lng: 88.8065 },
-  { name: "পাখিরালা বাজার", aliases: ["পাখিরালা", "pakhiralay", "pakhirala", "পাখিরালয়", "পাখিরালা মোড়"], lat: 22.1485, lng: 88.8250 },
-  { name: "গদখালি জেটিঘাট", aliases: ["গদখালি", "gadkhali", "gadkhali ghat", "গদখালী"], lat: 22.1932, lng: 88.7841 },
-  { name: "সজনেখালি ফরেস্ট গেট", aliases: ["সজনেখালি", "sajnekhali", "সজনেখালী"], lat: 22.1280, lng: 88.8410 },
-  { name: "দয়াপুর ঘাট", aliases: ["দয়াপুর", "dayapur", "দয়াপুর"], lat: 22.1390, lng: 88.8310 },
-  { name: "সোনাখালি বাসস্ট্যান্ড", aliases: ["সোনাখালি", "sonakhali", "সোনাখালী"], lat: 22.2150, lng: 88.7180 },
-  { name: "আমতলী বাজার", aliases: ["আমতলী", "amtali", "amtoly"], lat: 22.1580, lng: 88.7900 },
-  { name: "রাঙাবেলিয়া মোড়", aliases: ["রাঙাবেলিয়া", "rangabelia", "রাঙাবেলিয়া"], lat: 22.1720, lng: 88.8150 },
-  { name: "ক্যানিং স্টেশন রোড", aliases: ["ক্যানিং", "canning", "ক্যানিং স্টেশন"], lat: 22.3120, lng: 88.6570 },
-  { name: "বালি ১ নং বাজার", aliases: ["বালি", "bali", "বালি বাজার"], lat: 22.1150, lng: 88.8050 },
-  { name: "ঝড়খালি বাজার", aliases: ["ঝড়খালি", "jharkhali", "ঝরখালি"], lat: 22.0150, lng: 88.7000 },
-  { name: "বাসন্তী বাজার", aliases: ["বাসন্তী", "basanti"], lat: 22.1980, lng: 88.7100 },
+  // Kakdwip Hubs
+  {
+    name: "কাকদ্বীপ স্টেশন রোড",
+    aliases: ["কাকদ্বীপ", "kakdwip", "kakdwip station", "কাকদ্বীপ স্টেশন", "কাকদ্বীপ বাজার"],
+    lat: 21.8760,
+    lng: 88.1920,
+  },
+  {
+    name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)",
+    aliases: ["লট ৮", "লট 8", "হারউড পয়েন্ট", "lot 8", "harwood point", "lot 8 ghat", "কাকদ্বীপ ঘাট"],
+    lat: 21.8680,
+    lng: 88.1630,
+  },
+  {
+    name: "কাকদ্বীপ হাসপাতাল মোড়",
+    aliases: ["কাকদ্বীপ হাসপাতাল", "হাসপাতাল মোড়", "kakdwip hospital"],
+    lat: 21.8745,
+    lng: 88.1880,
+  },
+  {
+    name: "গণেশপুর মোড়",
+    aliases: ["গণেশপুর", "ganeshpur", "ganeshpur more"],
+    lat: 21.8540,
+    lng: 88.1980,
+  },
+
+  // Namkhana Hubs
+  {
+    name: "নামখানা বাসস্ট্যান্ড ও স্টেশন",
+    aliases: ["নামখানা", "namkhana", "নামখানা বাসস্ট্যান্ড", "নামখানা স্টেশন"],
+    lat: 21.7674,
+    lng: 88.2325,
+  },
+  {
+    name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়",
+    aliases: ["হাতানিয়া ব্রিজ", "দোয়ানিয়া ব্রিজ", "নামখানা ব্রিজ", "hatania bridge"],
+    lat: 21.7640,
+    lng: 88.2350,
+  },
+  {
+    name: "নারায়ণপুর মোড়",
+    aliases: ["নারায়ণপুর", "নারায়নপুর", "narayanpur", "নারায়নপুর মোড়"],
+    lat: 21.7450,
+    lng: 88.2380,
+  },
+  {
+    name: "বকখালি বাসস্ট্যান্ড",
+    aliases: ["বকখালি", "bakkhali", "বকখালি সৈকত", "বকখালি মোড়"],
+    lat: 21.5645,
+    lng: 88.2570,
+  },
+  {
+    name: "ফ্রেজারগঞ্জ হারবার",
+    aliases: ["ফ্রেজারগঞ্জ", "fraserganj", "ফ্রেজারগঞ্জ মোড়"],
+    lat: 21.5850,
+    lng: 88.2510,
+  },
+
+  // Diamond Harbour Hubs
+  {
+    name: "ডায়মন্ড হারবার স্টেশন ও বাসস্ট্যান্ড",
+    aliases: ["ডায়মন্ড হারবার", "diamond harbour", "diamond", "ডায়মন্ড", "ডায়মন্ড হারবার স্টেশন"],
+    lat: 22.1912,
+    lng: 88.1903,
+  },
+  {
+    name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)",
+    aliases: ["কেল্লা ঘাট", "ডায়মন্ড জেটি", "diamond jetty", "diamond harbour ghat"],
+    lat: 22.1935,
+    lng: 88.1820,
+  },
+  {
+    name: "ডায়মন্ড হারবার এসডিও মোড়",
+    aliases: ["এসডিও মোড়", "sdo more", "diamond hospital"],
+    lat: 22.1980,
+    lng: 88.1950,
+  },
+  {
+    name: "সরিষা আশ্রম মোড়",
+    aliases: ["সরিষা", "sarisha", "সরিষা মোড়", "রামকৃষ্ণ মিশন সরিষা"],
+    lat: 22.2530,
+    lng: 88.2040,
+  },
+
+  // Lakshmikantapur Hubs
+  {
+    name: "লক্ষ্মীকান্তপুর স্টেশন বাজার",
+    aliases: ["লক্ষ্মীকান্তপুর", "lakshmikantapur", "লক্ষ্মীকান্তপুর স্টেশন", "laxmikantapur"],
+    lat: 22.1220,
+    lng: 88.3180,
+  },
+  {
+    name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়",
+    aliases: ["লক্ষ্মীকান্তপুর চৌমাথা", "চৌমাথা মোড়", "choumatha"],
+    lat: 22.1250,
+    lng: 88.3195,
+  },
+  {
+    name: "মথুরাপুর রোড স্টেশন বাজার",
+    aliases: ["মথুরাপুর", "mathurapur", "মথুরাপুর রোড", "mathurapur road"],
+    lat: 22.1700,
+    lng: 88.3300,
+  },
+  {
+    name: "মন্দিরবাজার মোড়",
+    aliases: ["মন্দিরবাজার", "mandirbazar", "মন্দির বাজার"],
+    lat: 22.1480,
+    lng: 88.3350,
+  },
+  {
+    name: "কুলপী থানা ও বাজার মোড়",
+    aliases: ["কুলপী", "kulpi", "কুলপি", "কুলপী বাজার"],
+    lat: 22.0830,
+    lng: 88.2430,
+  },
+  {
+    name: "নিশ্চিন্দাপুর স্টেশন বাজার",
+    aliases: ["নিশ্চিন্দাপুর", "nischindapur", "নিশ্চিন্তপুর"],
+    lat: 21.9830,
+    lng: 88.2120,
+  },
+  {
+    name: "রায়দিঘি বাজার ও জেটিঘাট",
+    aliases: ["রায়দিঘি", "raidighi", "রায়দিঘি"],
+    lat: 22.0010,
+    lng: 88.4350,
+  },
 ];
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -531,7 +646,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\n📍 এবার আপনার বর্তমান অবস্থান (Driver Location) প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যে থাকা যাত্রীদের বুকিং পেতে আপনার অবস্থান প্রয়োজন।\n\n👉 নিচের যে কোনো একটি উপায়ে আপনার অবস্থান শেয়ার করুন:\n১) WhatsApp-এর Attach (📎) আইকন থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা আপনার বর্তমান বাসস্ট্যান্ড/বাজারের নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার", "ক্যানিং")।`,
+      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\n📍 এবার আপনার বর্তমান অবস্থান (Driver Location) প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যে থাকা যাত্রীদের বুকিং পেতে আপনার অবস্থান প্রয়োজন।\n\n👉 নিচের যে কোনো একটি উপায়ে আপনার অবস্থান শেয়ার করুন:\n১) WhatsApp-এর Attach (📎) আইকন থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা আপনার বর্তমান বাসস্ট্যান্ড/বাজারের নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর", "লট ৮ ঘাট")।`,
     };
   }
 
@@ -681,7 +796,7 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "text",
-          bodyText: `🛺 ডিউটি শুরুর পূর্বে অবস্থান প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার যাত্রীদের বুকিং পেতে আপনার বর্তমান অবস্থান প্রয়োজন।\n\n👉 যে কোনো একটি উপায়ে লোকেশন পাঠান:\n১) WhatsApp-এর Attach (📎) থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা বর্তমান এলাকার নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার")।`,
+          bodyText: `🛺 ডিউটি শুরুর পূর্বে অবস্থান প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার যাত্রীদের বুকিং পেতে আপনার বর্তমান অবস্থান প্রয়োজন।\n\n👉 যে কোনো একটি উপায়ে লোকেশন পাঠান:\n১) WhatsApp-এর Attach (📎) থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা বর্তমান এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
         };
       }
 
@@ -770,7 +885,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `⚠️ আপনার লাইভ লোকেশনের সময় শেষ হয়েছে!\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার নতুন যাত্রীদের বুকিং চালু রাখতে অনুগ্রহ করে পুনরায় আপনার লাইভ লোকেশন অথবা বর্তমান এলাকার নাম পাঠান।\n\n👉 WhatsApp-এর Attach (📎) থেকে 'Location' শেয়ার করুন অথবা এলাকার নাম লিখে জানান (যেমন: "গোসাবা ফেরিঘাট", "পাখিরালা বাজার")।`,
+      bodyText: `⚠️ আপনার লাইভ লোকেশনের সময় শেষ হয়েছে!\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার নতুন যাত্রীদের বুকিং চালু রাখতে অনুগ্রহ করে পুনরায় আপনার লাইভ লোকেশন অথবা বর্তমান এলাকার নাম পাঠান।\n\n👉 WhatsApp-এর Attach (📎) থেকে 'Location' শেয়ার করুন অথবা এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
     };
   }
 
@@ -908,7 +1023,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:\n\nদয়া করে নিচের মতো করে আপনার পিকআপ লোকেশন শেয়ার করুন:\n👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার Current Location সেন্ড করুন।\n\n(অথবা আপনার পিকআপ জায়গার নাম লিখে পাঠান, যেমন: "গোসাবা ফেরিঘাট")`,
+      bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:\n\nদয়া করে নিচের মতো করে আপনার পিকআপ লোকেশন শেয়ার করুন:\n👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার Current Location সেন্ড করুন।\n\n(অথবা আপনার পিকআপ জায়গার নাম লিখে পাঠান, যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")`,
     };
   }
 
@@ -981,7 +1096,7 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "text",
-          bodyText: `📍 পিকআপ লোকেশন গ্রহণ করা হয়েছে:\n"${pickup}"\n\n🏁 এবার অনুগ্রহ করে আপনার গন্তব্যের নাম (Drop Location) লিখে পাঠান (যেমন: "পাখিরালা বাজার"):`,
+          bodyText: `📍 পিকআপ লোকেশন গ্রহণ করা হয়েছে:\n"${pickup}"\n\n🏁 এবার অনুগ্রহ করে আপনার গন্তব্যের নাম (Drop Location) লিখে পাঠান (যেমন: "লট ৮ ফেরিঘাট", "কাকদ্বীপ", "নামখানা", "ডায়মন্ড হারবার"):`,
         };
       }
     } else if (bookingState.step === "awaiting_drop" && incomingText) {

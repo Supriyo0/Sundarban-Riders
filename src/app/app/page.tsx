@@ -63,7 +63,7 @@ export default function MobileAppPage() {
   const [kycName, setKycName] = useState("");
   const [kycEmail, setKycEmail] = useState("");
   const [kycDistrict, setKycDistrict] = useState("দক্ষিণ ২৪ পরগনা");
-  const [kycBlock, setKycBlock] = useState("গোসাবা");
+  const [kycBlock, setKycBlock] = useState("কাকদ্বীপ");
   const [kycTotoNumber, setKycTotoNumber] = useState("");
   const [kycAadharNumber, setKycAadharNumber] = useState("");
   const [kycAadharDoc, setKycAadharDoc] = useState("");
@@ -77,12 +77,12 @@ export default function MobileAppPage() {
   const [alertCountdown, setAlertCountdown] = useState(30);
 
   // Passenger State
-  const [pickupText, setPickupText] = useState("গোসাবা ফেরিঘাট");
-  const [dropText, setDropText] = useState("পাখিরালা বাজার");
-  const [pickupCoords, setPickupCoords] = useState<[number, number]>([22.1652, 88.8065]);
-  const [dropCoords, setDropCoords] = useState<[number, number]>([22.1485, 88.8250]);
-  const [tripDistance, setTripDistance] = useState(2.8);
-  const [tripFare, setTripFare] = useState(50);
+  const [pickupText, setPickupText] = useState("কাকদ্বীপ স্টেশন রোড");
+  const [dropText, setDropText] = useState("লট ৮ ফেরিঘাট (হারউড পয়েন্ট)");
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
+  const [tripDistance, setTripDistance] = useState(3.5);
+  const [tripFare, setTripFare] = useState(55);
   const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
   const [searchCountdown, setSearchCountdown] = useState(300); // 5 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);

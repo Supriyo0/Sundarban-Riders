@@ -442,6 +442,20 @@ export async function POST(request: Request) {
     const cleanPhone = (customerPhone || "918348122122").replace(/[^0-9]/g, "");
     const bookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    // 1. Ensure customer exists in customers table (CRITICAL: satisfies bookings_customer_phone_fkey constraint)
+    try {
+      await admin.from("customers").upsert(
+        {
+          phone: cleanPhone,
+          name: customerName || "যাত্রী",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "phone" }
+      );
+    } catch (cErr) {
+      console.warn("[bookings] Customer upsert warning:", cErr);
+    }
+
     const pickupLocString = pickupCoords && Array.isArray(pickupCoords) && pickupCoords.length === 2
       ? `${pickupLocation} (GPS: ${pickupCoords[0].toFixed(5)},${pickupCoords[1].toFixed(5)})`
       : pickupLocation;
@@ -520,11 +534,16 @@ export async function PATCH(request: Request) {
         );
       }
 
-      // Resolve valid UUID for driver_id if possible
+      // Resolve valid UUID for driver_id that exists in drivers table (satisfies bookings_driver_id_fkey)
       let validDriverId: string | null = null;
       if (driverId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(driverId)) {
-        validDriverId = driverId;
-      } else if (driverPhone) {
+        const { data: existing } = await admin.from("drivers").select("id").eq("id", driverId).maybeSingle();
+        if (existing?.id) {
+          validDriverId = existing.id;
+        }
+      }
+
+      if (!validDriverId && driverPhone) {
         const clean = driverPhone.replace(/\D/g, "").slice(-10);
         const { data: foundDriver } = await admin
           .from("drivers")
@@ -541,6 +560,7 @@ export async function PATCH(request: Request) {
         status: "assigned",
         updated_at: new Date().toISOString(),
       };
+      // Only set driver_id if confirmed to exist in drivers table; otherwise leave null (driver_id is nullable)
       if (validDriverId) {
         updateData.driver_id = validDriverId;
       }

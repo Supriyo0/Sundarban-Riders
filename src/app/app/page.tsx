@@ -255,9 +255,17 @@ export default function MobileAppPage() {
             const res = await fetch(`/api/bookings?id=${incomingRide.id}`);
             const data = await res.json();
             if (data.booking && data.booking.status !== "pending") {
-              // Booking was took by another rider or cancelled! Popup immediately dismisses.
-              setIncomingRide(null);
-              toast.info("এই রাইডটি অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+              const myDriverId = session?.driverId;
+              const myPhone = session?.phone?.replace(/\D/g, "").slice(-10);
+              const isAcceptedByMe =
+                (myDriverId && data.booking.driver_id === myDriverId) ||
+                (myPhone && data.booking.driver_phone?.includes(myPhone));
+
+              // Only dismiss if accepted by another driver or cancelled
+              if (!isAcceptedByMe) {
+                setIncomingRide(null);
+                toast.info("এই রাইডটি অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+              }
             }
             return;
           }
@@ -1122,7 +1130,7 @@ export default function MobileAppPage() {
                     }),
                   });
                   const data = await res.json();
-                  if (!res.ok || data.error === "booking_already_taken") {
+                  if (!res.ok && data.error === "booking_already_taken") {
                     setIncomingRide(null);
                     toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
                     return;
@@ -1383,7 +1391,7 @@ export default function MobileAppPage() {
                         }),
                       });
                       const data = await res.json();
-                      if (!res.ok || data.error === "booking_already_taken") {
+                      if (!res.ok && data.error === "booking_already_taken") {
                         setIncomingRide(null);
                         toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
                         return;

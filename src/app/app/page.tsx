@@ -32,6 +32,9 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { SwipeToConfirm } from "@/components/mobile/swipe-to-confirm";
 import { playRideAlertSound, playSuccessSound } from "@/lib/mobile/sound";
+import { InteractiveBookingMap } from "@/components/mobile/interactive-booking-map";
+import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-map";
+import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 
 interface MobileSession {
   phone: string;
@@ -76,8 +79,13 @@ export default function MobileAppPage() {
   // Passenger State
   const [pickupText, setPickupText] = useState("গোসাবা ফেরিঘাট");
   const [dropText, setDropText] = useState("পাখিরালা বাজার");
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>([22.1652, 88.8065]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([22.1485, 88.8250]);
+  const [tripDistance, setTripDistance] = useState(2.8);
+  const [tripFare, setTripFare] = useState(50);
+  const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
+  const [searchCountdown, setSearchCountdown] = useState(15);
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
-  const [findingDrivers, setFindingDrivers] = useState(false);
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -88,6 +96,23 @@ export default function MobileAppPage() {
       document.documentElement.dataset.mode = "light";
     }
   }, []);
+
+  // Passenger Radar Search Countdown Effect (15s timeout for nearby driver accept)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (phase === "passenger_searching" && searchStatus === "searching") {
+      if (searchCountdown > 0) {
+        timer = setTimeout(() => {
+          setSearchCountdown((prev) => prev - 1);
+        }, 1000);
+      } else {
+        // Timeout reached without acceptance!
+        setSearchStatus("unaccepted");
+        toast.error("দুঃখিত! এই মুহূর্তে কোনো চালক রাইড গ্রহণ করতে পারছেন না।");
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [phase, searchStatus, searchCountdown]);
 
   // 1. Session Persistence Check on Load
   useEffect(() => {
@@ -1154,7 +1179,264 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme)
+  // VIEW: PASSENGER SEARCHING / UBER-STYLE RADAR SCREEN (Light Theme)
+  // -------------------------------------------------------------
+  if (phase === "passenger_searching") {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
+        {/* Radar Header */}
+        <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setPhase("passenger_home");
+                setSearchStatus("searching");
+              }}
+              className="text-xs text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors"
+            >
+              ← ফিরে যান
+            </button>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">
+                {searchStatus === "searching" ? "চালক অনুসন্ধান চলছে..." : "অনুসন্ধান ফলাফল"}
+              </h3>
+              <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                ৫ কিমি রেডিয়াসে লাইভ রাডার
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`text-xs font-bold px-3 py-1 rounded-full ${
+              searchStatus === "searching"
+                ? "bg-amber-100 text-amber-800 border border-amber-200"
+                : "bg-red-100 text-red-800 border border-red-200"
+            }`}
+          >
+            {searchStatus === "searching" ? `অপেক্ষার সময়: ${searchCountdown}s` : "অপেক্ষারত"}
+          </span>
+        </div>
+
+        {/* Live Radar Map Area with Nearby Totos */}
+        <div className="flex-1 p-4 flex flex-col space-y-4">
+          <div className="h-64 sm:h-72 w-full rounded-3xl overflow-hidden shadow-sm">
+            <NearbyRidersRadarMap
+              pickupCoords={pickupCoords}
+              dropCoords={dropCoords}
+              pickupName={pickupText}
+              dropName={dropText}
+            />
+          </div>
+
+          {/* Bottom Card: Status + Trip Details */}
+          {searchStatus === "searching" ? (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-md space-y-4 animate-in slide-in-from-bottom duration-300">
+              <div className="flex items-center gap-4">
+                <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" />
+                  <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white text-lg shadow-md">
+                    🛺
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-slate-900">
+                    কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                    আশেপাশের ৪ জন অনলাইন টোটো চালকের কাছে আপনার অনুরোধ পাঠানো হয়েছে।
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress Countdown Bar */}
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full transition-all duration-1000 rounded-full"
+                  style={{ width: `${(searchCountdown / 15) * 100}%` }}
+                />
+              </div>
+
+              {/* Trip Details Preview */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">পিকআপ:</span>
+                    <span className="font-bold text-slate-800 ml-1">{pickupText}</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">গন্তব্য:</span>
+                    <span className="font-bold text-slate-800 ml-1">{dropText}</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between font-medium">
+                  <span className="text-slate-500">দূরত্ব: {tripDistance} কিমি</span>
+                  <span className="text-sm font-black text-emerald-600">₹{tripFare}.00 নগদ ভাড়া</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-11 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold"
+                  onClick={() => {
+                    setPhase("passenger_home");
+                    toast.info("অনুসন্ধান বাতিল করা হয়েছে");
+                  }}
+                >
+                  ❌ রিকোয়েস্ট বাতিল
+                </Button>
+
+                <Button
+                  size="sm"
+                  className="h-11 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-600/20"
+                  onClick={() => {
+                    // Test acceptance demo
+                    setPassengerBooking({
+                      id: "SR-9412",
+                      driverName: "রাজেশ মন্ডল",
+                      driverPhone: "9593177885",
+                      totoNumber: "WB-96-T-8421",
+                    });
+                    setPhase("passenger_home");
+                    playSuccessSound();
+                    toast.success("চালক রাইড গ্রহণ করেছেন!");
+                  }}
+                >
+                  ⚡ ডেমো: চালক গ্রহণ করল
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Rider Did Not Accept View (Shows trip details & Find Again) */
+            <div className="bg-white rounded-3xl p-5 border-2 border-amber-300 shadow-xl space-y-4 animate-in slide-in-from-bottom duration-300">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 text-xl">
+                  ⚠️
+                </div>
+                <div>
+                  <h4 className="font-bold text-base text-slate-900">
+                    কোনো চালক রাইড গ্রহণ করতে পারেননি
+                  </h4>
+                  <p className="text-xs text-slate-600 mt-1 font-medium leading-relaxed">
+                    আমরা আন্তরিকভাবে দুঃখিত! আপনার ৫ কিমির ভেতরের চালকরা এই মুহূর্তে অন্য ট্রিপে ব্যস্ত আছেন অথবা রিকোয়েস্টটি গ্রহণ করতে পারেননি।
+                  </p>
+                </div>
+              </div>
+
+              {/* Keep Trip Details Visible */}
+              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2 text-xs">
+                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">
+                  আপনার সংরক্ষিত ট্রিপের বিবরণ:
+                </span>
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">পিকআপ:</span>
+                    <span className="font-bold text-slate-900 ml-1">{pickupText}</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-bold uppercase">গন্তব্য:</span>
+                    <span className="font-bold text-slate-900 ml-1">{dropText}</span>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-amber-200/80 flex items-center justify-between font-medium">
+                  <span className="text-slate-600">দূরত্ব: {tripDistance} কিমি</span>
+                  <span className="text-sm font-black text-slate-900">নগদ ভাড়া: ₹{tripFare}.00</span>
+                </div>
+              </div>
+
+              {/* Action Buttons: Find Again vs Cancel vs Demo Accept */}
+              <div className="space-y-2 pt-1">
+                <Button
+                  size="lg"
+                  className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
+                  onClick={() => {
+                    setSearchStatus("searching");
+                    setSearchCountdown(15);
+                    playRideAlertSound();
+                    toast.info("পুনরায় ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...");
+                  }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>🔄 আবার খুঁজুন (Find Again)</span>
+                </Button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    className="h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white"
+                    onClick={() => {
+                      setPhase("passenger_home");
+                      setSearchStatus("searching");
+                      toast.info("বুকিং উইন্ডোতে ফিরে গেছেন");
+                    }}
+                  >
+                    ❌ বুকিং বাতিল করুন
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    className="h-11 rounded-xl text-xs text-blue-700 border-blue-200 font-bold bg-blue-50 hover:bg-blue-100"
+                    onClick={() => {
+                      setPassengerBooking({
+                        id: "SR-9412",
+                        driverName: "রাজেশ মন্ডল",
+                        driverPhone: "9593177885",
+                        totoNumber: "WB-96-T-8421",
+                      });
+                      setPhase("passenger_home");
+                      playSuccessSound();
+                      toast.success("চালক রাইড গ্রহণ করেছেন!");
+                    }}
+                  >
+                    ⚡ চালক গ্রহণ ডেমো
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // VIEW: POST-TRIP DIGITAL RECEIPT, RATING & COMPLAINTS SCREEN
+  // -------------------------------------------------------------
+  if (phase === "passenger_trip_completed") {
+    return (
+      <TripCompletionReceipt
+        tripId="SR-9412"
+        customerName={session?.passengerName || "যাত্রী বন্ধু"}
+        customerPhone={session?.phone || "9876543210"}
+        driverName={passengerBooking?.driverName || "রাজেশ মন্ডল"}
+        driverPhone={passengerBooking?.driverPhone || "9593177885"}
+        totoNumber={passengerBooking?.totoNumber || "WB-96-T-8421"}
+        pickup={pickupText}
+        drop={dropText}
+        distanceKm={tripDistance}
+        fare={tripFare}
+        onBookAnother={() => {
+          setPassengerBooking(null);
+          setPhase("passenger_home");
+          toast.success("নতুন ট্রিপ বুক করার জন্য প্রস্তুত!");
+        }}
+      />
+    );
+  }
+
+  // -------------------------------------------------------------
+  // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme with Interactive Google Map)
   // -------------------------------------------------------------
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between select-none">
@@ -1195,89 +1477,112 @@ export default function MobileAppPage() {
       </div>
 
       {/* Main Booking Interface */}
-      <div className="flex-1 p-6 space-y-6">
+      <div className="flex-1 p-4 sm:p-6 space-y-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
-          <p className="text-slate-500 text-xs mt-1 font-medium">
-            আপনার অবস্থান থেকে ৫ কিমির ভেতরের স্মার্ট টোটো চালকদের অনুরোধ পাঠানো হবে।
+          <p className="text-slate-500 text-xs mt-0.5 font-medium">
+            পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
           </p>
         </div>
 
-        {/* Pickup & Drop Inputs */}
-        <div className="space-y-4 p-5 rounded-3xl bg-white border border-slate-200 shadow-sm">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500 font-bold uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" /> পিকআপ অবস্থান
-            </Label>
-            <Input
-              value={pickupText}
-              onChange={(e) => setPickupText(e.target.value)}
-              className="h-12 bg-slate-50 border-slate-200 text-slate-900 rounded-xl text-sm font-semibold focus:bg-white"
-            />
-          </div>
+        {/* Live Interactive Map with GPS Auto-Fetch & Draggable Red Drop Pin */}
+        <InteractiveBookingMap
+          initialPickup={pickupText}
+          initialDrop={dropText}
+          onRouteSelected={(route) => {
+            setPickupText(route.pickup);
+            setDropText(route.drop);
+            setPickupCoords(route.pickupCoords);
+            setDropCoords(route.dropCoords);
+            setTripDistance(route.distanceKm);
+            setTripFare(route.estimatedFare);
+          }}
+        />
 
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-500 font-bold uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-red-500" /> গন্তব্যের নাম (Drop)
-            </Label>
-            <Input
-              value={dropText}
-              onChange={(e) => setDropText(e.target.value)}
-              className="h-12 bg-slate-50 border-slate-200 text-slate-900 rounded-xl text-sm font-semibold focus:bg-white"
-            />
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-500 font-medium">আনুমানিক ভাড়া:</span>
-            <span className="text-xl font-black text-slate-900">₹৫০.০০ <span className="text-xs text-emerald-600 font-bold">নগদ</span></span>
-          </div>
-        </div>
-
-        {/* Live Booking Status (If Booked) */}
-        {passengerBooking ? (
-          <div className="p-5 rounded-3xl bg-emerald-50 border border-emerald-200 space-y-4 animate-in fade-in shadow-sm">
+        {/* Confirmed Ride Status Card (If Booked) */}
+        {passengerBooking && (
+          <div className="p-5 rounded-3xl bg-emerald-50 border-2 border-emerald-300 space-y-4 animate-in slide-in-from-bottom shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                 <span className="font-bold text-sm text-slate-900">রাইড নিশ্চিত হয়েছে!</span>
               </div>
-              <span className="text-xs text-emerald-700 font-mono font-bold">#SR-9412</span>
+              <span className="text-xs text-emerald-800 font-mono font-bold bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                #SR-9412
+              </span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2 text-xs shadow-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">চালক:</span>
-                <span className="font-bold text-slate-900">রাজেশ মন্ডল</span>
+            {/* 4-Digit Ride PIN for Passenger Security (Uber-Style) */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-emerald-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                  যাত্রা শুরুর সিকিউরিটি পিন (OTP)
+                </span>
+                <span className="text-xl font-black text-emerald-600 tracking-widest font-mono">
+                  ৪ ৮ ২ ১
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">টোটো নম্বর:</span>
-                <span className="font-mono font-bold text-emerald-600">WB-96-T-8421</span>
+              <span className="text-[11px] text-slate-500 font-medium text-right max-w-[130px]">
+                চালক গাড়িতে উঠলে এই পিনটি বলবেন
+              </span>
+            </div>
+
+            {/* Driver Profile Card */}
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 text-xs shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-xl shadow-sm">
+                    🛺
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900">{passengerBooking.driverName || "রাজেশ মন্ডল"}</h4>
+                    <span className="font-mono font-bold text-emerald-700">{passengerBooking.totoNumber || "WB-96-T-8421"}</span>
+                  </div>
+                </div>
+
+                <a
+                  href={`tel:${passengerBooking.driverPhone || "9593177885"}`}
+                  className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
+                  title="চালকের সাথে কথা বলুন"
+                >
+                  <Phone className="w-5 h-5 fill-white" />
+                </a>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">ফোন:</span>
-                <span className="font-mono font-bold text-slate-900">9593177885</span>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-slate-600 font-medium">
+                <span>নগদ ভাড়া পরিশোধ:</span>
+                <span className="font-black text-slate-900 text-sm">₹{tripFare}.০০</span>
               </div>
             </div>
 
-            <Button
-              variant="destructive"
-              size="sm"
-              className="w-full h-11 rounded-xl text-xs font-bold"
-              onClick={() => {
-                setPassengerBooking(null);
-                toast.info("বুকিং বাতিল করা হয়েছে");
-              }}
-            >
-              বুকিং বাতিল করুন
-            </Button>
+            {/* Finish Trip & Go to Receipt */}
+            <div className="space-y-2 pt-1">
+              <Button
+                size="lg"
+                className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
+                onClick={() => {
+                  setPhase("passenger_trip_completed");
+                  playSuccessSound();
+                  toast.success("ট্রিপ সফলভাবে সমাপ্ত হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+                }}
+              >
+                <span>🏁 ট্রিপ সমাপ্ত ও রসিদ দেখুন</span>
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-9 font-semibold"
+                onClick={() => {
+                  setPassengerBooking(null);
+                  toast.info("বুকিং বাতিল করা হয়েছে");
+                }}
+              >
+                বুকিং বাতিল করুন
+              </Button>
+            </div>
           </div>
-        ) : findingDrivers ? (
-          <div className="p-6 rounded-3xl bg-white border border-slate-200 text-center space-y-3 shadow-sm">
-            <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />
-            <h4 className="font-bold text-sm text-slate-900">কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...</h4>
-            <p className="text-xs text-slate-500 font-medium">অনলাইন চালকদের কাছে অনুরোধ পৌঁছে গেছে।</p>
-          </div>
-        ) : null}
+        )}
       </div>
 
       {/* Book Button */}
@@ -1286,18 +1591,15 @@ export default function MobileAppPage() {
           <Button
             size="lg"
             className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
-            disabled={findingDrivers}
             onClick={() => {
-              setFindingDrivers(true);
-              setTimeout(() => {
-                setFindingDrivers(false);
-                setPassengerBooking({ id: "SR-9412" });
-                playSuccessSound();
-                toast.success("চালক রাইড গ্রহণ করেছেন!");
-              }, 4000);
+              setPhase("passenger_searching");
+              setSearchStatus("searching");
+              setSearchCountdown(15);
+              playRideAlertSound();
+              toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
             }}
           >
-            {findingDrivers ? "চালক খোঁজা হচ্ছে..." : "🛺 টোটো রাইড কনফার্ম করুন (₹৫০.০০)"}
+            🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)
           </Button>
         </div>
       )}

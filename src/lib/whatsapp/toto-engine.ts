@@ -1133,8 +1133,7 @@ export async function processTotoMessage(
       const { data: onlineDrivers } = await supabase
         .from("drivers")
         .select("*")
-        .eq("is_active", true)
-        .eq("is_available", true);
+        .neq("is_active", false);
 
       // Filter drivers within 5km radius of pickup location
       const nearbyDrivers = (onlineDrivers || []).filter((d) => {
@@ -1154,6 +1153,13 @@ export async function processTotoMessage(
       });
 
       const extraNotifications = nearbyDrivers.map((d) => {
+        let recipientPhone = (d.phone || "").replace(/[^0-9]/g, "");
+        if (recipientPhone.length === 10) {
+          recipientPhone = `91${recipientPhone}`;
+        } else if (recipientPhone.startsWith("0")) {
+          recipientPhone = `91${recipientPhone.replace(/^0+/, "")}`;
+        }
+
         let distText = "";
         if (pLat && pLng) {
           let dLat = d.latitude;
@@ -1172,7 +1178,7 @@ export async function processTotoMessage(
         }
 
         return {
-          toPhone: d.phone,
+          toPhone: recipientPhone,
           type: "interactive_buttons" as const,
           bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹50.00\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [

@@ -8,7 +8,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Proactively notifies online drivers within 5km radius via WhatsApp
  */
-async function notifyOnlineDriversViaWhatsApp(admin: SupabaseClient, booking: any) {
+async function notifyOnlineDriversViaWhatsApp(
+  admin: SupabaseClient,
+  booking: any,
+  pickupCoords?: [number, number]
+) {
   try {
     const { data: config } = await admin
       .from("whatsapp_config")
@@ -23,17 +27,16 @@ async function notifyOnlineDriversViaWhatsApp(admin: SupabaseClient, booking: an
     const accessToken = decrypt(config.access_token);
     const phoneNumberId = config.phone_number_id;
 
-    // Fetch active & available drivers
+    // Fetch active drivers (is_active is not false)
     const { data: drivers } = await admin
       .from("drivers")
       .select("*")
-      .eq("is_active", true)
-      .eq("is_available", true);
+      .neq("is_active", false);
 
     if (!drivers || drivers.length === 0) return;
 
-    const pLat = booking.pickup_lat;
-    const pLng = booking.pickup_lng;
+    const pLat = pickupCoords?.[0] || booking.pickup_lat;
+    const pLng = pickupCoords?.[1] || booking.pickup_lng;
 
     const nearbyDrivers = drivers.filter((d) => {
       if (!pLat || !pLng) return true;
@@ -52,7 +55,13 @@ async function notifyOnlineDriversViaWhatsApp(admin: SupabaseClient, booking: an
     });
 
     for (const d of nearbyDrivers) {
-      const recipientPhone = d.phone.replace(/[^0-9]/g, "");
+      let recipientPhone = (d.phone || "").replace(/[^0-9]/g, "");
+      if (recipientPhone.length === 10) {
+        recipientPhone = `91${recipientPhone}`;
+      } else if (recipientPhone.startsWith("0")) {
+        recipientPhone = `91${recipientPhone.replace(/^0+/, "")}`;
+      }
+
       let distText = "";
       if (pLat && pLng) {
         let dLat = d.latitude;
@@ -370,10 +379,6 @@ export async function POST(request: Request) {
         customer_phone: cleanPhone,
         pickup_location: pickupLocation,
         drop_location: dropLocation,
-        pickup_lat: pickupCoords?.[0],
-        pickup_lng: pickupCoords?.[1],
-        drop_lat: dropCoords?.[0],
-        drop_lng: dropCoords?.[1],
         estimated_fare: estimatedFare || 50,
         status: "pending",
         created_at: new Date().toISOString(),
@@ -382,11 +387,12 @@ export async function POST(request: Request) {
       .single();
 
     if (insertErr) {
+      console.error("[bookings] Insert error:", insertErr);
       return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
 
     // Proactively dispatch WhatsApp interactive alerts to all nearby online drivers
-    void notifyOnlineDriversViaWhatsApp(admin, booking);
+    void notifyOnlineDriversViaWhatsApp(admin, booking, pickupCoords);
 
     return NextResponse.json({
       success: true,

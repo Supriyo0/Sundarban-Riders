@@ -17,6 +17,8 @@ import {
   Check,
   Zap,
   Maximize2,
+  Compass,
+  Route as RouteIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -142,6 +144,13 @@ export function InteractiveBookingMap({
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
 
+  // Road Routing Data from /api/route
+  const [roadRouteSummary, setRoadRouteSummary] = useState<string>(
+    "কাকদ্বীপ স্টেশন রোড ➔ ডায়মন্ড হারবার রোড (NH-117) ➔ লট ৮ ফেরিঘাট রোড"
+  );
+  const [roadDurationMin, setRoadDurationMin] = useState<number>(7);
+  const [isLoadingRoadRoute, setIsLoadingRoadRoute] = useState<boolean>(false);
+
   // Search states for typed locations
   const [pickupSearchResults, setPickupSearchResults] = useState<typeof REGIONAL_HUBS>([]);
   const [showPickupSearch, setShowPickupSearch] = useState(false);
@@ -190,9 +199,9 @@ export function InteractiveBookingMap({
     };
   }, [realDrivers, pickupCoords]);
 
-  // Update route data and notify parent
+  // Update route data and notify parent (with live road route geometry & accurate road distance)
   const updateRoute = useCallback(
-    (
+    async (
       pText: string,
       dText: string,
       pCoords: [number, number],
@@ -200,13 +209,41 @@ export function InteractiveBookingMap({
       tier: RideTier = selectedTier,
       payMode: "cash" | "upi" = paymentMode
     ) => {
-      const dist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-      const safeDist = dist === 0 ? 1.0 : dist;
+      let safeDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+      if (safeDist === 0) safeDist = 1.0;
+
+      setIsLoadingRoadRoute(true);
+
+      try {
+        const res = await fetch(
+          `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`
+        );
+        const data = await res.json();
+
+        if (data && data.coordinates && data.coordinates.length > 0) {
+          if (routeLineRef.current) {
+            routeLineRef.current.setLatLngs(data.coordinates);
+          }
+          if (data.routeSummaryBengali) {
+            setRoadRouteSummary(data.routeSummaryBengali);
+          }
+          if (data.distanceKm) {
+            safeDist = data.distanceKm;
+          }
+          if (data.durationMin) {
+            setRoadDurationMin(data.durationMin);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch road route:", err);
+      } finally {
+        setIsLoadingRoadRoute(false);
+      }
+
+      setDistanceKm(safeDist);
       const tierFares = calculateTierFares(safeDist);
       const fareToReport =
         tier === "shared" ? tierFares.shared : tier === "reserved" ? tierFares.reserved : tierFares.standard;
-
-      setDistanceKm(safeDist);
 
       onRouteSelected({
         pickup: pText,
@@ -897,6 +934,24 @@ export function InteractiveBookingMap({
       </div>
 
       {/* ----------------------------------------------------------- */}
+      {/* 3.5. Live Road Route Indicator (Which Route Will Be Taken)  */}
+      {/* ----------------------------------------------------------- */}
+      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 space-y-2 shadow-sm">
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+            <Compass className="w-3.5 h-3.5 animate-spin-slow" />
+            <span>গন্তব্যে যাওয়ার রুট (Drop Route via Road)</span>
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono font-semibold">
+            {isLoadingRoadRoute ? "রুট খোঁজা হচ্ছে..." : `~${roadDurationMin} মিনিট • ${distanceKm} কিমি`}
+          </span>
+        </div>
+        <p className="text-xs font-black text-slate-100 leading-snug">
+          🛣️ {roadRouteSummary}
+        </p>
+      </div>
+
+      {/* ----------------------------------------------------------- */}
       {/* 4. Uber / Rapido Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}
       {/* ----------------------------------------------------------- */}
       <div className="space-y-2 pt-1">
@@ -905,7 +960,7 @@ export function InteractiveBookingMap({
             <span>🛺 রাইড নির্বাচন করুন</span>
           </span>
           <span className="text-[11px] text-slate-500 font-semibold">
-            {distanceKm} কিমি • ~{Math.round(distanceKm * 3.5 + 2)} মিনিট
+            {distanceKm} কিমি • ~{roadDurationMin} মিনিট
           </span>
         </div>
 

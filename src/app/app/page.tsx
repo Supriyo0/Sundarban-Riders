@@ -29,6 +29,7 @@ import {
   MessageCircle,
   X,
   ShieldAlert,
+  Compass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ import { InteractiveBookingMap } from "@/components/mobile/interactive-booking-m
 import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-map";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
+import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
 
 interface MobileSession {
   phone: string;
@@ -1175,14 +1177,31 @@ export default function MobileAppPage() {
                   </div>
                 </div>
 
+                {/* Real Road Route Guidance for Driver */}
+                <div className="bg-slate-900 text-white p-3 rounded-xl border border-slate-800 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                    <Compass className="w-3.5 h-3.5 animate-spin-slow" />
+                    <span>{activeRide.status === "heading_pickup" ? "পিকআপে যাওয়ার সড়ক পথ" : "গন্তব্যে যাওয়ার সড়ক পথ"}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-200 font-medium leading-snug">
+                    {activeRide.status === "heading_pickup"
+                      ? `কাকদ্বীপ স্টেশন রোড ➔ ডায়মন্ড হারবার রোড (NH-117) হয়ে ${activeRide.pickup}`
+                      : `${activeRide.pickup} ➔ ডায়মন্ড হারবার রোড (NH-117) হয়ে ${activeRide.drop}`}
+                  </p>
+                </div>
+
                 <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(activeRide.pickup)}`}
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                    activeRide.status === "heading_pickup" ? activeRide.pickup : activeRide.drop
+                  )}`}
                   target="_blank"
                   rel="noreferrer"
                   className="w-full py-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold flex items-center justify-center gap-2 mt-2 hover:bg-blue-100 transition-colors"
                 >
                   <Navigation className="w-4 h-4 text-blue-600" />
-                  গুগল ম্যাপে দিকনির্দেশনা দেখুন
+                  {activeRide.status === "heading_pickup"
+                    ? "গুগল ম্যাপে পিকআপ রোড দিকনির্দেশনা চালু করুন"
+                    : "গুগল ম্যাপে গন্তব্য রোড দিকনির্দেশনা চালু করুন"}
                 </a>
               </div>
             </div>
@@ -1722,226 +1741,47 @@ export default function MobileAppPage() {
           </p>
         </div>
 
-        {/* Live Interactive Map with GPS Auto-Fetch & Draggable Red Drop Pin */}
-        <InteractiveBookingMap
-          initialPickup={pickupText}
-          initialDrop={dropText}
-          onRouteSelected={(route) => {
-            setPickupText(route.pickup);
-            setDropText(route.drop);
-            setPickupCoords(route.pickupCoords);
-            setDropCoords(route.dropCoords);
-            setTripDistance(route.distanceKm);
-            setTripFare(route.estimatedFare);
-            if (route.rideTier) setSelectedTier(route.rideTier);
-            if (route.paymentMode) setPaymentMode(route.paymentMode);
-          }}
-        />
-
-        {/* Confirmed Ride Status Card (Uber / Rapido Style) */}
-        {passengerBooking && (
-          <div className="p-5 rounded-3xl bg-emerald-50 border-2 border-emerald-300 space-y-4 animate-in slide-in-from-bottom shadow-lg">
-            {/* Header: Status & ID */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
-                <span className="font-extrabold text-sm text-slate-900">রাইড নিশ্চিত হয়েছে!</span>
-              </div>
-              <span className="text-xs text-emerald-800 font-mono font-bold bg-white px-2.5 py-0.5 rounded-full border border-emerald-200">
-                #{passengerBooking.id || "SR-9412"}
-              </span>
-            </div>
-
-            {/* Live Journey Progress Stepper */}
-            <div className="bg-white rounded-2xl p-3.5 border border-emerald-200 space-y-2">
-              <div className="flex items-center justify-between text-[11px] font-bold">
-                <span className="text-slate-500">লাইভ রাইড স্ট্যাটাস:</span>
-                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  {rideStep === "assigned"
-                    ? "✓ চালক নির্ধারিত"
-                    : rideStep === "arriving"
-                    ? "🚗 চালক পিকআপে আসছেন"
-                    : rideStep === "in_trip"
-                    ? "🛺 যাত্রা চলমান"
-                    : "🏁 গন্তব্যে পৌঁছেছেন"}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-4 gap-1.5 pt-1">
-                {[
-                  { id: "assigned", label: "নির্ধারিত", icon: "✓" },
-                  { id: "arriving", label: "আসছেন", icon: "🚗" },
-                  { id: "in_trip", label: "চলমান", icon: "🛺" },
-                  { id: "arrived", label: "পৌঁছেছেন", icon: "🏁" },
-                ].map((step) => {
-                  const stepOrder = ["assigned", "arriving", "in_trip", "arrived"];
-                  const currentIdx = stepOrder.indexOf(rideStep);
-                  const thisIdx = stepOrder.indexOf(step.id);
-                  const isDone = thisIdx <= currentIdx;
-
-                  return (
-                    <button
-                      key={step.id}
-                      type="button"
-                      onClick={() => setRideStep(step.id as any)}
-                      className={`p-2 rounded-xl text-center border transition-all ${
-                        isDone
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold"
-                          : "bg-slate-50 text-slate-400 border-slate-200 font-medium"
-                      }`}
-                    >
-                      <div className="text-xs mb-0.5">{step.icon}</div>
-                      <div className="text-[10px] leading-tight">{step.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 4-Digit Ride PIN for Passenger Security (Uber-Style) */}
-            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-                  যাত্রা শুরুর সিকিউরিটি পিন (OTP)
-                </span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-2xl font-black text-emerald-600 tracking-widest font-mono">
-                    ৪ ৮ ২ ১
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (navigator?.clipboard) {
-                        navigator.clipboard.writeText("4821");
-                        toast.success("সিকিউরিটি পিন ৪ ৮ ২ ১ কপি হয়েছে!");
-                      }
-                    }}
-                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors"
-                    title="পিন কপি করুন"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-              <span className="text-[11px] text-slate-500 font-medium text-right max-w-[130px]">
-                চালক গাড়িতে উঠলে এই পিনটি বলবেন
-              </span>
-            </div>
-
-            {/* Driver Profile Card */}
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 text-xs shadow-xs">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-2xl shadow-sm shrink-0">
-                    🛺
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-extrabold text-sm text-slate-900">
-                        {passengerBooking.driverName || "রাজেশ মন্ডল"}
-                      </h4>
-                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold flex items-center">
-                        <Star className="w-2.5 h-2.5 fill-amber-500 mr-0.5" /> 4.9
-                      </span>
-                    </div>
-                    <span className="font-mono font-bold text-emerald-700 text-xs block">
-                      {passengerBooking.totoNumber || "WB-96-T-8421"}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-medium">সুন্দরবন অনুমোদিত চালক ✓</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* Direct WhatsApp Chat Button */}
-                  <a
-                    href={`https://wa.me/91${(passengerBooking.driverPhone || "9593177885").replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
-                      `নমস্কার ${passengerBooking.driverName || "চালক দাদা"}! আমি আপনার যাত্রী (#${passengerBooking.id || "SR-9412"})। আমার পিকআপ অবস্থান: ${pickupText}।`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
-                    title="WhatsApp-এ মেসেজ করুন"
-                  >
-                    <MessageCircle className="w-4 h-4 fill-white" />
-                  </a>
-
-                  {/* Direct Phone Call Button */}
-                  <a
-                    href={`tel:${passengerBooking.driverPhone || "9593177885"}`}
-                    className="w-10 h-10 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
-                    title="চালকের সাথে কথা বলুন"
-                  >
-                    <Phone className="w-4 h-4 fill-white" />
-                  </a>
-                </div>
-              </div>
-
-              {/* Ride Summary Pill */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-slate-600 font-medium">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800">
-                    {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
-                  </span>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800">
-                    {paymentMode === "upi" ? "📱 UPI" : "💵 নগদ"}
-                  </span>
-                </div>
-
-                <div className="text-right">
-                  <span className="text-xs text-slate-500 mr-1.5">ভাড়া:</span>
-                  <span className="font-black text-slate-900 text-base">₹{tripFare}.০০</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Safety SOS & Share Trip Action Bar */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setShowSosModal(true)}
-                className="p-2.5 rounded-2xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-              >
-                <ShieldAlert className="w-4 h-4 text-red-600" />
-                <span>জরুরি SOS সুরক্ষা</span>
-              </button>
-
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(
-                  `🚨 আমার টোটো রাইড লাইভ বিবরণ:\n🛺 চালক: ${passengerBooking.driverName || "রাজেশ মন্ডল"}\n📞 ফোন: ${passengerBooking.driverPhone || "9593177885"}\n🔢 টোটো: ${passengerBooking.totoNumber || "WB-96-T-8421"}\n📍 পিকআপ: ${pickupText}\n🏁 গন্তব্য: ${dropText}\nবুকিং আইডি: #${passengerBooking.id || "SR-9412"}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-              >
-                <Share2 className="w-4 h-4 text-blue-600" />
-                <span>রাইড শেয়ার করুন</span>
-              </a>
-            </div>
-
-            {/* Finish Trip & Go to Receipt */}
-            <div className="space-y-2 pt-1">
-              <Button
-                size="lg"
-                className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
-                onClick={() => {
-                  setPhase("passenger_trip_completed");
-                  playSuccessSound();
-                  toast.success("ট্রিপ সফলভাবে সমাপ্ত হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
-                }}
-              >
-                <span>🏁 ট্রিপ সমাপ্ত ও রসিদ দেখুন</span>
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-9 font-semibold"
-                onClick={() => setShowCancelModal(true)}
-              >
-                বুকিং বাতিল করুন
-              </Button>
-            </div>
-          </div>
+        {passengerBooking ? (
+          <LiveRideTrackingMap
+            booking={{
+              id: passengerBooking.id,
+              driverName: passengerBooking.driverName || "রাজেশ মন্ডল",
+              driverPhone: passengerBooking.driverPhone || "9593177885",
+              totoNumber: passengerBooking.totoNumber || "WB-96-T-8421",
+            }}
+            pickupCoords={pickupCoords}
+            dropCoords={dropCoords}
+            pickupText={pickupText}
+            dropText={dropText}
+            tripDistance={tripDistance}
+            tripFare={tripFare}
+            selectedTier={selectedTier}
+            paymentMode={paymentMode}
+            rideStep={rideStep}
+            onStepChange={setRideStep}
+            onFinishTrip={() => {
+              setPhase("passenger_trip_completed");
+              playSuccessSound();
+              toast.success("ট্রিপ সফলভাবে সমাপ্ত হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+            }}
+            onCancelClick={() => setShowCancelModal(true)}
+            onSosClick={() => setShowSosModal(true)}
+          />
+        ) : (
+          <InteractiveBookingMap
+            initialPickup={pickupText}
+            initialDrop={dropText}
+            onRouteSelected={(route) => {
+              setPickupText(route.pickup);
+              setDropText(route.drop);
+              setPickupCoords(route.pickupCoords);
+              setDropCoords(route.dropCoords);
+              setTripDistance(route.distanceKm);
+              setTripFare(route.estimatedFare);
+              if (route.rideTier) setSelectedTier(route.rideTier);
+              if (route.paymentMode) setPaymentMode(route.paymentMode);
+            }}
+          />
         )}
       </div>
 

@@ -44,3 +44,9 @@ yarn-error.log*
 next-env.d.ts
 scratch/
 .whatsapp_auth/
+
+# Android build cache
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

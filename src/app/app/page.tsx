@@ -218,6 +218,28 @@ export default function MobileAppPage() {
   const handleGrantPermissions = () => {
     localStorage.setItem("sr_permissions_granted", "true");
     setPermissionsGranted(true);
+
+    // Explicitly prompt the browser for GPS location permission on user gesture
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setPickupCoords([latitude, longitude]);
+          // Resolve initial address
+          fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d && d.name) setPickupText(d.name);
+            })
+            .catch(() => {});
+        },
+        (err) => {
+          console.warn("Geolocation permission error or ignored:", err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
     playSuccessSound();
     toast.success("সকল অনুমতি সফলভাবে প্রদান করা হয়েছে!");
     setPhase("select_role");

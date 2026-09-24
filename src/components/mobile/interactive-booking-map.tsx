@@ -6,12 +6,12 @@ import {
   Search,
   Navigation,
   Compass,
-  ArrowRight,
-  Sparkles,
   Move,
   RefreshCw,
   LocateFixed,
-  Car
+  Car,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -52,11 +52,10 @@ function calculateFare(distanceKm: number) {
   const baseFare = 20;
   const perKm = 10;
   const rawFare = baseFare + distanceKm * perKm;
-  // Round to nearest 5 or 10 rupees
   return Math.max(20, Math.ceil(rawFare / 5) * 5);
 }
 
-// Find nearest known landmark name
+// Find nearest known landmark name if coords are near Sundarban
 function getNearestLandmark(lat: number, lng: number) {
   let closest = SUNDARBAN_LANDMARKS[0];
   let minD = 999999;
@@ -67,10 +66,10 @@ function getNearestLandmark(lat: number, lng: number) {
       closest = lm;
     }
   }
-  if (minD < 0.8) {
+  if (minD < 1.0) {
     return closest.name;
   }
-  return `${closest.name} (কাছে)`;
+  return `পিকআপ (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 }
 
 interface InteractiveBookingMapProps {
@@ -101,17 +100,18 @@ export function InteractiveBookingMap({
   const [pickupCoords, setPickupCoords] = useState<[number, number]>([22.1652, 88.8065]);
   const [dropCoords, setDropCoords] = useState<[number, number]>([22.1485, 88.8250]);
   const [pickupText, setPickupText] = useState(initialPickup);
-  const [dropText, setDropText] = useState(initialDrop);
+
+  // Single source of truth for drop input so backspace / cut / edit NEVER reverts
+  const [dropInputValue, setDropInputValue] = useState(initialDrop);
 
   const [distanceKm, setDistanceKm] = useState(2.8);
   const [fare, setFare] = useState(50);
   const [isLocating, setIsLocating] = useState(false);
-  const [dropSearchQuery, setDropSearchQuery] = useState("");
+  const [gpsDetected, setGpsDetected] = useState(false);
   const [searchResults, setSearchResults] = useState<typeof SUNDARBAN_LANDMARKS>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
 
-  // Broadcast route details to parent whenever state changes
+  // Update route data and notify parent
   const updateRoute = useCallback(
     (pText: string, dText: string, pCoords: [number, number], dCoords: [number, number]) => {
       const dist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
@@ -147,7 +147,7 @@ export function InteractiveBookingMap({
 
       // Create map
       const map = L.map(mapContainerRef.current, {
-        center: [22.158, 88.815],
+        center: pickupCoords,
         zoom: 13,
         zoomControl: false,
       });
@@ -174,15 +174,15 @@ export function InteractiveBookingMap({
         iconSize: [0, 0],
       });
 
-      // Custom Red Drop DivIcon (Draggable with interactive hint)
+      // Custom Red Drop DivIcon (Draggable with interactive label)
       const redDropIcon = L.divIcon({
         className: "custom-drop-pin",
         html: `
           <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
             <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
-              <span>🏁 ড্রপ পয়েন্ট (সরান)</span>
+              <span>🏁 লাল পিন (টেনে সরান)</span>
             </div>
-            <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center; animation: bounce 2s infinite;">
+            <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
               <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
             </div>
           </div>
@@ -212,43 +212,53 @@ export function InteractiveBookingMap({
       routeLineRef.current = line;
 
       // Event: Red marker dragged by user
-      dMarker.on("dragend", () => {
+      dMarker.on("dragend", async () => {
         const newPos = dMarker.getLatLng();
         const newCoords: [number, number] = [newPos.lat, newPos.lng];
         setDropCoords(newCoords);
 
-        // Update connecting line
         line.setLatLngs([pickupCoords, newCoords]);
 
-        // Auto-detect nearest locality / landmark
-        const resolvedName = getNearestLandmark(newCoords[0], newCoords[1]);
-        setDropText(resolvedName);
-        setDropSearchQuery(resolvedName);
+        // Resolve drop name via server geocode or landmark
+        let resolved = getNearestLandmark(newCoords[0], newCoords[1]);
+        try {
+          const res = await fetch(`/api/geocode?lat=${newCoords[0]}&lng=${newCoords[1]}`);
+          const data = await res.json();
+          if (data && data.name) {
+            resolved = data.name;
+          }
+        } catch {}
 
-        updateRoute(pickupText, resolvedName, pickupCoords, newCoords);
-        toast.success(`ড্রপ লোকেশন আপডেট: ${resolvedName}`);
+        setDropInputValue(resolved);
+        updateRoute(pickupText, resolved, pickupCoords, newCoords);
+        toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
       });
 
       // Event: Tap anywhere on map to instantly move the Red Drop Marker
-      map.on("click", (e: any) => {
+      map.on("click", async (e: any) => {
         const clickedCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
         dMarker.setLatLng(clickedCoords);
         setDropCoords(clickedCoords);
 
         line.setLatLngs([pickupCoords, clickedCoords]);
 
-        const resolvedName = getNearestLandmark(clickedCoords[0], clickedCoords[1]);
-        setDropText(resolvedName);
-        setDropSearchQuery(resolvedName);
+        let resolved = getNearestLandmark(clickedCoords[0], clickedCoords[1]);
+        try {
+          const res = await fetch(`/api/geocode?lat=${clickedCoords[0]}&lng=${clickedCoords[1]}`);
+          const data = await res.json();
+          if (data && data.name) {
+            resolved = data.name;
+          }
+        } catch {}
 
-        updateRoute(pickupText, resolvedName, pickupCoords, clickedCoords);
-        toast.info(`ড্রপ পয়েন্ট স্থানান্তরিত: ${resolvedName}`);
+        setDropInputValue(resolved);
+        updateRoute(pickupText, resolved, pickupCoords, clickedCoords);
+        toast.info(`ড্রপ পয়েন্ট স্থানান্তরিত: ${resolved}`);
       });
 
       mapInstanceRef.current = map;
       if (isMounted) {
-        setMapReady(true);
-        updateRoute(pickupText, dropText, pickupCoords, dropCoords);
+        updateRoute(pickupText, dropInputValue, pickupCoords, dropCoords);
       }
     }
 
@@ -263,79 +273,86 @@ export function InteractiveBookingMap({
     };
   }, []);
 
-  // 2. GPS Auto-Fetch: Auto-locate customer's real position
+  // 2. Real Browser GPS Auto-Fetch
   const fetchCurrentLocation = useCallback(() => {
-    if (!navigator.geolocation) {
+    if (typeof window === "undefined" || !navigator.geolocation) {
       toast.error("আপনার ব্রাউজারে GPS লোকেশন সমর্থিত নয়");
       return;
     }
 
     setIsLocating(true);
+    toast.info("ব্রাউজারে লোকেশন অনুমতি (Allow) দিন...");
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         const newPickup: [number, number] = [latitude, longitude];
 
         setPickupCoords(newPickup);
+        setGpsDetected(true);
 
         if (pickupMarkerRef.current) {
           pickupMarkerRef.current.setLatLng(newPickup);
         }
 
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo(newPickup, 14, { duration: 1.2 });
+          mapInstanceRef.current.flyTo(newPickup, 15, { duration: 1.2 });
         }
 
         if (routeLineRef.current) {
           routeLineRef.current.setLatLngs([newPickup, dropCoords]);
         }
 
-        // Identify location name
+        // Resolve location name via server API
         let detectedName = getNearestLandmark(latitude, longitude);
-
-        // Try reverse geocoding via OpenStreetMap Nominatim for detailed road/area name
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`
-          );
+          const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
           const data = await res.json();
-          if (data && data.display_name) {
-            const parts = data.display_name.split(",");
-            detectedName = parts.slice(0, 2).join(",").trim() || detectedName;
+          if (data && data.name) {
+            detectedName = data.name;
           }
-        } catch {
-          // fallback to nearest landmark
-        }
+        } catch {}
 
         setPickupText(detectedName);
-        updateRoute(detectedName, dropText, newPickup, dropCoords);
+        updateRoute(detectedName, dropInputValue, newPickup, dropCoords);
         setIsLocating(false);
-        toast.success(`📍 লাইভ পিকআপ লোকেশন পাওয়া গেছে: ${detectedName}`);
+        toast.success(`📍 লাইভ GPS পিকআপ পাওয়া গেছে: ${detectedName}`);
       },
       (err) => {
         setIsLocating(false);
         console.warn("Geolocation warning:", err.message);
-        toast.info("GPS পাওয়া যায়নি, ডিফল্ট গোসাবা ফেরিঘাট লোকেশন ব্যবহৃত হচ্ছে");
+        if (err.code === 1) {
+          toast.error("লোকেশন পারমিশন ডিনাই করা হয়েছে। অনুগ্রহ করে ব্রাউজার সেটিংসে Location Allow করুন।");
+        } else {
+          toast.info("GPS সিগন্যাল দুর্বল, ম্যাপে পিন নির্দিষ্ট করুন।");
+        }
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
-  }, [dropCoords, dropText, updateRoute]);
+  }, [dropCoords, dropInputValue, updateRoute]);
 
-  // Run auto-fetch on initial load
+  // Attempt auto-locating on load
   useEffect(() => {
-    fetchCurrentLocation();
+    if (navigator.permissions) {
+      navigator.permissions.query({ name: "geolocation" as PermissionName }).then((res) => {
+        if (res.state === "granted") {
+          fetchCurrentLocation();
+        }
+      }).catch(() => {});
+    }
   }, [fetchCurrentLocation]);
 
-  // 3. Drop Location Search Handler
+  // 3. Drop Search Suggestions Filter
   const handleDropSearchInput = (val: string) => {
-    setDropSearchQuery(val);
+    setDropInputValue(val);
+    updateRoute(pickupText, val, pickupCoords, dropCoords);
+
     if (!val.trim()) {
       setSearchResults([]);
       setShowSearchResults(false);
       return;
     }
 
-    // Filter local Sundarban landmarks
     const q = val.toLowerCase();
     const matches = SUNDARBAN_LANDMARKS.filter(
       (lm) => lm.name.toLowerCase().includes(q) || lm.desc.toLowerCase().includes(q)
@@ -348,8 +365,7 @@ export function InteractiveBookingMap({
   const handleSelectDropLocation = (lm: (typeof SUNDARBAN_LANDMARKS)[0]) => {
     const targetCoords: [number, number] = [lm.lat, lm.lng];
     setDropCoords(targetCoords);
-    setDropText(lm.name);
-    setDropSearchQuery(lm.name);
+    setDropInputValue(lm.name);
     setShowSearchResults(false);
 
     if (dropMarkerRef.current) {
@@ -361,14 +377,7 @@ export function InteractiveBookingMap({
     }
 
     if (mapInstanceRef.current) {
-      // Zoom and pan to fit both pickup and drop points comfortably
-      const L = (window as any).L;
-      if (L && pickupMarkerRef.current) {
-        const bounds = L.latLngBounds([pickupCoords, targetCoords]);
-        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
-      } else {
-        mapInstanceRef.current.flyTo(targetCoords, 14, { duration: 1.0 });
-      }
+      mapInstanceRef.current.flyTo(targetCoords, 14, { duration: 1.0 });
     }
 
     updateRoute(pickupText, lm.name, pickupCoords, targetCoords);
@@ -377,94 +386,128 @@ export function InteractiveBookingMap({
 
   return (
     <div className="flex flex-col space-y-3">
-      {/* Search & Location Bar */}
-      <div className="space-y-2">
-        {/* Pickup Auto-Fetched Card */}
-        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-              <MapPin className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-                পিকআপ লোকেশন (স্বয়ংক্রিয় GPS)
-              </span>
-              <span className="text-sm font-bold text-slate-900 line-clamp-1">{pickupText}</span>
-            </div>
+      {/* GPS Location Prompt / Auto-Fetch Banner */}
+      {!gpsDetected && (
+        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span className="text-xs font-bold text-slate-800">
+              আপনার সঠিক অবস্থান স্বয়ংক্রিয়ভাবে পেতে জিপিএস চালু করুন
+            </span>
           </div>
 
           <Button
             type="button"
-            variant="ghost"
             size="sm"
             onClick={fetchCurrentLocation}
             disabled={isLocating}
-            className="text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 h-8 px-2 font-semibold flex items-center gap-1"
+            className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm shrink-0"
           >
             {isLocating ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
             ) : (
-              <LocateFixed className="w-3.5 h-3.5" />
+              <LocateFixed className="w-3.5 h-3.5 mr-1" />
             )}
-            <span>লোকেশন নিন</span>
+            <span>অনুমতি দিন</span>
           </Button>
         </div>
+      )}
 
-        {/* Drop Location Search Input with Live Suggestions */}
-        <div className="relative">
-          <div className="relative flex items-center">
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-500">
-              <span className="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm" />
-            </div>
-            <Input
-              type="text"
-              placeholder="গন্তব্য খুঁজুন (যেমন: পাখিরালা, গদখালি, সজনেখালি)..."
-              value={dropSearchQuery || dropText}
-              onChange={(e) => handleDropSearchInput(e.target.value)}
-              onFocus={() => {
-                if (SUNDARBAN_LANDMARKS.length > 0 && !dropSearchQuery) {
-                  setSearchResults(SUNDARBAN_LANDMARKS.slice(0, 5));
-                  setShowSearchResults(true);
-                }
-              }}
-              className="h-12 pl-10 pr-10 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-sm focus:border-red-500"
-            />
-            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      {/* Pickup Location Display */}
+      <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <MapPin className="w-4 h-4 text-emerald-600" />
           </div>
-
-          {/* Autocomplete Search Dropdown */}
-          {showSearchResults && searchResults.length > 0 && (
-            <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
-              <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
-                <span>জনপ্রিয় গন্তব্যসমূহ</span>
-                <span className="text-emerald-600">লাল পিন স্বয়ংক্রিয় সরবে</span>
-              </div>
-              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                {searchResults.map((lm, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectDropLocation(lm)}
-                    className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">{lm.name}</div>
-                        <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                      নির্বাচন করুন
-                    </span>
-                  </button>
-                ))}
-              </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                পিকআপ অবস্থান
+              </span>
+              {gpsDetected && (
+                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.2 rounded-full">
+                  লাইভ GPS ✓
+                </span>
+              )}
             </div>
-          )}
+            <span className="text-sm font-bold text-slate-900 line-clamp-1">{pickupText}</span>
+          </div>
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={fetchCurrentLocation}
+          disabled={isLocating}
+          className="text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50 h-8 px-2.5 font-bold flex items-center gap-1 rounded-xl"
+        >
+          {isLocating ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <LocateFixed className="w-3.5 h-3.5" />
+          )}
+          <span>আমার লোকেশন</span>
+        </Button>
+      </div>
+
+      {/* Drop Location Search & Free Typing Input */}
+      <div className="relative">
+        <div className="relative flex items-center">
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-500">
+            <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block shadow-sm" />
+          </div>
+          <Input
+            type="text"
+            placeholder="গন্তব্য খুঁজুন বা লিখুন (যেমন: পাখিরালা বাজার)..."
+            value={dropInputValue}
+            onChange={(e) => handleDropSearchInput(e.target.value)}
+            onFocus={() => {
+              if (SUNDARBAN_LANDMARKS.length > 0 && !dropInputValue) {
+                setSearchResults(SUNDARBAN_LANDMARKS.slice(0, 5));
+                setShowSearchResults(true);
+              }
+            }}
+            className="h-12 pl-10 pr-10 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-sm focus:border-red-500"
+          />
+          <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+        </div>
+
+        {/* Autocomplete Search Dropdown */}
+        {showSearchResults && searchResults.length > 0 && (
+          <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+            <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
+              <span>জনপ্রিয় গন্তব্যসমূহ</span>
+              <span className="text-red-600 font-bold">লাল পিন স্বয়ংক্রিয় সরবে</span>
+            </div>
+            <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+              {searchResults.map((lm, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSelectDropLocation(lm)}
+                  className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-6 h-6 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <MapPin className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">{lm.name}</div>
+                      <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                    নির্বাচন করুন
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Interactive Map Canvas Container */}

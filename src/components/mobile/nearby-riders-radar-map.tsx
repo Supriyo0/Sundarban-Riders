@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 
 interface NearbyRidersRadarMapProps {
@@ -18,6 +18,32 @@ export function NearbyRidersRadarMap({
 }: NearbyRidersRadarMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const [realDrivers, setRealDrivers] = useState<any[]>([]);
+  const [loadingDrivers, setLoadingDrivers] = useState(true);
+
+  // Fetch real registered drivers from database
+  useEffect(() => {
+    async function loadRealDrivers() {
+      try {
+        setLoadingDrivers(true);
+        const res = await fetch("/api/drivers");
+        const json = await res.json();
+        if (json.drivers && Array.isArray(json.drivers)) {
+          // Filter real drivers who have toto numbers
+          const valid = json.drivers.filter(
+            (d: any) => d.name && d.toto_number && d.is_active !== false
+          );
+          setRealDrivers(valid);
+        }
+      } catch (err) {
+        console.error("Error loading real drivers:", err);
+      } finally {
+        setLoadingDrivers(false);
+      }
+    }
+
+    loadRealDrivers();
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -103,37 +129,33 @@ export function NearbyRidersRadarMap({
         opacity: 0.8,
       }).addTo(map);
 
-      // 4 Nearby Live Toto Riders (Simulated within 500m - 2.5km)
-      const nearbyOffsets = [
-        { latOffset: 0.005, lngOffset: 0.004, number: "WB-96-T-8421", dist: "0.6 কিমি" },
-        { latOffset: -0.006, lngOffset: 0.005, number: "WB-96-T-3120", dist: "0.9 কিমি" },
-        { latOffset: 0.008, lngOffset: -0.007, number: "WB-96-T-7704", dist: "1.4 কিমি" },
-        { latOffset: -0.009, lngOffset: -0.005, number: "WB-96-T-1955", dist: "1.8 কিমি" },
-      ];
+      // Plot REAL Registered Drivers only (NO fake random numbers)
+      if (realDrivers.length > 0) {
+        realDrivers.forEach((driver, idx) => {
+          // If driver has real latitude & longitude, use it; otherwise offset near pickup within 1-2 km
+          const lat = driver.latitude || (pickupCoords[0] + (idx === 0 ? 0.005 : -0.006));
+          const lng = driver.longitude || (pickupCoords[1] + (idx === 0 ? 0.004 : 0.005));
 
-      nearbyOffsets.forEach((d) => {
-        const driverLat = pickupCoords[0] + d.latOffset;
-        const driverLng = pickupCoords[1] + d.lngOffset;
+          const totoDriverIcon = L.divIcon({
+            className: "toto-real-driver-icon",
+            html: `
+              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+                <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 1px 6px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
+                  🛺 ${driver.name || "টোটো চালক"} (${driver.toto_number})
+                </div>
+                <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">
+                  🛺
+                </div>
+              </div>
+            `,
+            iconSize: [0, 0],
+          });
 
-        const totoDriverIcon = L.divIcon({
-          className: "toto-nearby-icon",
-          html: `
-            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-              <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 1px 5px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                🛺 ${d.number}
-              </div>
-              <div style="width: 32px; height: 32px; background: white; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.4); display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                🛺
-              </div>
-            </div>
-          `,
-          iconSize: [0, 0],
+          L.marker([lat, lng], { icon: totoDriverIcon }).addTo(map);
         });
+      }
 
-        L.marker([driverLat, driverLng], { icon: totoDriverIcon }).addTo(map);
-      });
-
-      // Fit bounds to show pickup and nearby drivers
+      // Fit bounds to show route cleanly
       const bounds = L.latLngBounds([pickupCoords, dropCoords]);
       map.fitBounds(bounds, { padding: [60, 60] });
 
@@ -149,7 +171,7 @@ export function NearbyRidersRadarMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [pickupCoords, dropCoords, pickupName, dropName]);
+  }, [pickupCoords, dropCoords, pickupName, dropName, realDrivers]);
 
   return (
     <div className="relative w-full h-full min-h-[320px] rounded-3xl overflow-hidden border border-slate-200 shadow-inner bg-slate-100">
@@ -163,7 +185,9 @@ export function NearbyRidersRadarMap({
             <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
           </span>
           <span className="text-xs font-bold text-slate-800">
-            নিকটস্থ ৪টি টোটো ট্র্যাকিং হচ্ছে
+            {realDrivers.length > 0
+              ? `${realDrivers.length} জন নিবন্ধিত চালক অনলাইনে নজরদারি করা হচ্ছে`
+              : "৫ কিমি রেডিয়াসে লাইভ রাডার স্ক্যান চলছে..."}
           </span>
         </div>
       </div>

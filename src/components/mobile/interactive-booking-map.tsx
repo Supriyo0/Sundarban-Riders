@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   MapPin,
   Navigation,
@@ -9,6 +9,14 @@ import {
   IndianRupee,
   RefreshCw,
   X,
+  User,
+  ShieldCheck,
+  Layers,
+  Sparkles,
+  Clock,
+  Check,
+  Zap,
+  Maximize2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,32 +26,32 @@ import "leaflet/dist/leaflet.css";
 // Curated Hubs & Landmarks around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
 export const REGIONAL_HUBS = [
   // Kakdwip Hubs
-  { name: "কাকদ্বীপ স্টেশন রোড", lat: 21.8760, lng: 88.1920, desc: "কাকদ্বীপ রেল স্টেশন ও বাজার চত্বর", aliases: ["কাকদ্বীপ", "kakdwip", "kakdwip station", "কাকদ্বীপ বাজার"] },
-  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", lat: 21.8680, lng: 88.1630, desc: "গঙ্গাসাগর ও কচুবেড়িয়া ফেরি পয়েন্ট", aliases: ["লট ৮", "হারউড পয়েন্ট", "lot 8", "harwood point", "কাকদ্বীপ ঘাট"] },
-  { name: "কাকদ্বীপ হাসপাতাল মোড়", lat: 21.8745, lng: 88.1880, desc: "মহকুমা হাসপাতাল ও চৌরাস্তা", aliases: ["কাকদ্বীপ হাসপাতাল", "হাসপাতাল মোড়", "kakdwip hospital"] },
-  { name: "গণেশপুর মোড়", lat: 21.8540, lng: 88.1980, desc: "কাকদ্বীপ-নামখানা সংযোগস্থল", aliases: ["গণেশপুর", "ganeshpur"] },
+  { name: "কাকদ্বীপ স্টেশন রোড", shortName: "কাকদ্বীপ স্টেশন", type: "রেল", lat: 21.8760, lng: 88.1920, desc: "কাকদ্বীপ রেল স্টেশন ও বাজার চত্বর", aliases: ["কাকদ্বীপ", "kakdwip", "kakdwip station", "কাকদ্বীপ বাজার"] },
+  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", shortName: "লট ৮ ঘাট", type: "ফেরি", lat: 21.8680, lng: 88.1630, desc: "গঙ্গাসাগর ও কচুবেড়িয়া ফেরি পয়েন্ট", aliases: ["লট ৮", "হারউড পয়েন্ট", "lot 8", "harwood point", "কাকদ্বীপ ঘাট"] },
+  { name: "কাকদ্বীপ হাসপাতাল মোড়", shortName: "হাসপাতাল মোড়", type: "হাসপাতাল", lat: 21.8745, lng: 88.1880, desc: "মহকুমা হাসপাতাল ও চৌরাস্তা", aliases: ["কাকদ্বীপ হাসপাতাল", "হাসপাতাল মোড়", "kakdwip hospital"] },
+  { name: "গণেশপুর মোড়", shortName: "গণেশপুর", type: "মোড়", lat: 21.8540, lng: 88.1980, desc: "কাকদ্বীপ-নামখানা সংযোগস্থল", aliases: ["গণেশপুর", "ganeshpur"] },
 
   // Namkhana Hubs
-  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", lat: 21.7674, lng: 88.2325, desc: "নামখানা প্রধান বাস ও ট্রেন টার্মিনাল", aliases: ["নামখানা", "namkhana", "নামখানা বাসস্ট্যান্ড", "নামখানা স্টেশন"] },
-  { name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়", lat: 21.7640, lng: 88.2350, desc: "নামখানা সেতু ও সংযোগ সড়ক", aliases: ["হাতানিয়া ব্রিজ", "দোয়ানিয়া ব্রিজ", "নামখানা ব্রিজ", "hatania bridge"] },
-  { name: "নারায়ণপুর মোড়", lat: 21.7450, lng: 88.2380, desc: "নামখানা নারায়ণপুর সংযোগস্থল", aliases: ["নারায়ণপুর", "নারায়নপুর", "narayanpur"] },
-  { name: "বকখালি সৈকত বাসস্ট্যান্ড", lat: 21.5645, lng: 88.2570, desc: "বকখালি সমুদ্র সৈকত ও হোটেল হাব", aliases: ["বকখালি", "bakkhali", "বকখালি সৈকত"] },
-  { name: "ফ্রেজারগঞ্জ ফিশিং হারবার", lat: 21.5850, lng: 88.2510, desc: "ফ্রেজারগঞ্জ বন্দর ও সৈকত", aliases: ["ফ্রেজারগঞ্জ", "fraserganj"] },
+  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", shortName: "নামখানা টার্মিনাল", type: "বাস", lat: 21.7674, lng: 88.2325, desc: "নামখানা প্রধান বাস ও ট্রেন টার্মিনাল", aliases: ["নামখানা", "namkhana", "নামখানা বাসস্ট্যান্ড", "নামখানা স্টেশন"] },
+  { name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়", shortName: "হাতানিয়া ব্রিজ", type: "ব্রিজ", lat: 21.7640, lng: 88.2350, desc: "নামখানা সেতু ও সংযোগ সড়ক", aliases: ["হাতানিয়া ব্রিজ", "দোয়ানিয়া ব্রিজ", "নামখানা ব্রিজ", "hatania bridge"] },
+  { name: "নারায়ণপুর মোড়", shortName: "নারায়ণপুর", type: "মোড়", lat: 21.7450, lng: 88.2380, desc: "নামখানা নারায়ণপুর সংযোগস্থল", aliases: ["নারায়ণপুর", "নারায়নপুর", "narayanpur"] },
+  { name: "বকখালি সৈকত বাসস্ট্যান্ড", shortName: "বকখালি সৈকত", type: "সৈকত", lat: 21.5645, lng: 88.2570, desc: "বকখালি সমুদ্র সৈকত ও হোটেল হাব", aliases: ["বকখালি", "bakkhali", "বকখালি সৈকত"] },
+  { name: "ফ্রেজারগঞ্জ ফিশিং হারবার", shortName: "ফ্রেজারগঞ্জ", type: "বন্দর", lat: 21.5850, lng: 88.2510, desc: "ফ্রেজারগঞ্জ বন্দর ও সৈকত", aliases: ["ফ্রেজারগঞ্জ", "fraserganj"] },
 
   // Diamond Harbour Hubs
-  { name: "ডায়মন্ড হারবার স্টেশন ও টার্মিনাল", lat: 22.1912, lng: 88.1903, desc: "ডায়মন্ড হারবার প্রধান টার্মিনাল", aliases: ["ডায়মন্ড হারবার", "diamond harbour", "diamond", "ডায়মন্ড"] },
-  { name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)", lat: 22.1935, lng: 88.1820, desc: "হুগলি নদী পারাপার ও পুরানো কেল্লা", aliases: ["কেল্লা ঘাট", "ডায়মন্ড জেটি", "diamond jetty"] },
-  { name: "ডায়মন্ড হারবার এসডিও মোড়", lat: 22.1980, lng: 88.1950, desc: "প্রশাসনিক ভবন ও মহকুমা আদালত", aliases: ["এসডিও মোড়", "sdo more", "diamond hospital"] },
-  { name: "সরিষা আশ্রম মোড়", lat: 22.2530, lng: 88.2040, desc: "সরিষা রামকৃষ্ণ মিশন ও ১১৭ নং জাতীয় সড়ক", aliases: ["সরিষা", "sarisha", "রামকৃষ্ণ মিশন"] },
+  { name: "ডায়মন্ড হারবার স্টেশন ও টার্মিনাল", shortName: "ডায়মন্ড হারবার", type: "রেল", lat: 22.1912, lng: 88.1903, desc: "ডায়মন্ড হারবার প্রধান টার্মিনাল", aliases: ["ডায়মন্ড হারবার", "diamond harbour", "diamond", "ডায়মন্ড"] },
+  { name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)", shortName: "কেল্লা ঘাট", type: "ঘাট", lat: 22.1935, lng: 88.1820, desc: "হুগলি নদী পারাপার ও পুরানো কেল্লা", aliases: ["কেল্লা ঘাট", "ডায়মন্ড জেটি", "diamond jetty"] },
+  { name: "ডায়মন্ড হারবার এসডিও মোড়", shortName: "এসডিও মোড়", type: "প্রশাসনিক", lat: 22.1980, lng: 88.1950, desc: "প্রশাসনিক ভবন ও মহকুমা আদালত", aliases: ["এসডিও মোড়", "sdo more", "diamond hospital"] },
+  { name: "সরিষা আশ্রম মোড়", shortName: "সরিষা আশ্রম", type: "আশ্রম", lat: 22.2530, lng: 88.2040, desc: "সরিষা রামকৃষ্ণ মিশন ও ১১৭ নং জাতীয় সড়ক", aliases: ["সরিষা", "sarisha", "রামকৃষ্ণ মিশন"] },
 
   // Lakshmikantapur Hubs
-  { name: "লক্ষ্মীকান্তপুর স্টেশন বাজার", lat: 22.1220, lng: 88.3180, desc: "লক্ষ্মীকান্তপুর রেলওয়ে জংশন ও বাজার", aliases: ["লক্ষ্মীকান্তপুর", "lakshmikantapur", "laxmikantapur"] },
-  { name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়", lat: 22.1250, lng: 88.3195, desc: "কুলপী-মন্দিরবাজার প্রধান মোড়", aliases: ["লক্ষ্মীকান্তপুর চৌমাথা", "চৌমাথা মোড়"] },
-  { name: "মথুরাপুর রোড স্টেশন বাজার", lat: 22.1700, lng: 88.3300, desc: "মথুরাপুর রেল স্টেশন চত্বর", aliases: ["মথুরাপুর", "mathurapur", "mathurapur road"] },
-  { name: "মন্দিরবাজার থানা মোড়", lat: 22.1480, lng: 88.3350, desc: "মন্দিরবাজার থানা ও ব্লক চত্বর", aliases: ["মন্দিরবাজার", "mandirbazar"] },
-  { name: "কুলপী থানা ও বাজার মোড়", lat: 22.0830, lng: 88.2430, desc: "কুলপী বাসস্টপ ও ১১৭ নং জাতীয় সড়ক", aliases: ["কুলপী", "kulpi"] },
-  { name: "নিশ্চিন্দাপুর স্টেশন বাজার", lat: 21.9830, lng: 88.2120, desc: "কাকদ্বীপ রোড নিশ্চিন্দাপুর মোড়", aliases: ["নিশ্চিন্দাপুর", "nischindapur"] },
-  { name: "রায়দিঘি বাজার ও জেটিঘাট", lat: 22.0010, lng: 88.4350, desc: "মনি নদী জেটিঘাট ও প্রধান বাজার", aliases: ["রায়দিঘি", "raidighi"] },
+  { name: "লক্ষ্মীকান্তপুর স্টেশন বাজার", shortName: "লক্ষ্মীকান্তপুর", type: "রেল", lat: 22.1220, lng: 88.3180, desc: "লক্ষ্মীকান্তপুর রেলওয়ে জংশন ও বাজার", aliases: ["লক্ষ্মীকান্তপুর", "lakshmikantapur", "laxmikantapur"] },
+  { name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়", shortName: "চৌমাথা মোড়", type: "মোড়", lat: 22.1250, lng: 88.3195, desc: "কুলপী-মন্দিরবাজার প্রধান মোড়", aliases: ["লক্ষ্মীকান্তপুর চৌমাথা", "চৌমাথা মোড়"] },
+  { name: "মথুরাপুর রোড স্টেশন বাজার", shortName: "মথুরাপুর", type: "রেল", lat: 22.1700, lng: 88.3300, desc: "মথুরাপুর রেল স্টেশন চত্বর", aliases: ["মথুরাপুর", "mathurapur", "mathurapur road"] },
+  { name: "মন্দিরবাজার থানা মোড়", shortName: "মন্দিরবাজার", type: "থানা", lat: 22.1480, lng: 88.3350, desc: "মন্দিরবাজার থানা ও ব্লক চত্বর", aliases: ["মন্দিরবাজার", "mandirbazar"] },
+  { name: "কুলপী থানা ও বাজার মোড়", shortName: "কুলপী", type: "থানা", lat: 22.0830, lng: 88.2430, desc: "কুলপী বাসস্টপ ও ১১৭ নং জাতীয় সড়ক", aliases: ["কুলপী", "kulpi"] },
+  { name: "নিশ্চিন্দাপুর স্টেশন বাজার", shortName: "নিশ্চিন্দাপুর", type: "রেল", lat: 21.9830, lng: 88.2120, desc: "কাকদ্বীপ রোড নিশ্চিন্দাপুর মোড়", aliases: ["নিশ্চিন্দাপুর", "nischindapur"] },
+  { name: "রায়দিঘি বাজার ও জেটিঘাট", shortName: "রায়দিঘি", type: "ঘাট", lat: 22.0010, lng: 88.4350, desc: "মনি নদী জেটিঘাট ও প্রধান বাজার", aliases: ["রায়দিঘি", "raidighi"] },
 ];
 
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -60,11 +68,19 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
   return Math.round(R * c * 10) / 10;
 }
 
-function calculateFare(distanceKm: number) {
-  const baseFare = 20;
+export type RideTier = "standard" | "shared" | "reserved";
+
+function calculateTierFares(distanceKm: number) {
+  const base = 20;
   const perKm = 10;
-  const rawFare = baseFare + distanceKm * perKm;
-  return Math.max(20, Math.ceil(rawFare / 5) * 5);
+  const raw = base + distanceKm * perKm;
+  const standard = Math.max(20, Math.ceil(raw / 5) * 5);
+  // Shared: ~30% off, minimum 15
+  const shared = Math.max(15, Math.ceil((standard * 0.7) / 5) * 5);
+  // Reserved: ~50% premium for entire private toto
+  const reserved = Math.max(40, Math.ceil((standard * 1.5) / 5) * 5);
+
+  return { standard, shared, reserved };
 }
 
 function getNearestHub(lat: number, lng: number) {
@@ -89,8 +105,10 @@ interface InteractiveBookingMapProps {
     drop: string;
     distanceKm: number;
     estimatedFare: number;
+    rideTier?: RideTier;
     pickupCoords: [number, number];
     dropCoords: [number, number];
+    paymentMode?: "cash" | "upi";
   }) => void;
   initialPickup?: string;
   initialDrop?: string;
@@ -99,10 +117,11 @@ interface InteractiveBookingMapProps {
 export function InteractiveBookingMap({
   onRouteSelected,
   initialPickup = "কাকদ্বীপ স্টেশন রোড",
-  initialDrop = "লট ৮ ফেরিঘাট (হারউড point)",
+  initialDrop = "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)",
 }: InteractiveBookingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const tileLayerRef = useRef<any>(null);
   const pickupMarkerRef = useRef<any>(null);
   const dropMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
@@ -115,9 +134,13 @@ export function InteractiveBookingMap({
   const [dropInputValue, setDropInputValue] = useState(initialDrop);
 
   const [distanceKm, setDistanceKm] = useState(3.5);
-  const [fare, setFare] = useState(55);
   const [isLocating, setIsLocating] = useState(false);
   const [gpsDetected, setGpsDetected] = useState(false);
+
+  // Uber/Rapido Ride Options
+  const [selectedTier, setSelectedTier] = useState<RideTier>("standard");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
+  const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
 
   // Search states for typed locations
   const [pickupSearchResults, setPickupSearchResults] = useState<typeof REGIONAL_HUBS>([]);
@@ -128,26 +151,75 @@ export function InteractiveBookingMap({
   // Real registered drivers only (Strictly NO mock data)
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
 
+  // Dynamic Fares calculation
+  const fares = useMemo(() => {
+    return calculateTierFares(distanceKm);
+  }, [distanceKm]);
+
+  // Current active fare based on tier
+  const activeFare = useMemo(() => {
+    if (selectedTier === "shared") return fares.shared;
+    if (selectedTier === "reserved") return fares.reserved;
+    return fares.standard;
+  }, [selectedTier, fares]);
+
+  // Proximity to nearest real registered driver
+  const nearestDriverInfo = useMemo(() => {
+    if (realDrivers.length === 0) return null;
+    let minKm = 9999;
+    let closestDriver: any = null;
+
+    realDrivers.forEach((d) => {
+      const lat = Number(d.latitude);
+      const lng = Number(d.longitude);
+      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+        const dKm = calculateDistanceKm(pickupCoords[0], pickupCoords[1], lat, lng);
+        if (dKm < minKm) {
+          minKm = dKm;
+          closestDriver = d;
+        }
+      }
+    });
+
+    if (minKm === 9999) return null;
+    const etaMin = Math.max(2, Math.round(minKm * 2.5 + 1));
+    return {
+      distanceKm: minKm,
+      etaMin,
+      driverName: closestDriver?.name || "টোটো চালক",
+    };
+  }, [realDrivers, pickupCoords]);
+
   // Update route data and notify parent
   const updateRoute = useCallback(
-    (pText: string, dText: string, pCoords: [number, number], dCoords: [number, number]) => {
+    (
+      pText: string,
+      dText: string,
+      pCoords: [number, number],
+      dCoords: [number, number],
+      tier: RideTier = selectedTier,
+      payMode: "cash" | "upi" = paymentMode
+    ) => {
       const dist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
       const safeDist = dist === 0 ? 1.0 : dist;
-      const calcEstimatedFare = calculateFare(safeDist);
+      const tierFares = calculateTierFares(safeDist);
+      const fareToReport =
+        tier === "shared" ? tierFares.shared : tier === "reserved" ? tierFares.reserved : tierFares.standard;
 
       setDistanceKm(safeDist);
-      setFare(calcEstimatedFare);
 
       onRouteSelected({
         pickup: pText,
         drop: dText,
         distanceKm: safeDist,
-        estimatedFare: calcEstimatedFare,
+        estimatedFare: fareToReport,
+        rideTier: tier,
         pickupCoords: pCoords,
         dropCoords: dCoords,
+        paymentMode: payMode,
       });
     },
-    [onRouteSelected]
+    [onRouteSelected, selectedTier, paymentMode]
   );
 
   // Load ONLY real registered drivers from database
@@ -198,21 +270,27 @@ export function InteractiveBookingMap({
         zoomControl: false,
       });
 
-      // Google Maps Clean Hybrid / Standard Roads Tile Layer
-      L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
+      // Google Maps Tile Layer
+      const tileUrl =
+        mapLayer === "hybrid"
+          ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+          : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+
+      const tiles = L.tileLayer(tileUrl, {
         maxZoom: 20,
         attribution: "© Google Maps",
       }).addTo(map);
+      tileLayerRef.current = tiles;
 
-      // Custom Green Pickup DivIcon
+      // Custom Green Pickup DivIcon (Pulsing Uber-style pin)
       const greenPickupIcon = L.divIcon({
         className: "custom-pickup-pin",
         html: `
           <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%);">
-            <div style="background: #10b981; color: white; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
-              📍 পিকআপ
+            <div style="background: #10b981; color: white; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
+              📍 পিকআপ (আপনার অবস্থান)
             </div>
-            <div style="width: 24px; height: 24px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center;">
+            <div style="position: relative; width: 26px; height: 26px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center;">
               <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
             </div>
           </div>
@@ -220,7 +298,7 @@ export function InteractiveBookingMap({
         iconSize: [0, 0],
       });
 
-      // Custom Red Drop DivIcon (Draggable with interactive label)
+      // Custom Red Drop DivIcon (Draggable with interactive Rapido-style pin)
       const redDropIcon = L.divIcon({
         className: "custom-drop-pin",
         html: `
@@ -250,12 +328,19 @@ export function InteractiveBookingMap({
 
       // 3. Connect Pickup and Drop with Route Polyline
       const line = L.polyline([pickupCoords, dropCoords], {
-        color: "#10b981",
-        weight: 4,
-        dashArray: "6, 8",
-        opacity: 0.9,
+        color: "#059669",
+        weight: 5,
+        opacity: 0.85,
+        lineCap: "round",
+        lineJoin: "round",
       }).addTo(map);
       routeLineRef.current = line;
+
+      // Fit map to show both pickup and drop
+      try {
+        const bounds = L.latLngBounds([pickupCoords, dropCoords]);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      } catch {}
 
       // Event: Red marker dragged by user
       dMarker.on("dragend", async () => {
@@ -346,7 +431,7 @@ export function InteractiveBookingMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [realDrivers]);
+  }, [realDrivers, mapLayer]);
 
   // 2. Real Browser GPS Auto-Fetch: Sets customer real-time location as pickup
   const fetchCurrentLocation = useCallback(() => {
@@ -410,6 +495,16 @@ export function InteractiveBookingMap({
     fetchCurrentLocation();
   }, [fetchCurrentLocation]);
 
+  // Fit bounds to both points
+  const handleFitBounds = () => {
+    if (mapInstanceRef.current && pickupCoords && dropCoords) {
+      import("leaflet").then((L) => {
+        const bounds = L.latLngBounds([pickupCoords, dropCoords]);
+        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
+      });
+    }
+  };
+
   // 3. Handle Pickup Typing & Regional Hub Autocomplete
   const handlePickupSearchInput = (val: string) => {
     setPickupInputValue(val);
@@ -422,7 +517,6 @@ export function InteractiveBookingMap({
     }
 
     const q = val.toLowerCase();
-    // Prioritize our regional hubs first
     const matches = REGIONAL_HUBS.filter(
       (lm) =>
         lm.name.toLowerCase().includes(q) ||
@@ -465,7 +559,6 @@ export function InteractiveBookingMap({
     }
 
     const q = val.toLowerCase();
-    // Prioritize our regional hubs first
     const matches = REGIONAL_HUBS.filter(
       (lm) =>
         lm.name.toLowerCase().includes(q) ||
@@ -476,7 +569,7 @@ export function InteractiveBookingMap({
     setShowDropSearch(true);
   };
 
-  // Select typed drop location
+  // Select drop location (both from autocomplete and Quick Destination Pills)
   const handleSelectDropLocation = (lm: (typeof REGIONAL_HUBS)[0]) => {
     const targetCoords: [number, number] = [lm.lat, lm.lng];
     setDropCoords(targetCoords);
@@ -494,24 +587,105 @@ export function InteractiveBookingMap({
     }
 
     updateRoute(pickupInputValue, lm.name, pickupCoords, targetCoords);
-    toast.success(`গন্তব্য অবস্থান: ${lm.name}`);
+    toast.success(`গন্তব্য: ${lm.name}`);
+  };
+
+  // Swap Pickup and Drop Locations (Uber/Rapido standard feature)
+  const handleSwapRoute = () => {
+    const nextPickupText = dropInputValue;
+    const nextDropText = pickupInputValue;
+    const nextPickupCoords = dropCoords;
+    const nextDropCoords = pickupCoords;
+
+    setPickupInputValue(nextPickupText);
+    setDropInputValue(nextDropText);
+    setPickupCoords(nextPickupCoords);
+    setDropCoords(nextDropCoords);
+
+    if (pickupMarkerRef.current) {
+      pickupMarkerRef.current.setLatLng(nextPickupCoords);
+    }
+    if (dropMarkerRef.current) {
+      dropMarkerRef.current.setLatLng(nextDropCoords);
+    }
+    if (routeLineRef.current) {
+      routeLineRef.current.setLatLngs([nextPickupCoords, nextDropCoords]);
+    }
+
+    updateRoute(nextPickupText, nextDropText, nextPickupCoords, nextDropCoords, selectedTier, paymentMode);
+    toast.success("পিকআপ ও গন্তব্য স্থান অদল-বদল করা হয়েছে ⇅");
+  };
+
+  // Select Ride Tier
+  const handleSelectTier = (tier: RideTier) => {
+    setSelectedTier(tier);
+    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, tier, paymentMode);
+  };
+
+  // Select Payment Mode
+  const handleSelectPayment = (mode: "cash" | "upi") => {
+    setPaymentMode(mode);
+    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, selectedTier, mode);
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
       {/* ----------------------------------------------------------- */}
-      {/* Interactive Map Container */}
+      {/* 1. Interactive Map Container (Uber / Rapido Caliber)        */}
       {/* ----------------------------------------------------------- */}
-      <div className="relative w-full h-[320px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
+      <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
         <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-        {/* GPS Live Locate Button on Map */}
+        {/* Top Floating Bar: Real Registered Drivers Badge */}
+        <div className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-md border border-slate-200 flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+          <span className="text-xs font-bold text-slate-800">
+            {realDrivers.length > 0
+              ? `${realDrivers.length}টি নিবন্ধিত টোটো সক্রিয়`
+              : "নিকটবর্তী টোটো খুঁজছে..."}
+          </span>
+        </div>
+
+        {/* Top-Right Map Controls: Satellite Toggle & Fit Route */}
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setMapLayer((prev) => (prev === "streets" ? "hybrid" : "streets"))}
+            title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "ম্যাপ ভিউ"}
+            className="h-9 px-2.5 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
+          >
+            <Layers className="w-3.5 h-3.5 text-blue-600" />
+            <span>{mapLayer === "streets" ? "স্যাটেলাইট" : "রোড"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleFitBounds}
+            title="সম্পূর্ণ রুট দেখুন"
+            className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Bottom Floating Bar: Proximity ETA Banner */}
+        {nearestDriverInfo && (
+          <div className="absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur-md text-white px-3.5 py-1.5 rounded-2xl shadow-lg border border-slate-700/50 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-medium">
+              কাছের টোটো <strong className="text-emerald-400">{nearestDriverInfo.distanceKm} কিমি</strong> দূরে •{" "}
+              <strong className="text-amber-300">~{nearestDriverInfo.etaMin} মিনিটে</strong> পিকআপ
+            </span>
+          </div>
+        )}
+
+        {/* Bottom-Right GPS Live Locate Button */}
         <button
           type="button"
           onClick={fetchCurrentLocation}
           disabled={isLocating}
-          title="আমার রিয়েলটাইম লোকেশনে যান"
-          className="absolute bottom-4 right-4 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
+          title="আমার রিয়েলটাইম জিপিএস অবস্থানে যান"
+          className="absolute bottom-3 right-3 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
         >
           {isLocating ? (
             <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
@@ -519,183 +693,360 @@ export function InteractiveBookingMap({
             <LocateFixed className="w-5 h-5 text-emerald-600" />
           )}
         </button>
-
-        {/* Real Registered Drivers Count Badge */}
-        <div className="absolute top-4 left-4 z-20 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200 flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-xs font-bold text-slate-800">
-            {realDrivers.length > 0
-              ? `${realDrivers.length}টি নিবন্ধিত টোটো সক্রিয়`
-              : "নিকটবর্তী টোটো খুঁজছে..."}
-          </span>
-        </div>
       </div>
 
       {/* ----------------------------------------------------------- */}
-      {/* 1. TYPABLE PICKUP LOCATION INPUT (Prioritizes Regional Hubs) */}
+      {/* 2. Pickup & Drop Location Search Inputs                     */}
       {/* ----------------------------------------------------------- */}
-      <div className="relative">
-        <div className="relative flex items-center">
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-600">
-            <MapPin className="w-4 h-4 text-emerald-600" />
-          </div>
-          <Input
-            type="text"
-            placeholder="পিকআপ অবস্থান লিখুন বা জিপিএস ব্যবহার করুন..."
-            value={pickupInputValue}
-            onChange={(e) => handlePickupSearchInput(e.target.value)}
-            onFocus={() => {
-              if (REGIONAL_HUBS.length > 0 && !pickupInputValue) {
-                setPickupSearchResults(REGIONAL_HUBS.slice(0, 5));
-                setShowPickupSearch(true);
-              }
-            }}
-            className="h-12 pl-10 pr-28 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-sm focus:border-emerald-500"
-          />
-          {/* Action buttons inside Pickup Input */}
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <button
-              type="button"
-              onClick={fetchCurrentLocation}
-              disabled={isLocating}
-              className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center gap-1 transition-colors"
-            >
-              {isLocating ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : (
-                <LocateFixed className="w-3 h-3" />
-              )}
-              <span>লাইভ GPS</span>
-            </button>
-            {pickupInputValue && (
+      <div className="space-y-2.5">
+        {/* Typable Pickup Input */}
+        <div className="relative">
+          <div className="relative flex items-center">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-600">
+              <MapPin className="w-4 h-4 text-emerald-600" />
+            </div>
+            <Input
+              type="text"
+              placeholder="পিকআপ অবস্থান লিখুন বা জিপিএস ব্যবহার করুন..."
+              value={pickupInputValue}
+              onChange={(e) => handlePickupSearchInput(e.target.value)}
+              onFocus={() => {
+                if (REGIONAL_HUBS.length > 0 && !pickupInputValue) {
+                  setPickupSearchResults(REGIONAL_HUBS.slice(0, 5));
+                  setShowPickupSearch(true);
+                }
+              }}
+              className="h-12 pl-10 pr-28 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-xs focus:border-emerald-500"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               <button
                 type="button"
-                onClick={() => {
-                  setPickupInputValue("");
-                  setShowPickupSearch(false);
-                }}
-                className="w-5 h-5 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400"
+                onClick={fetchCurrentLocation}
+                disabled={isLocating}
+                className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center gap-1 transition-colors"
               >
-                <X className="w-3.5 h-3.5" />
+                {isLocating ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <LocateFixed className="w-3 h-3" />
+                )}
+                <span>লাইভ GPS</span>
               </button>
-            )}
+              {pickupInputValue && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickupInputValue("");
+                    setShowPickupSearch(false);
+                  }}
+                  className="w-5 h-5 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Pickup Autocomplete Search Dropdown */}
+          {showPickupSearch && pickupSearchResults.length > 0 && (
+            <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+              <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
+                <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
+                <span className="text-emerald-700 font-bold">পিকআপ পয়েন্ট</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                {pickupSearchResults.map((lm, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectPickupLocation(lm)}
+                    className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">{lm.name}</div>
+                        <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                      নির্বাচন করুন
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Pickup Autocomplete Search Dropdown */}
-        {showPickupSearch && pickupSearchResults.length > 0 && (
-          <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
-            <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
-              <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
-              <span className="text-emerald-700 font-bold">পিকআপ পয়েন্ট</span>
+        {/* Swap Pickup & Drop Button (Uber/Rapido style) */}
+        <div className="relative flex justify-center -my-1 z-20">
+          <button
+            type="button"
+            onClick={handleSwapRoute}
+            title="পিকআপ ও গন্তব্য অদল-বদল করুন"
+            className="h-7 px-3 rounded-full bg-white hover:bg-slate-50 border border-slate-200 shadow-sm text-slate-700 flex items-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 hover:border-slate-300"
+          >
+            <span className="text-sm">⇅</span>
+            <span>স্থান অদল-বদল</span>
+          </button>
+        </div>
+
+        {/* Typable Drop Input */}
+        <div className="relative">
+          <div className="relative flex items-center">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-500">
+              <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block shadow-xs" />
             </div>
-            <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-              {pickupSearchResults.map((lm, idx) => (
+            <Input
+              type="text"
+              placeholder="গন্তব্য খুঁজুন বা লিখুন (যেমন: লট ৮ ফেরিঘাট)..."
+              value={dropInputValue}
+              onChange={(e) => handleDropSearchInput(e.target.value)}
+              onFocus={() => {
+                if (REGIONAL_HUBS.length > 0 && !dropInputValue) {
+                  setDropSearchResults(REGIONAL_HUBS.slice(0, 5));
+                  setShowDropSearch(true);
+                }
+              }}
+              className="h-12 pl-10 pr-10 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-xs focus:border-red-500"
+            />
+            <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+
+          {/* Drop Autocomplete Search Dropdown */}
+          {showDropSearch && dropSearchResults.length > 0 && (
+            <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
+              <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
+                <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
+                <span className="text-red-600 font-bold">লাল পিন সরবে</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                {dropSearchResults.map((lm, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectDropLocation(lm)}
+                    className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-6 h-6 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
+                        <MapPin className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">{lm.name}</div>
+                        <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                      নির্বাচন করুন
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ----------------------------------------------------------- */}
+        {/* 3. Quick Destination Hub Pills (১-ট্যাপে জনপ্রিয় গন্তব্য)   */}
+        {/* ----------------------------------------------------------- */}
+        <div>
+          <div className="flex items-center justify-between pb-1.5 px-0.5">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              ⚡ দ্রুত ১-ট্যাপ গন্তব্য:
+            </span>
+            <span className="text-[10px] text-emerald-600 font-semibold">ম্যাপে লাল পিন যাবে</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {REGIONAL_HUBS.slice(0, 8).map((hub, idx) => {
+              const isSelected = dropInputValue.includes(hub.shortName) || dropInputValue === hub.name;
+              return (
                 <button
                   key={idx}
                   type="button"
-                  onClick={() => handleSelectPickupLocation(lm)}
-                  className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
+                  onClick={() => handleSelectDropLocation(hub)}
+                  className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1 ${
+                    isSelected
+                      ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
+                  }`}
                 >
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">{lm.name}</div>
-                      <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                    নির্বাচন করুন
+                  <span>
+                    {hub.type === "রেল"
+                      ? "🚉"
+                      : hub.type === "ফেরি" || hub.type === "ঘাট"
+                      ? "⛴️"
+                      : hub.type === "হাসপাতাল"
+                      ? "🏥"
+                      : hub.type === "সৈকত"
+                      ? "🏖️"
+                      : hub.type === "বাস"
+                      ? "🚌"
+                      : "📍"}
                   </span>
+                  <span>{hub.shortName}</span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ----------------------------------------------------------- */}
-      {/* 2. TYPABLE DROP LOCATION INPUT (Prioritizes Regional Hubs)  */}
+      {/* 4. Uber / Rapido Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}
       {/* ----------------------------------------------------------- */}
-      <div className="relative">
-        <div className="relative flex items-center">
-          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-500">
-            <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block shadow-sm" />
-          </div>
-          <Input
-            type="text"
-            placeholder="গন্তব্য খুঁজুন বা লিখুন (যেমন: লট ৮ ফেরিঘাট)..."
-            value={dropInputValue}
-            onChange={(e) => handleDropSearchInput(e.target.value)}
-            onFocus={() => {
-              if (REGIONAL_HUBS.length > 0 && !dropInputValue) {
-                setDropSearchResults(REGIONAL_HUBS.slice(0, 5));
-                setShowDropSearch(true);
-              }
-            }}
-            className="h-12 pl-10 pr-10 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-sm focus:border-red-500"
-          />
-          <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <div className="space-y-2 pt-1">
+        <div className="flex items-center justify-between px-0.5">
+          <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🛺 রাইড নির্বাচন করুন</span>
+          </span>
+          <span className="text-[11px] text-slate-500 font-semibold">
+            {distanceKm} কিমি • ~{Math.round(distanceKm * 3.5 + 2)} মিনিট
+          </span>
         </div>
 
-        {/* Drop Autocomplete Search Dropdown */}
-        {showDropSearch && dropSearchResults.length > 0 && (
-          <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
-            <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
-              <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
-              <span className="text-red-600 font-bold">লাল পিন স্বয়ংক্রিয় সরবে</span>
-            </div>
-            <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-              {dropSearchResults.map((lm, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectDropLocation(lm)}
-                  className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="w-6 h-6 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-900">{lm.name}</div>
-                      <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                    নির্বাচন করুন
+        <div className="space-y-2">
+          {/* Tier 1: Standard Toto (স্ট্যান্ডার্ড টোটো) */}
+          <div
+            onClick={() => handleSelectTier("standard")}
+            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+              selectedTier === "standard"
+                ? "bg-emerald-50/90 border-emerald-500 shadow-sm"
+                : "bg-white border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
+                🛺
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-sm text-slate-900">স্ট্যান্ডার্ড টোটো</h4>
+                  <span className="text-[9px] font-extrabold bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
+                    সেরা পছন্দ
                   </span>
-                </button>
-              ))}
+                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
+                    <User className="w-3 h-3" /> ৪
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিট"} • দ্রুত ও নির্ভরযোগ্য
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-base font-black text-slate-900">₹{fares.standard}.00</div>
+              <span className="text-[10px] text-slate-400 line-through">₹{fares.standard + 10}</span>
             </div>
           </div>
-        )}
+
+          {/* Tier 2: Shared Economy Toto (শেয়ার্ড টোটো) */}
+          <div
+            onClick={() => handleSelectTier("shared")}
+            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+              selectedTier === "shared"
+                ? "bg-blue-50/90 border-blue-500 shadow-sm"
+                : "bg-white border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
+                🛺⚡
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-sm text-slate-900">শেয়ার্ড ইকোনমি</h4>
+                  <span className="text-[9px] font-extrabold bg-blue-600 text-white px-1.5 py-0.5 rounded-md">
+                    ৩০% সাশ্রয়ী
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
+                    <User className="w-3 h-3" /> ১-২
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  সহযাত্রীর সাথে শেয়ার • পকেট-ফ্রেন্ডলি ভাড়া
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-base font-black text-blue-700">₹{fares.shared}.00</div>
+              <span className="text-[10px] text-slate-400 line-through">₹{fares.standard}</span>
+            </div>
+          </div>
+
+          {/* Tier 3: Reserved / Private Toto (রিজার্ভ টোটো) */}
+          <div
+            onClick={() => handleSelectTier("reserved")}
+            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+              selectedTier === "reserved"
+                ? "bg-purple-50/90 border-purple-500 shadow-sm"
+                : "bg-white border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
+                🛺✨
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-extrabold text-sm text-slate-900">স্পেশাল / রিজার্ভ</h4>
+                  <span className="text-[9px] font-extrabold bg-purple-600 text-white px-1.5 py-0.5 rounded-md">
+                    ভিআইপি প্রাইভেট
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  সম্পূর্ণ টোটো একা • সরাসরি নন-স্টপ আরাম
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-base font-black text-purple-700">₹{fares.reserved}.00</div>
+              <span className="text-[10px] text-purple-600 font-bold">নন-স্টপ</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ----------------------------------------------------------- */}
-      {/* Route Distance & Fare Information Card                      */}
+      {/* 5. Payment Method & Safety Shield Bar (Uber/Rapido style)   */}
       {/* ----------------------------------------------------------- */}
-      <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Navigation className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] text-slate-500 font-bold uppercase block">দূরত্ব</span>
-            <span className="text-sm font-extrabold text-slate-900">{distanceKm} কিমি</span>
-          </div>
+      <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500 font-bold">পেমেন্ট:</span>
+          <button
+            type="button"
+            onClick={() => handleSelectPayment("cash")}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+              paymentMode === "cash"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            💵 নগদ (Cash)
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSelectPayment("upi")}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+              paymentMode === "upi"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            📱 UPI স্ক্যান
+          </button>
         </div>
 
-        <div className="flex items-center gap-3 border-l border-slate-100 pl-3">
-          <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <IndianRupee className="w-4 h-4" />
-          </div>
-          <div>
-            <span className="text-[10px] text-slate-500 font-bold uppercase block">আনুমানিক ভাড়া</span>
-            <span className="text-sm font-extrabold text-emerald-700">₹{fare}.00</span>
-          </div>
+        <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          <span>নিরাপদ যাচাই</span>
         </div>
       </div>
     </div>

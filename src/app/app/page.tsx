@@ -22,9 +22,13 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
-  Shield,
   Star,
   Zap,
+  Share2,
+  Copy,
+  MessageCircle,
+  X,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +39,7 @@ import { playRideAlertSound, playSuccessSound } from "@/lib/mobile/sound";
 import { InteractiveBookingMap } from "@/components/mobile/interactive-booking-map";
 import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-map";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
+import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
 
 interface MobileSession {
   phone: string;
@@ -83,6 +88,11 @@ export default function MobileAppPage() {
   const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
   const [tripDistance, setTripDistance] = useState(3.5);
   const [tripFare, setTripFare] = useState(55);
+  const [selectedTier, setSelectedTier] = useState<"standard" | "shared" | "reserved">("standard");
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
+  const [showSosModal, setShowSosModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [rideStep, setRideStep] = useState<"assigned" | "arriving" | "in_trip" | "arrived">("assigned");
   const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
   const [searchCountdown, setSearchCountdown] = useState(300); // 5 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
@@ -1058,38 +1068,64 @@ export default function MobileAppPage() {
         </div>
 
         {/* Radar & Status Area (When Idle) */}
-        {!incomingRide && !activeRide && (
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6">
-            {isOnline ? (
-              <div className="space-y-4">
-                <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
-                  <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" />
-                  <div className="absolute inset-4 rounded-full bg-emerald-200/60 animate-pulse" />
-                  <div className="w-20 h-20 rounded-full bg-white border-2 border-emerald-500 flex items-center justify-center text-3xl shadow-xl shadow-emerald-500/10">
-                    🛺
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">নতুন রাইডের খোঁজ চলছে...</h3>
-                  <p className="text-xs text-emerald-700 font-semibold mt-1">
-                    📍 ৫ কিমি রেডিয়াসের মধ্যে যাত্রী বুকিং করলেই অ্যালার্ট পাবেন
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="w-20 h-20 rounded-full bg-white border border-slate-200 flex items-center justify-center text-3xl mx-auto text-slate-400 shadow-sm">
-                  ⚪
-                </div>
-                <h3 className="text-lg font-bold text-slate-700">আপনি অফলাইনে আছেন</h3>
-                <p className="text-xs text-slate-500 max-w-xs font-medium">
-                  রাইড গ্রহণ শুরু করতে উপরের 'অনলাইন' বোতামে চাপ দিন।
-                </p>
-              </div>
-            )}
+        {!activeRide && (
+          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+            <DriverRadarPanel
+              driverSession={session}
+              isOnline={isOnline}
+              onAcceptRide={async (b) => {
+                try {
+                  const res = await fetch("/api/bookings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "accept",
+                      bookingId: b.id || b.booking_number,
+                      driverId: session?.driverId || "",
+                      driverName: session?.driverName || "সুন্দরবন চালক",
+                      driverPhone: session?.phone || "9593177885",
+                      totoNumber: session?.totoNumber || "WB-96-T-8421",
+                    }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok || data.error === "booking_already_taken") {
+                    setIncomingRide(null);
+                    toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                    return;
+                  }
+
+                  setActiveRide({
+                    id: b.id,
+                    bookingNumber: b.booking_number,
+                    fare: b.estimated_fare || b.fare || 50,
+                    passengerName: b.customer_name || b.passengerName || "যাত্রী",
+                    passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
+                    pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
+                    drop: b.drop_location || b.drop || "গন্তব্য",
+                    status: "heading_pickup",
+                  });
+                  setIncomingRide(null);
+                  playSuccessSound();
+                  toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
+                } catch {
+                  setActiveRide({
+                    id: b.id,
+                    bookingNumber: b.booking_number,
+                    fare: b.estimated_fare || b.fare || 50,
+                    passengerName: b.customer_name || b.passengerName || "যাত্রী",
+                    passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
+                    pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
+                    drop: b.drop_location || b.drop || "গন্তব্য",
+                    status: "heading_pickup",
+                  });
+                  setIncomingRide(null);
+                  toast.success("রাইড গ্রহণ করা হয়েছে!");
+                }
+              }}
+            />
 
             {/* Quick Metrics */}
-            <div className="grid grid-cols-2 gap-3 w-full max-w-xs">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
                 <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">আজকের ট্রিপ</span>
                 <div className="text-2xl font-black text-slate-900 mt-0.5">৬ টি</div>
@@ -1423,7 +1459,22 @@ export default function MobileAppPage() {
               </div>
 
               {/* Trip Details Preview */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
+                {/* Tier and Payment pill */}
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
+                      {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড ইকোনমি" : selectedTier === "reserved" ? "🛺✨ স্পেশাল রিজার্ভ" : "🛺 স্ট্যান্ডার্ড টোটো"}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">
+                      {paymentMode === "upi" ? "📱 UPI" : "💵 নগদ"}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-500">
+                    ~{Math.round(tripDistance * 3.5 + 2)} মিনিট
+                  </span>
+                </div>
+
                 <div className="flex items-start gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
                   <div>
@@ -1440,7 +1491,7 @@ export default function MobileAppPage() {
                 </div>
                 <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between font-medium">
                   <span className="text-slate-500">দূরত্ব: {tripDistance} কিমি</span>
-                  <span className="text-sm font-black text-emerald-600">₹{tripFare}.00 নগদ ভাড়া</span>
+                  <span className="text-sm font-black text-emerald-700">₹{tripFare}.০০ ভাড়া</span>
                 </div>
               </div>
 
@@ -1682,31 +1733,95 @@ export default function MobileAppPage() {
             setDropCoords(route.dropCoords);
             setTripDistance(route.distanceKm);
             setTripFare(route.estimatedFare);
+            if (route.rideTier) setSelectedTier(route.rideTier);
+            if (route.paymentMode) setPaymentMode(route.paymentMode);
           }}
         />
 
-        {/* Confirmed Ride Status Card (If Booked) */}
+        {/* Confirmed Ride Status Card (Uber / Rapido Style) */}
         {passengerBooking && (
           <div className="p-5 rounded-3xl bg-emerald-50 border-2 border-emerald-300 space-y-4 animate-in slide-in-from-bottom shadow-lg">
+            {/* Header: Status & ID */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                <span className="font-bold text-sm text-slate-900">রাইড নিশ্চিত হয়েছে!</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
+                <span className="font-extrabold text-sm text-slate-900">রাইড নিশ্চিত হয়েছে!</span>
               </div>
-              <span className="text-xs text-emerald-800 font-mono font-bold bg-white px-2 py-0.5 rounded-full border border-emerald-200">
-                #SR-9412
+              <span className="text-xs text-emerald-800 font-mono font-bold bg-white px-2.5 py-0.5 rounded-full border border-emerald-200">
+                #{passengerBooking.id || "SR-9412"}
               </span>
             </div>
 
+            {/* Live Journey Progress Stepper */}
+            <div className="bg-white rounded-2xl p-3.5 border border-emerald-200 space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-bold">
+                <span className="text-slate-500">লাইভ রাইড স্ট্যাটাস:</span>
+                <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  {rideStep === "assigned"
+                    ? "✓ চালক নির্ধারিত"
+                    : rideStep === "arriving"
+                    ? "🚗 চালক পিকআপে আসছেন"
+                    : rideStep === "in_trip"
+                    ? "🛺 যাত্রা চলমান"
+                    : "🏁 গন্তব্যে পৌঁছেছেন"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5 pt-1">
+                {[
+                  { id: "assigned", label: "নির্ধারিত", icon: "✓" },
+                  { id: "arriving", label: "আসছেন", icon: "🚗" },
+                  { id: "in_trip", label: "চলমান", icon: "🛺" },
+                  { id: "arrived", label: "পৌঁছেছেন", icon: "🏁" },
+                ].map((step) => {
+                  const stepOrder = ["assigned", "arriving", "in_trip", "arrived"];
+                  const currentIdx = stepOrder.indexOf(rideStep);
+                  const thisIdx = stepOrder.indexOf(step.id);
+                  const isDone = thisIdx <= currentIdx;
+
+                  return (
+                    <button
+                      key={step.id}
+                      type="button"
+                      onClick={() => setRideStep(step.id as any)}
+                      className={`p-2 rounded-xl text-center border transition-all ${
+                        isDone
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold"
+                          : "bg-slate-50 text-slate-400 border-slate-200 font-medium"
+                      }`}
+                    >
+                      <div className="text-xs mb-0.5">{step.icon}</div>
+                      <div className="text-[10px] leading-tight">{step.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* 4-Digit Ride PIN for Passenger Security (Uber-Style) */}
-            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-emerald-200">
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-xs">
               <div>
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                   যাত্রা শুরুর সিকিউরিটি পিন (OTP)
                 </span>
-                <span className="text-xl font-black text-emerald-600 tracking-widest font-mono">
-                  ৪ ৮ ২ ১
-                </span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-2xl font-black text-emerald-600 tracking-widest font-mono">
+                    ৪ ৮ ২ ১
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator?.clipboard) {
+                        navigator.clipboard.writeText("4821");
+                        toast.success("সিকিউরিটি পিন ৪ ৮ ২ ১ কপি হয়েছে!");
+                      }
+                    }}
+                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 transition-colors"
+                    title="পিন কপি করুন"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
               <span className="text-[11px] text-slate-500 font-medium text-right max-w-[130px]">
                 চালক গাড়িতে উঠলে এই পিনটি বলবেন
@@ -1714,31 +1829,93 @@ export default function MobileAppPage() {
             </div>
 
             {/* Driver Profile Card */}
-            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 text-xs shadow-sm">
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3 text-xs shadow-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-xl shadow-sm">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-2xl shadow-sm shrink-0">
                     🛺
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-slate-900">{passengerBooking.driverName || "রাজেশ মন্ডল"}</h4>
-                    <span className="font-mono font-bold text-emerald-700">{passengerBooking.totoNumber || "WB-96-T-8421"}</span>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-extrabold text-sm text-slate-900">
+                        {passengerBooking.driverName || "রাজেশ মন্ডল"}
+                      </h4>
+                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-bold flex items-center">
+                        <Star className="w-2.5 h-2.5 fill-amber-500 mr-0.5" /> 4.9
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-emerald-700 text-xs block">
+                      {passengerBooking.totoNumber || "WB-96-T-8421"}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">সুন্দরবন অনুমোদিত চালক ✓</span>
                   </div>
                 </div>
 
-                <a
-                  href={`tel:${passengerBooking.driverPhone || "9593177885"}`}
-                  className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
-                  title="চালকের সাথে কথা বলুন"
-                >
-                  <Phone className="w-5 h-5 fill-white" />
-                </a>
+                <div className="flex items-center gap-2">
+                  {/* Direct WhatsApp Chat Button */}
+                  <a
+                    href={`https://wa.me/91${(passengerBooking.driverPhone || "9593177885").replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+                      `নমস্কার ${passengerBooking.driverName || "চালক দাদা"}! আমি আপনার যাত্রী (#${passengerBooking.id || "SR-9412"})। আমার পিকআপ অবস্থান: ${pickupText}।`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
+                    title="WhatsApp-এ মেসেজ করুন"
+                  >
+                    <MessageCircle className="w-4 h-4 fill-white" />
+                  </a>
+
+                  {/* Direct Phone Call Button */}
+                  <a
+                    href={`tel:${passengerBooking.driverPhone || "9593177885"}`}
+                    className="w-10 h-10 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
+                    title="চালকের সাথে কথা বলুন"
+                  >
+                    <Phone className="w-4 h-4 fill-white" />
+                  </a>
+                </div>
               </div>
 
+              {/* Ride Summary Pill */}
               <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-slate-600 font-medium">
-                <span>নগদ ভাড়া পরিশোধ:</span>
-                <span className="font-black text-slate-900 text-sm">₹{tripFare}.০০</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-800">
+                    {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800">
+                    {paymentMode === "upi" ? "📱 UPI" : "💵 নগদ"}
+                  </span>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-xs text-slate-500 mr-1.5">ভাড়া:</span>
+                  <span className="font-black text-slate-900 text-base">₹{tripFare}.০০</span>
+                </div>
               </div>
+            </div>
+
+            {/* Safety SOS & Share Trip Action Bar */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSosModal(true)}
+                className="p-2.5 rounded-2xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+              >
+                <ShieldAlert className="w-4 h-4 text-red-600" />
+                <span>জরুরি SOS সুরক্ষা</span>
+              </button>
+
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `🚨 আমার টোটো রাইড লাইভ বিবরণ:\n🛺 চালক: ${passengerBooking.driverName || "রাজেশ মন্ডল"}\n📞 ফোন: ${passengerBooking.driverPhone || "9593177885"}\n🔢 টোটো: ${passengerBooking.totoNumber || "WB-96-T-8421"}\n📍 পিকআপ: ${pickupText}\n🏁 গন্তব্য: ${dropText}\nবুকিং আইডি: #${passengerBooking.id || "SR-9412"}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+              >
+                <Share2 className="w-4 h-4 text-blue-600" />
+                <span>রাইড শেয়ার করুন</span>
+              </a>
             </div>
 
             {/* Finish Trip & Go to Receipt */}
@@ -1759,10 +1936,7 @@ export default function MobileAppPage() {
                 variant="ghost"
                 size="sm"
                 className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-9 font-semibold"
-                onClick={() => {
-                  setPassengerBooking(null);
-                  toast.info("বুকিং বাতিল করা হয়েছে");
-                }}
+                onClick={() => setShowCancelModal(true)}
               >
                 বুকিং বাতিল করুন
               </Button>
@@ -1797,6 +1971,8 @@ export default function MobileAppPage() {
                     dropCoords,
                     estimatedFare: tripFare,
                     tripDistance,
+                    rideTier: selectedTier,
+                    paymentMode,
                   }),
                 });
                 const data = await res.json();
@@ -1810,6 +1986,130 @@ export default function MobileAppPage() {
           >
             🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)
           </Button>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: EMERGENCY SOS SAFETY SHIELD                             */}
+      {/* ------------------------------------------------------------- */}
+      {showSosModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 border border-red-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-red-600 font-bold">
+                <ShieldAlert className="w-5 h-5 text-red-600" />
+                <h3 className="text-base text-slate-900">জরুরি সুরক্ষা ও হেল্পলাইন</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSosModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 font-medium">
+              যেকোনো জরুরি পরিস্থিতিতে অবিলম্বে নিচের সরকারি ও সুন্দরবন রাইডার্স নম্বরে কল করুন:
+            </p>
+
+            <div className="space-y-2 pt-1 text-xs">
+              <a
+                href="tel:112"
+                className="p-3.5 rounded-2xl bg-red-600 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Phone className="w-4 h-4 fill-white" />
+                  <span>জাতীয় জরুরি নম্বর (পুলিশ/দমকল)</span>
+                </div>
+                <span className="font-mono text-sm">১১২</span>
+              </a>
+
+              <a
+                href="tel:1091"
+                className="p-3.5 rounded-2xl bg-purple-600 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Phone className="w-4 h-4 fill-white" />
+                  <span>মহিলা সুরক্ষা হেল্পলাইন</span>
+                </div>
+                <span className="font-mono text-sm">১০৯১</span>
+              </a>
+
+              <a
+                href="tel:102"
+                className="p-3.5 rounded-2xl bg-amber-500 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Phone className="w-4 h-4 fill-white" />
+                  <span>অ্যাম্বুলেন্স জরুরি পরিষেবা</span>
+                </div>
+                <span className="font-mono text-sm">১০২</span>
+              </a>
+            </div>
+
+            <Button
+              onClick={() => setShowSosModal(false)}
+              variant="outline"
+              className="w-full h-11 rounded-2xl text-xs font-bold border-slate-300 text-slate-700 mt-2"
+            >
+              বন্ধ করুন
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: CANCEL RIDE CONFIRMATION                                */}
+      {/* ------------------------------------------------------------- */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-base font-bold text-slate-900">রাইড বাতিলের কারণ</h3>
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 font-medium">
+              রাইডটি বাতিল করার জন্য একটি কারণ নির্বাচন করুন:
+            </p>
+
+            <div className="space-y-2">
+              {[
+                "চালক অনেক দূরে অবস্থান করছেন",
+                "ভুল পিকআপ বা গন্তব্য নির্বাচন করেছি",
+                "দেরি হচ্ছে, অন্য যানবাহনে যাচ্ছি",
+                "পরিকল্পনা পরিবর্তন হয়েছে",
+              ].map((reason, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setPassengerBooking(null);
+                    setShowCancelModal(false);
+                    toast.info(`রাইড বাতিল করা হয়েছে: ${reason}`);
+                  }}
+                  className="w-full p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50 text-left text-xs font-semibold text-slate-800 transition-colors"
+                >
+                  {reason}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              onClick={() => setShowCancelModal(false)}
+              variant="ghost"
+              className="w-full text-xs text-slate-500 h-9 font-medium"
+            >
+              বাতিল করবেন না, রাইড চালিয়ে যান
+            </Button>
+          </div>
         </div>
       )}
     </div>

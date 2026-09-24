@@ -184,7 +184,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Driver ID is required" }, { status: 400 });
     }
 
-    const { id, is_active, is_available } = body;
+    const { id, is_active, is_available, latitude, longitude, current_location_name } = body;
     const admin = supabaseAdmin();
 
     const updates: Record<string, unknown> = {
@@ -192,6 +192,15 @@ export async function PATCH(request: Request) {
     };
     if (typeof is_active === "boolean") updates.is_active = is_active;
     if (typeof is_available === "boolean") updates.is_available = is_available;
+    if (typeof latitude === "number" || (typeof latitude === "string" && !isNaN(Number(latitude)))) {
+      updates.latitude = Number(latitude);
+    }
+    if (typeof longitude === "number" || (typeof longitude === "string" && !isNaN(Number(longitude)))) {
+      updates.longitude = Number(longitude);
+    }
+    if (current_location_name) {
+      updates.current_location_name = current_location_name;
+    }
 
     const { data, error } = await admin
       .from("drivers")

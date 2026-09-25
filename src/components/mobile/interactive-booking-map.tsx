@@ -371,21 +371,21 @@ export function InteractiveBookingMap({
     }
   }, []);
 
-  // 1. Initialize Leaflet Map (Browser Only)
+  // 1. Initialize Leaflet Map ONCE on mount
   useEffect(() => {
     let isMounted = true;
 
     async function initMap() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.invalidateSize();
+        } catch {}
+        return;
+      }
+
       try {
         const L = await import("leaflet");
-
-        if (mapInstanceRef.current) {
-          try {
-            mapInstanceRef.current.remove();
-          } catch {}
-          mapInstanceRef.current = null;
-        }
 
         // Prevent Leaflet "Map container is already initialized" crash
         if (mapContainerRef.current) {
@@ -399,109 +399,58 @@ export function InteractiveBookingMap({
           zoomControl: false,
         });
 
-      // Google Maps Tile Layer
-      const tileUrl =
-        mapLayer === "hybrid"
-          ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-          : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+        // Google Maps Tile Layer
+        const tileUrl =
+          mapLayer === "hybrid"
+            ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+            : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
 
-      const tiles = L.tileLayer(tileUrl, {
-        maxZoom: 20,
-        attribution: "© Google Maps",
-      }).addTo(map);
-      tileLayerRef.current = tiles;
+        const tiles = L.tileLayer(tileUrl, {
+          maxZoom: 20,
+          attribution: "© Google Maps",
+        }).addTo(map);
+        tileLayerRef.current = tiles;
 
-      // Custom Green Pickup DivIcon (Pulsing Uber-style pin)
-      const greenPickupIcon = L.divIcon({
-        className: "custom-pickup-pin",
-        html: `
-          <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%);">
-            <div style="background: #10b981; color: white; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
-              📍 পিকআপ (আপনার অবস্থান)
-            </div>
-            <div style="position: relative; width: 26px; height: 26px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center;">
-              <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
-            </div>
-          </div>
-        `,
-        iconSize: [0, 0],
-      });
-
-      // Custom Red Drop DivIcon (Draggable with interactive pin)
-      const createRedDropIcon = () =>
-        L.divIcon({
-          className: "custom-drop-pin",
+        // Custom Green Pickup DivIcon
+        const greenPickupIcon = L.divIcon({
+          className: "custom-pickup-pin",
           html: `
-            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
-              <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
-                <span>🏁 গন্তব্য (টেনে সরান)</span>
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%);">
+              <div style="background: #10b981; color: white; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
+                📍 পিকআপ (আপনার অবস্থান)
               </div>
-              <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
-                <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
+              <div style="position: relative; width: 26px; height: 26px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center;">
+                <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
               </div>
             </div>
           `,
           iconSize: [0, 0],
         });
 
-      // 1. Pickup Marker (Green)
-      const pMarker = L.marker(pickupCoords, { icon: greenPickupIcon }).addTo(map);
-      pickupMarkerRef.current = pMarker;
+        // Custom Red Drop DivIcon
+        const createRedDropIcon = () =>
+          L.divIcon({
+            className: "custom-drop-pin",
+            html: `
+              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
+                <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
+                  <span>🏁 গন্তব্য (টেনে সরান)</span>
+                </div>
+                <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
+                  <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
+                </div>
+              </div>
+            `,
+            iconSize: [0, 0],
+          });
 
-      // 2. Drop Marker (Red & Draggable) - rendered if dropInputValue is set
-      if (dropInputValue) {
-        const dMarker = L.marker(dropCoords, {
-          icon: createRedDropIcon(),
-          draggable: true,
-          autoPan: true,
-        }).addTo(map);
-        dropMarkerRef.current = dMarker;
+        // 1. Pickup Marker (Green)
+        const pMarker = L.marker(pickupCoords, { icon: greenPickupIcon }).addTo(map);
+        pickupMarkerRef.current = pMarker;
 
-        dMarker.on("dragend", async () => {
-          const newPos = dMarker.getLatLng();
-          const newCoords: [number, number] = [newPos.lat, newPos.lng];
-          setDropCoords(newCoords);
-
-          if (routeLineRef.current) {
-            routeLineRef.current.setLatLngs([pickupCoords, newCoords]);
-          }
-
-          const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
-          setDropInputValue(resolved);
-          updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
-          toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
-        });
-      } else {
-        dropMarkerRef.current = null;
-      }
-
-      // 3. Connect Pickup and Drop with Route Polyline
-      const line = L.polyline(dropInputValue ? [pickupCoords, dropCoords] : [], {
-        color: "#059669",
-        weight: 5,
-        opacity: 0.85,
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(map);
-      routeLineRef.current = line;
-
-      // Fit map or center on pickup
-      if (dropInputValue) {
-        try {
-          const bounds = L.latLngBounds([pickupCoords, dropCoords]);
-          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
-        } catch {}
-      } else {
-        map.setView(pickupCoords, 15);
-      }
-
-      // Event: Tap anywhere on map to instantly place or move the Red Drop Marker
-      map.on("click", async (e: any) => {
-        const clickedCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
-        setDropCoords(clickedCoords);
-
-        if (!dropMarkerRef.current) {
-          const dMarker = L.marker(clickedCoords, {
+        // 2. Drop Marker (Red & Draggable)
+        if (dropInputValue) {
+          const dMarker = L.marker(dropCoords, {
             icon: createRedDropIcon(),
             draggable: true,
             autoPan: true,
@@ -520,23 +469,109 @@ export function InteractiveBookingMap({
             updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
             toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
           });
-        } else {
-          dropMarkerRef.current.setLatLng(clickedCoords);
         }
 
-        line.setLatLngs([pickupCoords, clickedCoords]);
+        // 3. Connect Pickup and Drop with Route Polyline
+        const line = L.polyline(dropInputValue ? [pickupCoords, dropCoords] : [], {
+          color: "#059669",
+          weight: 5,
+          opacity: 0.85,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(map);
+        routeLineRef.current = line;
 
-        const resolved = await resolveLocationAddress(clickedCoords[0], clickedCoords[1]);
-        setDropInputValue(resolved);
-        updateRoute(pickupInputValue, resolved, pickupCoords, clickedCoords);
-        toast.info(`গন্তব্য স্থান নির্বাচিত: ${resolved}`);
-      });
+        // Center on pickup
+        map.setView(pickupCoords, 15);
 
-      // 4. Render REAL Registered Drivers only (Strictly NO mock data)
+        // Event: Tap anywhere on map to select Drop Location
+        map.on("click", async (e: any) => {
+          const clickedCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
+          setDropCoords(clickedCoords);
+
+          if (!dropMarkerRef.current) {
+            const dMarker = L.marker(clickedCoords, {
+              icon: createRedDropIcon(),
+              draggable: true,
+              autoPan: true,
+            }).addTo(map);
+            dropMarkerRef.current = dMarker;
+
+            dMarker.on("dragend", async () => {
+              const newPos = dMarker.getLatLng();
+              const newCoords: [number, number] = [newPos.lat, newPos.lng];
+              setDropCoords(newCoords);
+              if (routeLineRef.current) {
+                routeLineRef.current.setLatLngs([pickupCoords, newCoords]);
+              }
+              const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
+              setDropInputValue(resolved);
+              updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
+              toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
+            });
+          } else {
+            dropMarkerRef.current.setLatLng(clickedCoords);
+          }
+
+          if (routeLineRef.current) {
+            routeLineRef.current.setLatLngs([pickupCoords, clickedCoords]);
+          }
+
+          const resolved = await resolveLocationAddress(clickedCoords[0], clickedCoords[1]);
+          setDropInputValue(resolved);
+          updateRoute(pickupInputValue, resolved, pickupCoords, clickedCoords);
+          toast.info(`গন্তব্য স্থান নির্বাচিত: ${resolved}`);
+        });
+
+        if (isMounted) {
+          mapInstanceRef.current = map;
+        }
+      } catch (err) {
+        console.warn("Leaflet map init warning:", err);
+      }
+    }
+
+    if (showMapPreview) {
+      initMap();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showMapPreview]);
+
+  // Clean cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch {}
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Update Tile Layer when mapLayer changes
+  useEffect(() => {
+    if (tileLayerRef.current) {
+      const tileUrl =
+        mapLayer === "hybrid"
+          ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+          : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+      tileLayerRef.current.setUrl(tileUrl);
+    }
+  }, [mapLayer]);
+
+  // Update Driver Markers when realDrivers changes without recreating map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    import("leaflet").then((L) => {
       driverMarkersRef.current.forEach((m) => m.remove());
       driverMarkersRef.current = [];
 
-      if (realDrivers.length > 0) {
+      if (realDrivers.length > 0 && mapInstanceRef.current) {
         realDrivers.forEach((driver) => {
           const lat = Number(driver.latitude);
           const lng = Number(driver.longitude);
@@ -557,34 +592,33 @@ export function InteractiveBookingMap({
             iconSize: [0, 0],
           });
 
-          const dm = L.marker([lat, lng], { icon: totoIcon }).addTo(map);
-          driverMarkersRef.current.push(dm);
+          try {
+            const dm = L.marker([lat, lng], { icon: totoIcon }).addTo(mapInstanceRef.current);
+            driverMarkersRef.current.push(dm);
+          } catch {}
         });
       }
+    });
+  }, [realDrivers]);
 
-      mapInstanceRef.current = map;
-      if (isMounted && showMapPreview) {
-        updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords);
-      }
-    } catch (err) {
-      console.warn("Leaflet map init warning:", err);
+  // Update markers and route polyline when coords change
+  useEffect(() => {
+    if (pickupMarkerRef.current && pickupCoords) {
+      try {
+        pickupMarkerRef.current.setLatLng(pickupCoords);
+      } catch {}
     }
-  }
-
-    if (showMapPreview) {
-      initMap();
+    if (dropMarkerRef.current && dropCoords) {
+      try {
+        dropMarkerRef.current.setLatLng(dropCoords);
+      } catch {}
     }
-
-    return () => {
-      isMounted = false;
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.remove();
-        } catch {}
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [realDrivers, mapLayer, showMapPreview, pickupCoords, dropCoords, pickupInputValue, dropInputValue, updateRoute]);
+    if (routeLineRef.current && pickupCoords && dropCoords && dropInputValue) {
+      try {
+        routeLineRef.current.setLatLngs([pickupCoords, dropCoords]);
+      } catch {}
+    }
+  }, [pickupCoords, dropCoords, dropInputValue]);
 
   // Initial Route & Fare calculation on component load
   useEffect(() => {

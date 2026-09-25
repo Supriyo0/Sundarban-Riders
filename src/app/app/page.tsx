@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Car,
   User,
@@ -50,6 +50,7 @@ import { MobileAppHeader } from "@/components/layout/mobile-app-header";
 import { MobileBottomNav, MobileNavTab } from "@/components/layout/mobile-bottom-nav";
 import { MobileAppShell } from "@/components/layout/mobile-app-shell";
 import { OnboardingCarousel } from "@/components/mobile/onboarding-carousel";
+import { AppErrorBoundary } from "@/components/mobile/app-error-boundary";
 
 interface MobileSession {
   phone: string;
@@ -61,7 +62,7 @@ interface MobileSession {
   passengerName?: string;
 }
 
-export default function MobileAppPage() {
+function MobileAppPageContent() {
   // App Phase: 'splash' | 'permissions' | 'select_role' | 'otp_login' | 'kyc_form' | 'kyc_pending' | 'rider_home' | 'passenger_home'
   const [phase, setPhase] = useState<string>("splash");
   const [role, setRole] = useState<"rider" | "passenger">("rider");
@@ -115,6 +116,18 @@ export default function MobileAppPage() {
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+
+  // Memoized route handler to eliminate parent re-render loops
+  const handleRouteSelected = useCallback((route: any) => {
+    if (route.pickup) setPickupText(route.pickup);
+    if (route.drop !== undefined) setDropText(route.drop);
+    if (route.pickupCoords) setPickupCoords(route.pickupCoords);
+    if (route.dropCoords) setDropCoords(route.dropCoords);
+    if (route.distanceKm !== undefined) setTripDistance(route.distanceKm);
+    if (route.estimatedFare !== undefined) setTripFare(route.estimatedFare);
+    if (route.rideTier) setSelectedTier(route.rideTier);
+    if (route.paymentMode) setPaymentMode(route.paymentMode);
+  }, []);
 
   // Enforce pristine Light Theme for mobile app
   useEffect(() => {
@@ -1885,16 +1898,7 @@ export default function MobileAppPage() {
             <InteractiveBookingMap
               initialPickup={pickupText}
               initialDrop={dropText}
-              onRouteSelected={(route) => {
-                if (route.pickup) setPickupText(route.pickup);
-                if (route.drop !== undefined) setDropText(route.drop);
-                if (route.pickupCoords) setPickupCoords(route.pickupCoords);
-                if (route.dropCoords) setDropCoords(route.dropCoords);
-                if (route.distanceKm !== undefined) setTripDistance(route.distanceKm);
-                if (route.estimatedFare !== undefined) setTripFare(route.estimatedFare);
-                if (route.rideTier) setSelectedTier(route.rideTier);
-                if (route.paymentMode) setPaymentMode(route.paymentMode);
-              }}
+              onRouteSelected={handleRouteSelected}
             />
 
             {/* Book Button - Placed directly in the flow! */}
@@ -2112,4 +2116,12 @@ export default function MobileAppPage() {
     </MobileAppShell>
   );
 }
+}
+
+export default function MobileAppPage() {
+  return (
+    <AppErrorBoundary>
+      <MobileAppPageContent />
+    </AppErrorBoundary>
+  );
 }

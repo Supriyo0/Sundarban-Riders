@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -180,7 +181,7 @@ export default function MobileAppPage() {
       if (isManual) setCheckingApproval(true);
       const res = await fetch(`/api/drivers?phone=${phone}`);
       const data = await res.json();
-      const driver = data.driver || (data.drivers && data.drivers.find((d: any) => d.phone.includes(phone.replace(/\D/g, ""))));
+      const driver = data.driver || (data.drivers && data.drivers.find((d: { phone: string; [key: string]: unknown }) => d.phone.includes(phone.replace(/\D/g, ""))));
       if (driver && driver.is_approved) {
         const approvedSession: MobileSession = {
           ...session,
@@ -217,42 +218,22 @@ export default function MobileAppPage() {
 
   // 1. Session Persistence Check on Load
   useEffect(() => {
-    const saved = localStorage.getItem("sr_mobile_session");
+    if (typeof window === "undefined") return;
     const perms = localStorage.getItem("sr_permissions_granted");
+    if (perms) {
+      setPermissionsGranted(true);
+    }
 
-    const timer = setTimeout(() => {
-      if (perms) {
-        setPermissionsGranted(true);
+    const saved = localStorage.getItem("sr_mobile_session");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as MobileSession;
+        setSession(parsed);
+        setRole(parsed.role);
+      } catch {
+        // fallback
       }
-
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved) as MobileSession;
-          setSession(parsed);
-          setRole(parsed.role);
-          if (parsed.role === "rider") {
-            if (parsed.isApproved === false) {
-              setPhase("kyc_pending");
-            } else {
-              setPhase("rider_home");
-            }
-          } else {
-            setPhase("passenger_home");
-          }
-          return;
-        } catch {
-          // fallback
-        }
-      }
-
-      if (!perms) {
-        setPhase("permissions");
-      } else {
-        setPhase("select_role");
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
+    }
   }, []);
 
   // OTP Countdown timer
@@ -462,7 +443,11 @@ export default function MobileAppPage() {
 
     playSuccessSound();
     toast.success("সকল অনুমতি সফলভাবে প্রদান করা হয়েছে!");
-    setPhase("select_role");
+    if (role === "rider") {
+      setPhase("otp_login");
+    } else {
+      setPhase("passenger_home");
+    }
   };
 
   // Handle Send WhatsApp OTP
@@ -648,11 +633,9 @@ export default function MobileAppPage() {
       <AppSplashScreen
         minDurationMs={1800}
         onComplete={() => {
+          if (typeof window === "undefined") return;
           const saved = localStorage.getItem("sr_mobile_session");
-          const perms = localStorage.getItem("sr_permissions_granted");
-          if (!perms) {
-            setPhase("permissions");
-          } else if (saved) {
+          if (saved) {
             try {
               const parsed = JSON.parse(saved) as MobileSession;
               setSession(parsed);
@@ -662,14 +645,54 @@ export default function MobileAppPage() {
               } else {
                 setPhase("passenger_home");
               }
+              return;
             } catch {
-              setPhase("select_role");
+              // fallback
             }
-          } else {
-            setPhase("select_role");
           }
+          setPhase("select_role");
         }}
       />
+    );
+  }
+
+  // -------------------------------------------------------------
+  // VIEW: ONBOARDING CAROUSEL / ROLE SELECTION (Exact User Designs)
+  // -------------------------------------------------------------
+  if (phase === "select_role") {
+    return (
+      <MobileAppShell>
+        <OnboardingCarousel
+          onSelectRole={(selectedRole) => {
+            setRole(selectedRole);
+            if (selectedRole === "rider") {
+              const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+              if (saved) {
+                try {
+                  const parsed = JSON.parse(saved) as MobileSession;
+                  if (parsed.role === "rider" && parsed.driverId) {
+                    setSession(parsed);
+                    setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
+                    return;
+                  }
+                } catch {}
+              }
+              setPhase("otp_login");
+            } else {
+              setRole("passenger");
+              const perms = typeof window !== "undefined" ? localStorage.getItem("sr_permissions_granted") : null;
+              if (!perms) {
+                setPhase("permissions");
+              } else {
+                setPhase("passenger_home");
+              }
+            }
+          }}
+          onOpenAdminLogin={() => {
+            window.location.href = "/dashboard";
+          }}
+        />
+      </MobileAppShell>
     );
   }
 
@@ -1741,7 +1764,8 @@ export default function MobileAppPage() {
   // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme with Interactive Google Map)
   // -------------------------------------------------------------
   return (
-    <div className="min-h-screen text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
+    <MobileAppShell>
+      <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none bg-slate-50">
       {/* Modern App Header */}
       <MobileAppHeader
         role="passenger"
@@ -2088,7 +2112,8 @@ export default function MobileAppPage() {
         }}
         role="passenger"
       />
-    </div>
+      </div>
+    </MobileAppShell>
   );
 }
 }

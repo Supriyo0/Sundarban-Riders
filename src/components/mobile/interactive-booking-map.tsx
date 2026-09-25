@@ -176,7 +176,7 @@ export function InteractiveBookingMap({
   const [selectedTier, setSelectedTier] = useState<RideTier>("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
-  const [showMapPreview, setShowMapPreview] = useState<boolean>(false);
+  const [showMapPreview, setShowMapPreview] = useState<boolean>(true);
 
   // Road Routing Data from /api/route
   const [roadRouteSummary, setRoadRouteSummary] = useState<string>(

@@ -146,7 +146,20 @@ function LoginPageInner() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
+          <div className="mt-6 border-t border-border pt-5">
+            <Link
+              href="/app"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 px-4 py-3 text-center text-sm font-bold text-slate-950 shadow-md shadow-amber-500/20 transition-all hover:brightness-105 active:scale-95"
+            >
+              <span>🛺</span>
+              <span>সাধারণ যাত্রী? অনলাইনে টোটো বুক করুন</span>
+            </Link>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Book Toto ride or Driver Captain Login on Sundarban Riders App
+            </p>
+          </div>
+
+          <p className="mt-4 text-center text-sm text-muted-foreground">
             {t('noAccount')}{" "}
             <Link
               href={

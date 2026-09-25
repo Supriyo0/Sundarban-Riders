@@ -21,7 +21,7 @@ function getAudioContext(): AudioContext | null {
 }
 
 /**
- * Loud Uber/Rapido style incoming ride alert chime
+ * Loud smart incoming ride alert chime for Sundarban Riders
  */
 export function playRideAlertSound() {
   const ctx = getAudioContext();
@@ -43,7 +43,7 @@ export function playRideAlertSound() {
   osc1.start(now);
   osc1.stop(now + 0.3);
 
-  // Tone 2: Loud Confirmation Chime (Rapido style)
+  // Tone 2: Loud Confirmation Chime
   const osc2 = ctx.createOscillator();
   const gain2 = ctx.createGain();
   osc2.type = "triangle";

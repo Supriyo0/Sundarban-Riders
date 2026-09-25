@@ -160,6 +160,13 @@ export function InteractiveBookingMap({
   const dropMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const driverMarkersRef = useRef<any[]>([]);
+  const hasFetchedLocationRef = useRef(false);
+
+  // Stable ref for parent callback to prevent infinite re-render loops
+  const onRouteSelectedRef = useRef(onRouteSelected);
+  useEffect(() => {
+    onRouteSelectedRef.current = onRouteSelected;
+  }, [onRouteSelected]);
 
   // Default coordinate center (Sundarban corridor default: Kakdwip - Lot 8)
   const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
@@ -172,7 +179,7 @@ export function InteractiveBookingMap({
   const [gpsDetected, setGpsDetected] = useState(false);
   const [permissionState, setPermissionState] = useState<"granted" | "prompt" | "denied" | "unknown">("unknown");
 
-  // Uber/Rapido Ride Options
+  // Sundarban Riders Ride Options
   const [selectedTier, setSelectedTier] = useState<RideTier>("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
@@ -252,7 +259,7 @@ export function InteractiveBookingMap({
           routeLineRef.current.setLatLngs([]);
         }
         setRoadRouteSummary("গন্তব্য নির্বাচন করুন বা ম্যাপে ক্লিক করুন");
-        onRouteSelected({
+        onRouteSelectedRef.current?.({
           pickup: pText,
           drop: "",
           distanceKm: 0,
@@ -306,7 +313,7 @@ export function InteractiveBookingMap({
       const fareToReport =
         tier === "shared" ? tierFares.shared : tier === "reserved" ? tierFares.reserved : tierFares.standard;
 
-      onRouteSelected({
+      onRouteSelectedRef.current?.({
         pickup: pText,
         drop: dText,
         distanceKm: safeDist,
@@ -317,7 +324,7 @@ export function InteractiveBookingMap({
         paymentMode: payMode,
       });
     },
-    [onRouteSelected, selectedTier, paymentMode]
+    [selectedTier, paymentMode]
   );
 
   // Load ONLY real registered drivers from database
@@ -370,18 +377,27 @@ export function InteractiveBookingMap({
 
     async function initMap() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
-      const L = await import("leaflet");
+      try {
+        const L = await import("leaflet");
 
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-      }
+        if (mapInstanceRef.current) {
+          try {
+            mapInstanceRef.current.remove();
+          } catch {}
+          mapInstanceRef.current = null;
+        }
 
-      // Create map
-      const map = L.map(mapContainerRef.current, {
-        center: pickupCoords,
-        zoom: 14,
-        zoomControl: false,
-      });
+        // Prevent Leaflet "Map container is already initialized" crash
+        if (mapContainerRef.current) {
+          (mapContainerRef.current as any)._leaflet_id = null;
+        }
+
+        // Create map
+        const map = L.map(mapContainerRef.current, {
+          center: pickupCoords,
+          zoom: 14,
+          zoomControl: false,
+        });
 
       // Google Maps Tile Layer
       const tileUrl =
@@ -411,7 +427,7 @@ export function InteractiveBookingMap({
         iconSize: [0, 0],
       });
 
-      // Custom Red Drop DivIcon (Draggable with interactive Rapido-style pin)
+      // Custom Red Drop DivIcon (Draggable with interactive pin)
       const createRedDropIcon = () =>
         L.divIcon({
           className: "custom-drop-pin",
@@ -550,7 +566,10 @@ export function InteractiveBookingMap({
       if (isMounted && showMapPreview) {
         updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords);
       }
+    } catch (err) {
+      console.warn("Leaflet map init warning:", err);
     }
+  }
 
     if (showMapPreview) {
       initMap();
@@ -559,11 +578,13 @@ export function InteractiveBookingMap({
     return () => {
       isMounted = false;
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch {}
         mapInstanceRef.current = null;
       }
     };
-  }, [realDrivers, mapLayer, showMapPreview]);
+  }, [realDrivers, mapLayer, showMapPreview, pickupCoords, dropCoords, pickupInputValue, dropInputValue, updateRoute]);
 
   // Initial Route & Fare calculation on component load
   useEffect(() => {
@@ -656,9 +677,12 @@ export function InteractiveBookingMap({
     [dropCoords, dropInputValue, updateRoute]
   );
 
-  // Automatically fetch customer real-time location on component mount
+  // Automatically fetch customer real-time location ONCE on component mount
   useEffect(() => {
-    fetchCurrentLocation(false);
+    if (!hasFetchedLocationRef.current) {
+      hasFetchedLocationRef.current = true;
+      fetchCurrentLocation(false);
+    }
   }, [fetchCurrentLocation]);
 
   // Fit bounds to both points
@@ -793,7 +817,7 @@ export function InteractiveBookingMap({
     toast.success(`গন্তব্য: ${lm.name}`);
   };
 
-  // Swap Pickup and Drop Locations (Uber/Rapido standard feature)
+  // Swap Pickup and Drop Locations
   const handleSwapRoute = () => {
     const nextPickupText = dropInputValue;
     const nextDropText = pickupInputValue;
@@ -834,7 +858,7 @@ export function InteractiveBookingMap({
   return (
     <div className="space-y-3.5">
       {/* ----------------------------------------------------------- */}
-      {/* 1. Fast Availability & Proximity Bar (Uber/Rapido Style)     */}
+      {/* 1. Fast Availability & Proximity Bar (Sundarban Riders Live) */}
       {/* ----------------------------------------------------------- */}
       <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div className="flex items-center gap-2.5">
@@ -1069,7 +1093,7 @@ export function InteractiveBookingMap({
           )}
         </div>
 
-        {/* Swap Pickup & Drop Button (Uber/Rapido style) */}
+        {/* Swap Pickup & Drop Button */}
         <div className="relative flex justify-center -my-1 z-20">
           <button
             type="button"
@@ -1228,7 +1252,7 @@ export function InteractiveBookingMap({
       )}
 
       {/* ----------------------------------------------------------- */}
-      {/* 4. Uber / Rapido Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}
+      {/* 4. Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}
       {/* ----------------------------------------------------------- */}
       <div className="space-y-2 pt-1">
         <div className="flex items-center justify-between px-0.5">
@@ -1355,7 +1379,7 @@ export function InteractiveBookingMap({
       </div>
 
       {/* ----------------------------------------------------------- */}
-      {/* 5. Payment Method & Safety Shield Bar (Uber/Rapido style)   */}
+      {/* 5. Payment Method & Safety Shield Bar */}
       {/* ----------------------------------------------------------- */}
       <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-between text-xs">
         <div className="flex items-center gap-2">

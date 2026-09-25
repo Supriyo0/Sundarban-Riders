@@ -351,7 +351,7 @@ export function LiveRideTrackingMap({
         attribution: "© Google Maps",
       }).addTo(map);
 
-      // 1. Moving Toto Vehicle DivIcon (Uber/Rapido Caliber Animated)
+      // 1. Moving Toto Vehicle DivIcon (Sundarban Riders Live Animated)
       const totoVehicleIcon = L.divIcon({
         className: "moving-toto-vehicle-marker",
         html: `
@@ -743,7 +743,7 @@ export function LiveRideTrackingMap({
         <div className="relative w-full h-[330px] rounded-3xl overflow-hidden border-2 border-emerald-400 shadow-xl bg-slate-100">
           <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-          {/* Top Status Banner (Uber/Rapido Live Indicator) */}
+          {/* Top Status Banner (Sundarban Riders Live Indicator) */}
           <div className="absolute top-3 left-3 right-16 z-20">
             <div className="bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl shadow-xl border border-slate-700/60 flex items-center gap-2.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
@@ -827,7 +827,7 @@ export function LiveRideTrackingMap({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* 3. LIVE JOURNEY STEPPER (Uber/Rapido Interactive Track)        */}
+      {/* 3. LIVE JOURNEY STEPPER (Sundarban Riders Interactive Track) */}
       {/* ------------------------------------------------------------- */}
       <div className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-3">
         <div className="flex items-center justify-between text-xs font-bold">

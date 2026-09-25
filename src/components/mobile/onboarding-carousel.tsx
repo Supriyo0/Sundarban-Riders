@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
-import { ArrowRight, ChevronRight, ShieldCheck, Sparkles, Star, MapPin, Car, Phone } from "lucide-react";
+import { ArrowRight, ChevronRight, Sparkles, User, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface OnboardingCarouselProps {
@@ -17,7 +17,7 @@ interface SlideItem {
   title: string;
   titleBengali?: string;
   subtitle: string;
-  type: "welcome" | "happy_journey" | "fast_ride" | "captain";
+  isActionPage?: boolean;
 }
 
 const SLIDES: SlideItem[] = [
@@ -25,37 +25,37 @@ const SLIDES: SlideItem[] = [
     id: "welcome",
     image: "/onboarding/welcome-sundarban.jpg",
     badge: "সুন্দরবন অনলাইন স্মার্ট বুকিং",
-    title: "Welcome to Sundarban Rider Online Smart Toto Booking",
-    titleBengali: "সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে...",
-    subtitle: "Book your Toto anywhere across Sundarban with 1-tap live tracking.",
-    type: "welcome",
+    title: "Welcome to Sundarban Riders",
+    titleBengali: "সুন্দরবনের প্রথম অনলাইন স্মার্ট টোটো বুকিং",
+    subtitle: "কাকদ্বীপ, নামখানা, ডায়মন্ড হারবার ও গঙ্গাসাগরে নিরাপদ, নির্ভরযোগ্য ও দ্রুত ই-টোটো যাতায়াত।",
+    isActionPage: false,
   },
   {
     id: "happy-journey",
     image: "/onboarding/safe-happy-journey.jpg",
-    badge: "🛺 Sundarban Online Smart Toto Booking",
+    badge: "🛡️ নিরাপদ ও আনন্দময় যাত্রা",
     title: "Safe & Happy Journey",
-    titleBengali: "নিরাপদ ও আনন্দময় যাত্রা",
-    subtitle: "Book in 5 minutes • Reach anywhere",
-    type: "happy_journey",
+    titleBengali: "পরিবারের সবার জন্য সুরক্ষিত রাইড",
+    subtitle: "ভেরিফাইড চালক, পরিষ্কার বৈদ্যুতিক টোটো এবং প্রতিটি রাইডে ২৪×৭ লাইভ রোড ও জিপিএস নিরাপত্তা।",
+    isActionPage: false,
   },
   {
     id: "fast-ride",
     image: "/onboarding/safe-fast-ride.jpg",
-    badge: "⚡ দ্রুত ও সহজ টোটো বুকিং",
+    badge: "⚡ মাত্র ৫ মিনিটে দোরগোড়ায়",
     title: "Safe & Fast Ride",
-    titleBengali: "নিরাপদ ও দ্রুত রাইড",
-    subtitle: "Book in 5 minutes, reach anywhere across Sundarban",
-    type: "fast_ride",
+    titleBengali: "ন্যায্য ভাড়ায় সরাসরি গন্তব্য",
+    subtitle: "কোনো দরদাম ছাড়াই নির্ধারিত ভাড়ায় সরাসরি গন্তব্যে পৌঁছান। সহজে রাইড বুক করুন এক ক্লিকে।",
+    isActionPage: false,
   },
   {
-    id: "captain",
+    id: "action-page",
     image: "/onboarding/driver-captain.jpg",
-    badge: "🛺 Sundarban Riders Captain",
-    title: "যে কোনো সময় ও নানা রকম পরিষেবা",
-    titleBengali: "বাইক, ডেলিভারি, অটো এবং ক্যাব",
-    subtitle: "সুন্দরবনের প্রথম ভেরিফাইড চালক নেটওয়ার্কে যুক্ত হয়ে প্রতিদিন নিশ্চিত আয় করুন।",
-    type: "captain",
+    badge: "🛺 সুন্দরবন রাইডার্সে স্বাগতম",
+    title: "শুরু করুন আপনার যাত্রা",
+    titleBengali: "যাত্রী বুকিং ও চালক পার্টনার",
+    subtitle: "অনলাইনে এখনই টোটো বুক করুন অথবা সুন্দরবনের ভেরিফাইড চালক নেটওয়ার্কে যুক্ত হয়ে নিশ্চিত আয় করুন।",
+    isActionPage: true,
   },
 ];
 
@@ -64,16 +64,21 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
 
-  // Auto-advance slides every 6 seconds
+  // Auto-advance slides every 7 seconds, unless on the last action page
   useEffect(() => {
+    if (currentIdx === SLIDES.length - 1) return;
     const timer = setInterval(() => {
-      setCurrentIdx((prev) => (prev + 1) % SLIDES.length);
-    }, 6000);
+      setCurrentIdx((prev) => (prev < SLIDES.length - 1 ? prev + 1 : prev));
+    }, 7000);
     return () => clearInterval(timer);
-  }, []);
+  }, [currentIdx]);
 
   const handleNext = () => {
-    setCurrentIdx((prev) => (prev + 1) % SLIDES.length);
+    setCurrentIdx((prev) => (prev < SLIDES.length - 1 ? prev + 1 : prev));
+  };
+
+  const handleSkip = () => {
+    setCurrentIdx(SLIDES.length - 1);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -88,17 +93,22 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
     if (!touchStartX.current || !touchEndX.current) return;
     const distance = touchStartX.current - touchEndX.current;
     if (distance > 45) {
-      // Swiped left
-      setCurrentIdx((prev) => (prev + 1) % SLIDES.length);
+      // Swiped left -> next
+      if (currentIdx < SLIDES.length - 1) {
+        setCurrentIdx((prev) => prev + 1);
+      }
     } else if (distance < -45) {
-      // Swiped right
-      setCurrentIdx((prev) => (prev - 1 + SLIDES.length) % SLIDES.length);
+      // Swiped right -> prev
+      if (currentIdx > 0) {
+        setCurrentIdx((prev) => prev - 1);
+      }
     }
     touchStartX.current = null;
     touchEndX.current = null;
   };
 
   const slide = SLIDES[currentIdx];
+  const isLastSlide = currentIdx === SLIDES.length - 1;
 
   return (
     <div
@@ -121,12 +131,12 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
               src={s.image}
               alt={s.title}
               fill
-              priority={idx === 0}
+              priority={idx === 0 || idx === 1}
               className="object-cover object-center"
               sizes="(max-width: 768px) 100vw, 448px"
             />
             {/* Subtle Gradient Overlays for Readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-black/40" />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/25 to-black/40" />
             <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-slate-950/90" />
           </div>
         ))}
@@ -135,7 +145,7 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
       {/* Top Floating Header Bar */}
       <div className="relative z-20 pt-4 px-4 flex items-center justify-between">
         {/* Brand Badge */}
-        <div className="flex items-center gap-2.5 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 shadow-lg">
+        <div className="flex items-center gap-2.5 bg-black/45 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 shadow-lg">
           <div className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-amber-400 bg-white flex items-center justify-center shrink-0 shadow-md">
             <img
               src="/sundarban-logo.png"
@@ -153,44 +163,54 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
           </div>
         </div>
 
-        {/* Slide Counter & Staff portal shortcut */}
+        {/* Top-Right: Skip or Page Counter */}
         <div className="flex items-center gap-2">
-          <div className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/20 text-[11px] font-mono font-bold text-white shadow-sm">
-            {currentIdx + 1} of {SLIDES.length}
-          </div>
-          {onOpenAdminLogin && (
+          {!isLastSlide ? (
             <button
               type="button"
-              onClick={onOpenAdminLogin}
-              className="text-[11px] font-semibold text-slate-300 hover:text-white bg-white/10 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/15 transition-all"
+              onClick={handleSkip}
+              className="px-3 py-1 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-white/20 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer"
             >
-              CRM/Admin
+              Skip
             </button>
+          ) : (
+            <div className="px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/20 text-[11px] font-mono font-bold text-white shadow-sm">
+              4 of 4
+            </div>
           )}
         </div>
       </div>
 
-      {/* Middle Interactive Zone */}
+      {/* Middle Interactive Zone for subtle left/right arrows */}
       <div className="flex-1 flex items-center justify-between px-2 pointer-events-none">
-        <button
-          type="button"
-          onClick={() => setCurrentIdx((prev) => (prev - 1 + SLIDES.length) % SLIDES.length)}
-          className="pointer-events-auto p-2 rounded-full text-white/50 hover:text-white hover:bg-black/30 transition-all opacity-0 hover:opacity-100"
-          aria-label="Previous slide"
-        >
-          <ChevronRight className="w-6 h-6 rotate-180" />
-        </button>
-        <button
-          type="button"
-          onClick={handleNext}
-          className="pointer-events-auto p-2 rounded-full text-white/50 hover:text-white hover:bg-black/30 transition-all opacity-0 hover:opacity-100"
-          aria-label="Next slide"
-        >
-          <ChevronRight className="w-6 h-6" />
-        </button>
+        {currentIdx > 0 ? (
+          <button
+            type="button"
+            onClick={() => setCurrentIdx((prev) => prev - 1)}
+            className="pointer-events-auto p-2.5 rounded-full text-white/60 hover:text-white bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer ml-1"
+            aria-label="Previous slide"
+          >
+            <ChevronRight className="w-5 h-5 rotate-180" />
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
+
+        {!isLastSlide ? (
+          <button
+            type="button"
+            onClick={handleNext}
+            className="pointer-events-auto p-2.5 rounded-full text-white/60 hover:text-white bg-black/30 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer mr-1"
+            aria-label="Next slide"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
       </div>
 
-      {/* Bottom Floating White Card (Exact Design from Screenshots) */}
+      {/* Bottom Floating White Card */}
       <div className="relative z-20 px-4 pb-6 w-full">
         {/* Pagination Dots */}
         <div className="flex items-center justify-center gap-2 mb-3">
@@ -199,7 +219,7 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
               key={idx}
               type="button"
               onClick={() => setCurrentIdx(idx)}
-              className={`h-2 rounded-full transition-all duration-300 ${
+              className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
                 currentIdx === idx
                   ? "w-8 bg-amber-400 shadow-md shadow-amber-400/50"
                   : "w-2 bg-white/40 hover:bg-white/70"
@@ -216,7 +236,7 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
             background: "rgba(255, 255, 255, 0.96)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
-            boxShadow: "0 20px 40px rgba(0,0,0,0.45)",
+            boxShadow: "0 20px 45px rgba(0,0,0,0.45)",
           }}
         >
           {/* Badge Tag */}
@@ -240,126 +260,94 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
             </p>
           </div>
 
-          {/* DYNAMIC ACTION BUTTONS (Exact Match for Screenshots 1, 2, 3, 4) */}
+          {/* DYNAMIC ACTION BUTTONS */}
           <div className="space-y-2.5 pt-1">
-            {/* SLIDE 1: Welcome Slide (Next -> button + Quick Login Links) */}
-            {slide.type === "welcome" && (
-              <div className="space-y-2.5">
+            {!isLastSlide ? (
+              /* SLIDES 1, 2, 3: Pure informative walkthrough with Next -> Button */
+              <div className="space-y-2">
                 <Button
                   size="lg"
-                  className="w-full h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-base shadow-lg shadow-amber-400/30 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full h-13 rounded-2xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-base shadow-lg shadow-amber-400/30 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                   onClick={handleNext}
                 >
-                  <span>Next →</span>
+                  <span>পরবর্তী ধাপ (Next)</span>
+                  <ArrowRight className="w-4 h-4 stroke-[3]" />
                 </Button>
-
-                <div className="flex items-center justify-center gap-4 text-xs font-bold pt-0.5">
+                <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 font-semibold pt-0.5">
+                  <span>ধাপ {currentIdx + 1} / {SLIDES.length}</span>
+                  <span>•</span>
                   <button
                     type="button"
-                    onClick={() => onSelectRole("passenger")}
-                    className="text-blue-700 hover:underline font-extrabold flex items-center gap-1 cursor-pointer"
+                    onClick={handleSkip}
+                    className="text-emerald-700 font-bold hover:underline cursor-pointer"
                   >
-                    <span>🛺 যাত্রী বুকিং</span>
-                  </button>
-                  <span className="text-slate-300">•</span>
-                  <button
-                    type="button"
-                    onClick={() => onSelectRole("rider")}
-                    className="text-emerald-700 hover:underline font-extrabold flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>⚡ চালক পার্টনার</span>
+                    সরাসরি বুকিংয়ে যান →
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* SLIDE 2: Safe & Happy Journey (Customer Login [Blue] + Continue [Outline]) */}
-            {slide.type === "happy_journey" && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2.5">
-                  <Button
-                    size="lg"
-                    className="h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/30 active:scale-95 transition-all cursor-pointer"
-                    onClick={() => onSelectRole("passenger")}
-                  >
-                    <span>Customer Login</span>
-                  </Button>
-
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    className="h-12 rounded-xl border-2 border-slate-300 text-slate-800 font-bold text-sm hover:bg-slate-100 active:scale-95 transition-all cursor-pointer"
-                    onClick={handleNext}
-                  >
-                    <span>Continue</span>
-                  </Button>
-                </div>
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => onSelectRole("rider")}
-                    className="text-[11px] font-bold text-emerald-800 hover:underline"
-                  >
-                    Are you a Toto Driver? Tap for Rider Login →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* SLIDE 3: Safe & Fast Ride (Rider Login [Dark Green] + Customer Login [Gold]) */}
-            {slide.type === "fast_ride" && (
-              <div className="grid grid-cols-2 gap-2.5">
-                <Button
-                  size="lg"
-                  className="h-12 rounded-xl bg-[#14532d] hover:bg-[#0f3d20] text-white font-black text-sm shadow-md shadow-emerald-950/20 active:scale-95 transition-all cursor-pointer"
-                  onClick={() => onSelectRole("rider")}
-                >
-                  <span>Rider Login</span>
-                </Button>
-
-                <Button
-                  size="lg"
-                  className="h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-sm shadow-md shadow-amber-400/30 active:scale-95 transition-all cursor-pointer"
-                  onClick={() => onSelectRole("passenger")}
-                >
-                  <span>Customer Login</span>
-                </Button>
-              </div>
-            )}
-
-            {/* SLIDE 4: Rapido Captain Style Driver Onboarding */}
-            {slide.type === "captain" && (
-              <div className="space-y-2.5">
-                <Button
-                  size="lg"
-                  className="w-full h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-sm shadow-lg shadow-amber-400/30 active:scale-95 transition-all cursor-pointer"
-                  onClick={() => onSelectRole("rider")}
-                >
-                  <span>গাড়ি চালানো শুরু করুন</span>
-                </Button>
-
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-400 justify-center">
-                  <div className="h-px bg-slate-200 flex-1" />
-                  <span>বা</span>
-                  <div className="h-px bg-slate-200 flex-1" />
-                </div>
-
-                {/* Bottom Customer Ride Card */}
+            ) : (
+              /* SLIDE 4 (LAST PAGE): Action Screen -> Rider Login & Book Toto */
+              <div className="space-y-3">
+                {/* 1. Book Toto Button (Passenger Cab Booking) */}
                 <button
                   type="button"
+                  id="btn-book-toto-main"
                   onClick={() => onSelectRole("passenger")}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 flex items-center justify-between transition-all cursor-pointer text-left"
+                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-xl shadow-amber-400/35 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-amber-300 text-left"
                 >
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-900">গ্রাহক?</span>
-                    <span className="text-xs font-extrabold text-blue-700 flex items-center gap-1">
-                      রাইড বুক করুন <ArrowRight className="w-3.5 h-3.5 inline" />
-                    </span>
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-white/90 shadow-sm flex items-center justify-center text-2xl shrink-0">
+                      🛺
+                    </div>
+                    <div>
+                      <div className="text-base font-black text-slate-950 tracking-tight leading-snug flex items-center gap-1.5">
+                        <span>টোটো বুক করুন (Book Toto)</span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-800">
+                        যাত্রী মোড • ম্যাপে ৫ মিনিটে ক্যাব
+                      </span>
+                    </div>
                   </div>
-                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-amber-100 flex items-center justify-center shrink-0 text-xl">
-                    🛺
+                  <div className="w-8 h-8 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0">
+                    <ArrowRight className="w-4 h-4 stroke-[2.5]" />
                   </div>
                 </button>
+
+                {/* 2. Rider Partner Login Button */}
+                <button
+                  type="button"
+                  id="btn-rider-login-main"
+                  onClick={() => onSelectRole("rider")}
+                  className="w-full p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/25 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-slate-700 text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
+                      ⚡
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-white tracking-tight leading-snug">
+                        ক্যাপ্টেন / চালক লগইন (Rider Login)
+                      </div>
+                      <span className="text-[11px] font-medium text-emerald-400">
+                        উপার্জন শুরু করুন • চালক পার্টনার হাব
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                </button>
+
+                {/* Staff / CRM Shortcut Link */}
+                {onOpenAdminLogin && (
+                  <div className="pt-1 border-t border-slate-100 flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={onOpenAdminLogin}
+                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 hover:underline flex items-center gap-1 cursor-pointer py-1"
+                    >
+                      <span>অফিস স্টাফ বা অ্যাডমিন? CRM ড্যাশবোর্ড লগইন →</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

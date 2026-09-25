@@ -680,12 +680,8 @@ export default function MobileAppPage() {
               setPhase("otp_login");
             } else {
               setRole("passenger");
-              const perms = typeof window !== "undefined" ? localStorage.getItem("sr_permissions_granted") : null;
-              if (!perms) {
-                setPhase("permissions");
-              } else {
-                setPhase("passenger_home");
-              }
+              // Directly launch customer cab booking flow seamlessly
+              setPhase("passenger_home");
             }
           }}
           onOpenAdminLogin={() => {
@@ -716,7 +712,7 @@ export default function MobileAppPage() {
                 অ্যাপের প্রয়োজনীয় অনুমতি
               </h2>
               <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-                উবার বা র‍্যাপিডোর মতো সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
+                সুন্দরবনের সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত স্মার্ট টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
               </p>
             </div>
 
@@ -1123,7 +1119,7 @@ export default function MobileAppPage() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: RIDER HOME / DASHBOARD (Uber/Rapido Flow in Light Theme)
+  // VIEW: RIDER HOME / DASHBOARD (Sundarban Riders Live Flow)
   // -------------------------------------------------------------
   if (phase === "rider_home") {
     return (
@@ -1356,7 +1352,7 @@ export default function MobileAppPage() {
         )}
 
         {/* ------------------------------------------------------------- */}
-        {/* UBER / RAPIDO STYLE INCOMING RIDE MODAL SHEET (Light Theme)  */}
+        {/* SUNDARBAN RIDERS INCOMING RIDE MODAL SHEET (Light Theme)     */}
         {/* ------------------------------------------------------------- */}
         {incomingRide && (
           <div className="fixed inset-0 z-50 flex flex-col justify-end animate-in slide-in-from-bottom duration-300" style={{background:"rgba(15,23,42,0.55)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
@@ -1890,12 +1886,12 @@ export default function MobileAppPage() {
               initialPickup={pickupText}
               initialDrop={dropText}
               onRouteSelected={(route) => {
-                setPickupText(route.pickup);
-                setDropText(route.drop);
-                setPickupCoords(route.pickupCoords);
-                setDropCoords(route.dropCoords);
-                setTripDistance(route.distanceKm);
-                setTripFare(route.estimatedFare);
+                if (route.pickup) setPickupText(route.pickup);
+                if (route.drop !== undefined) setDropText(route.drop);
+                if (route.pickupCoords) setPickupCoords(route.pickupCoords);
+                if (route.dropCoords) setDropCoords(route.dropCoords);
+                if (route.distanceKm !== undefined) setTripDistance(route.distanceKm);
+                if (route.estimatedFare !== undefined) setTripFare(route.estimatedFare);
                 if (route.rideTier) setSelectedTier(route.rideTier);
                 if (route.paymentMode) setPaymentMode(route.paymentMode);
               }}

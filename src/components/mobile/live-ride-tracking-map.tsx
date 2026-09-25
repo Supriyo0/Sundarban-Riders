@@ -1018,6 +1018,9 @@ export function LiveRideTrackingMap({
           বুকিং বাতিল করুন
         </Button>
       </div>
+
+      {/* Safe Area Clearance so action buttons are never obscured by bottom navbar */}
+      <div className="h-32 w-full shrink-0" aria-hidden="true" />
     </div>
   );
 }

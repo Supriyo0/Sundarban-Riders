@@ -47,6 +47,8 @@ import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";
 import { MobileBottomNav, MobileNavTab } from "@/components/layout/mobile-bottom-nav";
+import { MobileAppShell } from "@/components/layout/mobile-app-shell";
+import { OnboardingCarousel } from "@/components/mobile/onboarding-carousel";
 
 interface MobileSession {
   phone: string;
@@ -91,12 +93,12 @@ export default function MobileAppPage() {
   const [alertCountdown, setAlertCountdown] = useState(30);
 
   // Passenger State
-  const [pickupText, setPickupText] = useState("কাকদ্বীপ স্টেশন রোড");
-  const [dropText, setDropText] = useState("লট ৮ ফেরিঘাট (হারউড পয়েন্ট)");
+  const [pickupText, setPickupText] = useState("আপনার বর্তমান অবস্থান (Live GPS)");
+  const [dropText, setDropText] = useState("");
   const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
   const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
-  const [tripDistance, setTripDistance] = useState(3.5);
-  const [tripFare, setTripFare] = useState(55);
+  const [tripDistance, setTripDistance] = useState(0);
+  const [tripFare, setTripFare] = useState(0);
   const [selectedTier, setSelectedTier] = useState<"standard" | "shared" | "reserved">("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [showSosModal, setShowSosModal] = useState(false);
@@ -167,6 +169,51 @@ export default function MobileAppPage() {
 
     return () => clearInterval(pollInterval);
   }, [phase, searchStatus, activeBookingId]);
+
+  // Auto-poll driver approval status when in kyc_pending
+  const [checkingApproval, setCheckingApproval] = useState(false);
+
+  const checkDriverApprovalStatus = async (isManual = false) => {
+    if (!session?.phone && !phoneInput) return;
+    const phone = session?.phone || phoneInput;
+    try {
+      if (isManual) setCheckingApproval(true);
+      const res = await fetch(`/api/drivers?phone=${phone}`);
+      const data = await res.json();
+      const driver = data.driver || (data.drivers && data.drivers.find((d: any) => d.phone.includes(phone.replace(/\D/g, ""))));
+      if (driver && driver.is_approved) {
+        const approvedSession: MobileSession = {
+          ...session,
+          phone,
+          role: "rider",
+          isApproved: true,
+          driverId: driver.id,
+          driverName: driver.name,
+          totoNumber: driver.toto_number,
+        };
+        setSession(approvedSession);
+        localStorage.setItem("sr_mobile_session", JSON.stringify(approvedSession));
+        playSuccessSound();
+        toast.success("🎉 অভিনন্দন! আপনার চালক একাউন্টটি অনুমোদিত হয়েছে!");
+        setPhase("rider_home");
+      } else if (isManual) {
+        toast.info("⏳ আপনার ডকুমেন্টস এখনো পর্যালোচনায় রয়েছে। অ্যাডমিন শীঘ্রই অনুমোদন করবেন।");
+      }
+    } catch {
+      if (isManual) toast.error("স্ট্যাটাস যাচাই করতে সমস্যা হয়েছে");
+    } finally {
+      if (isManual) setCheckingApproval(false);
+    }
+  };
+
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+    if (phase === "kyc_pending") {
+      checkDriverApprovalStatus();
+      pollInterval = setInterval(() => checkDriverApprovalStatus(), 5000);
+    }
+    return () => clearInterval(pollInterval);
+  }, [phase, session?.phone, phoneInput]);
 
   // 1. Session Persistence Check on Load
   useEffect(() => {
@@ -631,168 +678,73 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "permissions") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-5 select-none">
-        <div className="pt-3 space-y-5 max-w-md mx-auto w-full">
-          <div className="flex items-center justify-between">
-            <SundarbanLogo size="sm" variant="full" />
-            <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-              অনুমতি কনফিগারেশন
-            </span>
-          </div>
-
-          <div>
-            <h2 className="text-2xl font-black tracking-tight text-slate-900">
-              অ্যাপের প্রয়োজনীয় অনুমতি
-            </h2>
-            <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-              উবার বা র‍্যাপিডোর মতো সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
-            </p>
-          </div>
-
-          <div className="space-y-2.5">
-            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
-                <MapPin className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS)</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                  নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা ও আসল সড়কের লাইভ রুট দেখার জন্য।
-                </p>
-              </div>
+      <MobileAppShell>
+        <div className="min-h-full flex-1 bg-slate-50 text-slate-900 flex flex-col justify-between p-5 select-none">
+          <div className="pt-3 space-y-5 max-w-md mx-auto w-full">
+            <div className="flex items-center justify-between">
+              <SundarbanLogo size="sm" variant="full" />
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                অনুমতি কনফিগারেশন
+              </span>
             </div>
 
-            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-              <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 shrink-0 border border-purple-100">
-                <Bell className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                  অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক অ্যালার্ট।
-                </p>
-              </div>
+            <div>
+              <h2 className="text-2xl font-black tracking-tight text-slate-900">
+                অ্যাপের প্রয়োজনীয় অনুমতি
+              </h2>
+              <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+                উবার বা র‍্যাপিডোর মতো সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
+              </p>
             </div>
 
-            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-              <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 border border-amber-100">
-                <Volume2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                  রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট সাউন্ড কিউ বেজে উঠবে।
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 shrink-0 border border-emerald-100">
-                <Zap className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900">স্মার্ট ওয়েক-লক</h4>
-                <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                  রাইড চলমান অবস্থায় স্ক্রিন অফ হয়ে ম্যাপ ট্র্যাকিং বিচ্ছিন্ন হওয়া রোধ করে।
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="pb-3 max-w-md mx-auto w-full pt-4">
-          <Button
-            size="lg"
-            className="w-full h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20 active:scale-98 transition-all"
-            onClick={handleGrantPermissions}
-          >
-            অনুমতি নিশ্চিত করুন ও প্রবেশ করুন
-            <ArrowRight className="w-5 h-5 ml-2" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------
-  // VIEW: ROLE SELECTOR SCREEN (Modern Branding & Vibrant Cards)
-  // -------------------------------------------------------------
-  if (phase === "select_role") {
-    return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
-        <div className="pt-6 text-center max-w-md mx-auto w-full">
-          <div className="flex justify-center mb-6">
-            <SundarbanLogo size="xl" animated={true} />
-          </div>
-
-          <h2 className="text-2xl font-black tracking-tight text-slate-900">
-            স্বাগতম সুন্দরবন রাইডার্সে
-          </h2>
-          <p className="text-slate-500 text-xs mt-1 max-w-xs mx-auto font-medium">
-            কাকদ্বীপ, নামখানা, ডায়মন্ড হারবার ও সুন্দরবন অঞ্চলের প্রধান স্মার্ট ই-টোটো প্ল্যাটফর্ম।
-          </p>
-
-          <div className="mt-7 space-y-3.5">
-            {/* Rider (Driver) Partner Card */}
-            <button
-              onClick={() => {
-                setRole("rider");
-                setPhase("otp_login");
-              }}
-              className="w-full p-4.5 rounded-3xl bg-white border-2 border-emerald-200 hover:border-emerald-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center text-3xl shadow-md shrink-0 group-hover:scale-105 transition-transform">
-                  🛺
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
+                  <MapPin className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-base text-slate-900">টোটো চালক দাদা</h3>
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      Rider Partner
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1 font-medium leading-snug">
-                    নতুন রাইড গ্রহণ করুন, দৈনিক ক্যাশ আয় বাড়ান ও স্মার্ট চালক হন।
+                  <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS)</h4>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                    নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা ও আসল সড়কের লাইভ রুট দেখার জন্য।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-emerald-600 shrink-0 group-hover:translate-x-1 transition-transform" />
-            </button>
 
-            {/* Passenger Card */}
-            <button
-              onClick={() => {
-                setRole("passenger");
-                setPhase("otp_login");
-              }}
-              className="w-full p-4.5 rounded-3xl bg-white border-2 border-sky-200 hover:border-sky-500 text-left transition-all active:scale-[0.98] shadow-sm hover:shadow-md flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-700 text-white flex items-center justify-center text-2xl shadow-md shrink-0 group-hover:scale-105 transition-transform">
-                  👤
+              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 shrink-0 border border-purple-100">
+                  <Bell className="w-5 h-5" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-base text-slate-900">সাধারণ যাত্রী</h3>
-                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
-                      Passenger
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1 font-medium leading-snug">
-                    দ্রুত টোটো বুক করুন, লাইভ রোড রুট দেখুন ও নিরাপদে পৌঁছান।
+                  <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন</h4>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                    অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক অ্যালার্ট।
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-sky-600 shrink-0 group-hover:translate-x-1 transition-transform" />
-            </button>
+
+              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 border border-amber-100">
+                  <Volume2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন</h4>
+                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                    রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট অডিও অ্যালার্ট বাজবে।
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              size="lg"
+              className="w-full h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-sm shadow-md active:scale-95 transition-all mt-4 cursor-pointer"
+              onClick={handleGrantPermissions}
+            >
+              সব অনুমতি দিন ও এগিয়ে যান →
+            </Button>
           </div>
         </div>
-
-        <div className="text-center pb-2 text-[11px] text-slate-400 font-semibold max-w-md mx-auto w-full">
-          ⚡ সুন্দরবন রাইডার্স • ২৪×৭ নিরাপদ ও অনুমোদিত ই-টোটো নেটওয়ার্ক
-        </div>
-      </div>
+      </MobileAppShell>
     );
   }
 
@@ -801,116 +753,117 @@ export default function MobileAppPage() {
   // -------------------------------------------------------------
   if (phase === "otp_login") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
-        <div className="pt-4 space-y-6 max-w-md mx-auto w-full">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setPhase("select_role")}
-              className="text-xs text-slate-500 hover:text-slate-900 font-bold flex items-center gap-1 p-1 -ml-1 rounded-lg transition-colors"
-            >
-              ← ভূমিকা পরিবর্তন
-            </button>
-            <SundarbanLogo size="sm" variant="badge" showTagline={false} />
-          </div>
-
-          <div>
-            <span
-              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${
-                role === "rider"
-                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  : "bg-sky-100 text-sky-800 border border-sky-200"
-              }`}
-            >
-              {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন"}
-            </span>
-            <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-2">
-              WhatsApp OTP দিয়ে প্রবেশ
-            </h2>
-            <p className="text-slate-500 text-xs mt-1 font-medium">
-              আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।
-            </p>
-          </div>
-
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label className="text-xs text-slate-700 font-semibold">হোয়াটসঅ্যাপ মোবাইল নম্বর</Label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
-                  +91
-                </span>
-                <Input
-                  type="tel"
-                  placeholder="9876543210"
-                  value={phoneInput}
-                  disabled={otpSent}
-                  onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                  className="h-14 pl-14 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500"
-                />
-              </div>
+      <MobileAppShell>
+        <div className="min-h-full flex-1 bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
+          <div className="pt-4 space-y-6 max-w-md mx-auto w-full">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setPhase("select_role")}
+                className="text-xs text-slate-500 hover:text-slate-900 font-bold flex items-center gap-1 p-1 -ml-1 rounded-lg transition-colors"
+              >
+                ← ভূমিকা পরিবর্তন
+              </button>
+              <SundarbanLogo size="sm" variant="badge" showTagline={false} />
             </div>
 
-            {otpSent && (
-              <div className="space-y-2 pt-2 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার OTP কোড</Label>
-                  <span className="text-xs text-emerald-600 font-mono font-bold">
-                    {otpTimer > 0 ? `পুনরায় পাঠাতে: ${otpTimer}s` : ""}
-                  </span>
-                </div>
-                <Input
-                  type="text"
-                  maxLength={4}
-                  placeholder="• • • •"
-                  value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
-                />
+            <div>
+              <span
+                className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                  role === "rider"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : "bg-sky-100 text-sky-800 border border-sky-200"
+                }`}
+              >
+                {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন"}
+              </span>
+              <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-2">
+                WhatsApp OTP দিয়ে প্রবেশ
+              </h2>
+              <p className="text-slate-500 text-xs mt-1 font-medium">
+                আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।
+              </p>
+            </div>
 
-                {otpTimer === 0 && (
-                  <button
-                    onClick={handleSendOtp}
-                    className="text-xs text-emerald-600 font-bold hover:underline pt-1 block"
-                  >
-                    পুনরায় WhatsApp-এ OTP পাঠান
-                  </button>
-                )}
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label className="text-xs text-slate-700 font-semibold">হোয়াটসঅ্যাপ মোবাইল নম্বর</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
+                    +91
+                  </span>
+                  <Input
+                    type="tel"
+                    placeholder="9876543210"
+                    value={phoneInput}
+                    disabled={otpSent}
+                    onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    className="h-14 pl-14 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500"
+                  />
+                </div>
               </div>
+
+              {otpSent && (
+                <div className="space-y-2 pt-2 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার OTP কোড</Label>
+                    <span className="text-xs text-emerald-600 font-mono font-bold">
+                      {otpTimer > 0 ? `পুনরায় পাঠাতে: ${otpTimer}s` : ""}
+                    </span>
+                  </div>
+                  <Input
+                    type="text"
+                    maxLength={4}
+                    placeholder="• • • •"
+                    value={otpInput}
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
+                  />
+
+                  {otpTimer === 0 && (
+                    <button
+                      onClick={handleSendOtp}
+                      className="text-xs text-emerald-600 font-bold hover:underline pt-1 block"
+                    >
+                      পুনরায় WhatsApp-এ OTP পাঠান
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="pb-4">
+            {!otpSent ? (
+              <Button
+                size="lg"
+                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                onClick={handleSendOtp}
+                disabled={loading || phoneInput.length < 10}
+              >
+                {loading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  "WhatsApp-এ OTP পাঠান"
+                )}
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                onClick={handleVerifyOtp}
+                disabled={loading || otpInput.length < 4}
+              >
+                {loading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : (
+                  "ভেরিফাই করুন ও প্রবেশ করুন"
+                )}
+              </Button>
             )}
           </div>
         </div>
-
-        <div className="pb-4">
-          {!otpSent ? (
-            <Button
-              size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
-              onClick={handleSendOtp}
-              disabled={loading || phoneInput.length < 10}
-            >
-              {loading ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                "WhatsApp-এ OTP পাঠান"
-              )}
-            </Button>
-          ) : (
-            <Button
-              size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
-              onClick={handleVerifyOtp}
-              disabled={loading || otpInput.length < 4}
-            >
-              {loading ? (
-                <RefreshCw className="w-5 h-5 animate-spin" />
-              ) : (
-                "ভেরিফাই করুন ও প্রবেশ করুন"
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
+      </MobileAppShell>
     );
-  }
 
   // -------------------------------------------------------------
   // VIEW: DRIVER KYC ONBOARDING FORM (Light Theme)
@@ -1095,22 +1048,52 @@ export default function MobileAppPage() {
           </div>
         </div>
 
-        <div className="space-y-3 pb-4">
+        <div className="space-y-3 pb-4 max-w-xs mx-auto w-full">
           <Button
-            variant="outline"
-            className="w-full h-12 rounded-xl border-slate-300 text-slate-700 font-semibold bg-white"
-            onClick={handleSwitchRole}
+            className="w-full h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            onClick={() => checkDriverApprovalStatus(true)}
+            disabled={checkingApproval}
           >
-            👤 যাত্রী হিসেবে টোটো বুক করতে চান?
+            <RefreshCw className={`w-4 h-4 ${checkingApproval ? "animate-spin" : ""}`} />
+            <span>{checkingApproval ? "যাচাই করা হচ্ছে..." : "🔄 স্ট্যাটাস রিফ্রেশ করুন"}</span>
           </Button>
 
-          <Button
-            variant="ghost"
-            className="w-full text-xs text-slate-500"
-            onClick={handleLogout}
+          <a
+            href="https://wa.me/919593177885?text=নমস্কার%20অ্যাডমিন,%20আমি%20সুন্দরবন%20রাইডার্সে%20চালক%20হিসেবে%20ডকুমেন্টস%20জমা%20দিয়েছি।%20দয়া%20করে%20আমার%20অ্যাকাউন্টটি%20অনুমোদন%20করুন।"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md flex items-center justify-center gap-2 transition-all text-xs"
           >
-            লগআউট করুন
-          </Button>
+            <MessageCircle className="w-4 h-4" />
+            <span>হোয়াটসঅ্যাপ হেল্পলাইনে মেসেজ করুন</span>
+          </a>
+
+          <a
+            href="/riders"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-[11px] font-bold text-slate-500 hover:text-slate-800 underline pt-1"
+          >
+            অ্যাডমিন? চালক অনুমোদন প্যানেলে যান →
+          </a>
+
+          <div className="pt-2 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full h-11 rounded-xl border-slate-300 text-slate-700 font-semibold bg-white text-xs cursor-pointer"
+              onClick={handleSwitchRole}
+            >
+              👤 যাত্রী হিসেবে টোটো বুক করতে চান?
+            </Button>
+
+            <Button
+              variant="ghost"
+              className="w-full text-xs text-slate-500 hover:text-red-600"
+              onClick={handleLogout}
+            >
+              লগআউট করুন
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1174,10 +1157,11 @@ export default function MobileAppPage() {
 
         {/* Radar & Status Area (When Idle) */}
         {!activeRide && (
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-24">
+          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-44">
             <DriverRadarPanel
               driverSession={session}
               isOnline={isOnline}
+              initialTab={bottomNavTab === "trips" ? "trips" : "radar"}
               onAcceptRide={async (b) => {
                 try {
                   const res = await fetch("/api/bookings", {
@@ -1249,7 +1233,7 @@ export default function MobileAppPage() {
 
         {/* Active In-Progress Ride View */}
         {activeRide && (
-          <div className="flex-1 p-4 pb-36 flex flex-col justify-between space-y-4">
+          <div className="flex-1 p-4 pb-48 flex flex-col justify-between space-y-4">
             <div className="space-y-4">
               <div className="p-4 rounded-2xl flex items-center justify-between" style={{background:"rgba(240,253,244,0.9)",border:"1px solid rgba(167,243,208,0.8)",boxShadow:"0 4px 16px rgba(16,185,129,0.08), 0 1px 0 rgba(255,255,255,0.8) inset"}}>
                 <div>
@@ -1539,7 +1523,7 @@ export default function MobileAppPage() {
         </div>
 
         {/* Live Radar Map Area with Nearby Totos */}
-        <div className="flex-1 p-4 flex flex-col space-y-4">
+        <div className="flex-1 p-4 flex flex-col space-y-4 pb-44">
           <div className="h-64 sm:h-72 w-full rounded-3xl overflow-hidden shadow-sm">
             <NearbyRidersRadarMap
               pickupCoords={pickupCoords}
@@ -1615,38 +1599,20 @@ export default function MobileAppPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="pt-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="h-11 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs"
                   onClick={() => {
                     setPhase("passenger_home");
                     toast.info("অনুসন্ধান বাতিল করা হয়েছে");
                   }}
                 >
-                  ❌ রিকোয়েস্ট বাতিল
-                </Button>
-
-                <Button
-                  size="sm"
-                  className="h-11 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md shadow-emerald-600/20"
-                  onClick={() => {
-                    // Test acceptance demo
-                    setPassengerBooking({
-                      id: "SR-9412",
-                      driverName: "রাজেশ মন্ডল",
-                      driverPhone: "9593177885",
-                      totoNumber: "WB-96-T-8421",
-                    });
-                    setPhase("passenger_home");
-                    playSuccessSound();
-                    toast.success("চালক রাইড গ্রহণ করেছেন!");
-                  }}
-                >
-                  ⚡ ডেমো: চালক গ্রহণ করল
+                  ❌ রিকোয়েস্ট বাতিল করুন
                 </Button>
               </div>
+              <div className="h-24 w-full shrink-0" aria-hidden="true" />
             </div>
           ) : (
             /* Rider Did Not Accept View (Shows trip details & Find Again) */
@@ -1791,16 +1757,85 @@ export default function MobileAppPage() {
       />
 
       {/* Main Booking Interface */}
-      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-36">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
-          <p className="text-slate-500 text-xs mt-0.5 font-medium">
-            পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
-          </p>
-        </div>
+      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-48">
+        {bottomNavTab === "map" && !passengerBooking ? (
+          <div className="space-y-4 pb-32">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-lg text-slate-900">লাইভ ম্যাপ ও নিকটবর্তী চালক</h3>
+                <p className="text-xs text-slate-500">সুন্দরবন অঞ্চলের লাইভ রোড ম্যাপ ও সক্রিয় টোটো</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBottomNavTab("home")}
+                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs"
+              >
+                ← রাইড বুকিং
+              </button>
+            </div>
+            <div className="h-[420px] w-full rounded-3xl overflow-hidden shadow-md">
+              <NearbyRidersRadarMap
+                pickupCoords={pickupCoords}
+                dropCoords={dropCoords}
+                pickupName={pickupText}
+                dropName={dropText}
+              />
+            </div>
+            <div className="h-28 w-full" aria-hidden="true" />
+          </div>
+        ) : bottomNavTab === "trips" && !passengerBooking ? (
+          <div className="space-y-4 pb-32">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-lg text-slate-900">আমার রাইড হিস্ট্রি</h3>
+                <p className="text-xs text-slate-500">পূর্ববর্তী সম্পূর্ণ ট্রিপ ও ডিজিটাল রসিদ</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBottomNavTab("home")}
+                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs"
+              >
+                ← রাইড বুকিং
+              </button>
+            </div>
+            {/* History Summary Card */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base">
+                    🛺
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900">সুন্দরবন টোটো রাইড</h4>
+                    <span className="text-[10px] text-slate-400">আজকের ট্রিপ • সম্পূর্ণ</span>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
+                  সম্পূর্ণ ✓
+                </span>
+              </div>
+              <div className="text-xs space-y-1.5 text-slate-600">
+                <p>📍 পিকআপ: <strong className="text-slate-800">{pickupText}</strong></p>
+                <p>🏁 গন্তব্য: <strong className="text-slate-800">{dropText}</strong></p>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                <span className="text-slate-500 font-medium">দূরত্ব: {tripDistance} কিমি</span>
+                <span className="font-black text-sm text-slate-900">₹{tripFare}.০০ (নগদ)</span>
+              </div>
+            </div>
+            <div className="h-28 w-full" aria-hidden="true" />
+          </div>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
+              <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
+              </p>
+            </div>
 
-        {passengerBooking ? (
-          <LiveRideTrackingMap
+            {passengerBooking ? (
+              <LiveRideTrackingMap
             booking={{
               id: passengerBooking.id,
               driverName: passengerBooking.driverName || "রাজেশ মন্ডল",
@@ -1826,66 +1861,84 @@ export default function MobileAppPage() {
             onSosClick={() => setShowSosModal(true)}
           />
         ) : (
-          <InteractiveBookingMap
-            initialPickup={pickupText}
-            initialDrop={dropText}
-            onRouteSelected={(route) => {
-              setPickupText(route.pickup);
-              setDropText(route.drop);
-              setPickupCoords(route.pickupCoords);
-              setDropCoords(route.dropCoords);
-              setTripDistance(route.distanceKm);
-              setTripFare(route.estimatedFare);
-              if (route.rideTier) setSelectedTier(route.rideTier);
-              if (route.paymentMode) setPaymentMode(route.paymentMode);
-            }}
-          />
+          <div className="space-y-4">
+            <InteractiveBookingMap
+              initialPickup={pickupText}
+              initialDrop={dropText}
+              onRouteSelected={(route) => {
+                setPickupText(route.pickup);
+                setDropText(route.drop);
+                setPickupCoords(route.pickupCoords);
+                setDropCoords(route.dropCoords);
+                setTripDistance(route.distanceKm);
+                setTripFare(route.estimatedFare);
+                if (route.rideTier) setSelectedTier(route.rideTier);
+                if (route.paymentMode) setPaymentMode(route.paymentMode);
+              }}
+            />
+
+            {/* Book Button - Placed directly in the flow! */}
+            <div className="pt-2">
+              <Button
+                size="lg"
+                disabled={!dropText || !dropText.trim()}
+                className={`w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
+                  dropText && dropText.trim()
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30"
+                    : "bg-slate-200 text-slate-500 border border-slate-300 shadow-none cursor-not-allowed"
+                }`}
+                onClick={async () => {
+                  if (!dropText || !dropText.trim()) {
+                    toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
+                    return;
+                  }
+                  setPhase("passenger_searching");
+                  setSearchStatus("searching");
+                  setSearchCountdown(300);
+                  playRideAlertSound();
+                  toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
+
+                  try {
+                    const res = await fetch("/api/bookings", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        customerName: session?.passengerName || "যাত্রী",
+                        customerPhone: session?.phone || "918348122122",
+                        pickupLocation: pickupText,
+                        dropLocation: dropText,
+                        pickupCoords,
+                        dropCoords,
+                        estimatedFare: tripFare,
+                        tripDistance,
+                        rideTier: selectedTier,
+                        paymentMode,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (data.booking && data.booking.id) {
+                      setActiveBookingId(data.booking.id);
+                    }
+                  } catch (err) {
+                    console.warn("[app] Failed to create live booking:", err);
+                  }
+                }}
+              >
+                {dropText && dropText.trim() ? (
+                  <span>🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)</span>
+                ) : (
+                  <span>📍 অনুগ্রহ করে গন্তব্য নির্বাচন করুন</span>
+                )}
+              </Button>
+            </div>
+
+            {/* Dedicated safe area bottom spacer so Book Button & Payment row are NEVER obscured by the navbar */}
+            <div className="h-32 w-full shrink-0" aria-hidden="true" />
+          </div>
+        )}
+          </>
         )}
       </div>
-
-      {/* Book Button */}
-      {!passengerBooking && (
-        <div className="p-4 pb-6">
-          <Button
-            size="lg"
-            className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
-            onClick={async () => {
-              setPhase("passenger_searching");
-              setSearchStatus("searching");
-              setSearchCountdown(300);
-              playRideAlertSound();
-              toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
-
-              try {
-                const res = await fetch("/api/bookings", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    customerName: session?.passengerName || "যাত্রী",
-                    customerPhone: session?.phone || "918348122122",
-                    pickupLocation: pickupText,
-                    dropLocation: dropText,
-                    pickupCoords,
-                    dropCoords,
-                    estimatedFare: tripFare,
-                    tripDistance,
-                    rideTier: selectedTier,
-                    paymentMode,
-                  }),
-                });
-                const data = await res.json();
-                if (data.booking && data.booking.id) {
-                  setActiveBookingId(data.booking.id);
-                }
-              } catch (err) {
-                console.warn("[app] Failed to create live booking:", err);
-              }
-            }}
-          >
-            🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)
-          </Button>
-        </div>
-      )}
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL: EMERGENCY SOS SAFETY SHIELD                             */}
@@ -2037,4 +2090,5 @@ export default function MobileAppPage() {
       />
     </div>
   );
+}
 }

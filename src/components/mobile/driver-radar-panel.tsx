@@ -56,12 +56,14 @@ interface DriverRadarPanelProps {
   } | null;
   isOnline: boolean;
   onAcceptRide: (booking: any) => void;
+  initialTab?: "radar" | "trips";
 }
 
 export function DriverRadarPanel({
   driverSession,
   isOnline,
   onAcceptRide,
+  initialTab,
 }: DriverRadarPanelProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -73,11 +75,17 @@ export function DriverRadarPanel({
   const [mapViewOption, setMapViewOption] = useState<"inbuilt" | "google">("inbuilt");
 
   // Navigation Tab between Radar & Trip History
-  const [activeTab, setActiveTab] = useState<"radar" | "trips">("radar");
+  const [activeTab, setActiveTab] = useState<"radar" | "trips">(initialTab || "radar");
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Driver's own current GPS location
   const [driverCoords, setDriverCoords] = useState<[number, number]>([21.8760, 88.1920]);
-  const [driverLocationName, setDriverLocationName] = useState<string>("কাকদ্বীপ স্টেশন রোড");
+  const [driverLocationName, setDriverLocationName] = useState<string>("আপনার লাইভ অবস্থান খুঁজছে...");
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<string>("এইমাত্র");
   const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
@@ -107,34 +115,49 @@ export function DriverRadarPanel({
   const [tripFilter, setTripFilter] = useState<"all" | "completed" | "cancelled">("all");
   const [selectedTripDetail, setSelectedTripDetail] = useState<any | null>(null);
 
-  // 1. Fetch & update Driver's own real-time GPS location
-  const updateDriverLocation = useCallback(async () => {
+  // 1. Fetch & update Driver's own real-time GPS location (Dual-stage: fast coarse + accurate GPS)
+  const updateDriverLocation = useCallback(async (userInitiated: any = false) => {
+    const isUserTap = userInitiated === true;
     if (typeof window === "undefined" || !navigator.geolocation) {
-      toast.error("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়");
+      if (isUserTap) toast.error("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়");
       return;
     }
 
     setIsUpdatingLocation(true);
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        const newCoords: [number, number] = [latitude, longitude];
+    const handleDriverPosition = async (latitude: number, longitude: number, accuracy = 20) => {
+      const newCoords: [number, number] = [latitude, longitude];
+      setDriverCoords(newCoords);
+      setGpsAccuracy(Math.round(accuracy));
+      setLastUpdatedTime(new Date().toLocaleTimeString("bn-BD", { hour: "2-digit", minute: "2-digit" }));
 
-        setDriverCoords(newCoords);
-        setGpsAccuracy(Math.round(accuracy));
-        setLastUpdatedTime(new Date().toLocaleTimeString("bn-BD", { hour: "2-digit", minute: "2-digit" }));
+      // Center map to driver
+      if (myMarkerRef.current) {
+        myMarkerRef.current.setLatLng(newCoords);
+      }
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo(newCoords, 15, { duration: 1.0 });
+      }
 
-        // Center map to driver
-        if (myMarkerRef.current) {
-          myMarkerRef.current.setLatLng(newCoords);
+      // Reverse geocode driver address (client fast fallback -> server)
+      let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
+      try {
+        const bgRes = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=bn`
+        );
+        if (bgRes.ok) {
+          const bgData = await bgRes.json();
+          const place = [
+            bgData.locality || bgData.localityInfo?.administrative?.[3]?.name,
+            bgData.city || bgData.principalSubdivision,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          if (place) resolvedName = place;
         }
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo(newCoords, 15, { duration: 1.0 });
-        }
+      } catch {}
 
-        // Reverse geocode driver address
-        let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
+      if (resolvedName.startsWith("অবস্থান")) {
         try {
           const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
           const data = await res.json();
@@ -142,38 +165,65 @@ export function DriverRadarPanel({
             resolvedName = data.name;
           }
         } catch {}
+      }
 
-        setDriverLocationName(resolvedName);
-        setIsUpdatingLocation(false);
+      setDriverLocationName(resolvedName);
+      setIsUpdatingLocation(false);
+      if (userInitiated) {
         toast.success(`📍 আপনার বর্তমান অবস্থান আপডেট হয়েছে: ${resolvedName}`);
+      }
 
-        // Persist real location to driver record in database
-        if (driverSession?.driverId) {
-          try {
-            await fetch("/api/drivers", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: driverSession.driverId,
-                latitude,
-                longitude,
-                current_location_name: resolvedName,
-                is_active: isOnline,
-              }),
-            });
-          } catch {}
-        }
+      // Persist real location to driver record in database
+      if (driverSession?.driverId) {
+        try {
+          await fetch("/api/drivers", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: driverSession.driverId,
+              latitude,
+              longitude,
+              current_location_name: resolvedName,
+              is_active: isOnline,
+            }),
+          });
+        } catch {}
+      }
+    };
+
+    // Stage 1: Fast coarse network fix (< 300ms)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        handleDriverPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+
+        // Stage 2: Background GPS refinement
+        navigator.geolocation.getCurrentPosition(
+          (accuratePos) => {
+            handleDriverPosition(accuratePos.coords.latitude, accuratePos.coords.longitude, accuratePos.coords.accuracy);
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
       },
       (err) => {
-        setIsUpdatingLocation(false);
-        console.warn("Driver GPS warning:", err.message);
-        if (err.code === 1) {
-          toast.error("ব্রাউজারে লোকেশন অনুমতি (Allow) দিন যাতে আপনার বর্তমান অবস্থান স্বয়ংক্রিয়ভাবে পাওয়া যায়।");
-        } else {
-          toast.info("GPS সিগন্যাল দুর্বল, ম্যাপের ডিফল্ট অবস্থান ব্যবহৃত হচ্ছে।");
-        }
+        // Fallback to high accuracy if coarse failed
+        navigator.geolocation.getCurrentPosition(
+          (highPos) => {
+            handleDriverPosition(highPos.coords.latitude, highPos.coords.longitude, highPos.coords.accuracy);
+          },
+          (finalErr) => {
+            setIsUpdatingLocation(false);
+            console.warn("Driver GPS warning:", finalErr.message);
+            if (finalErr.code === 1) {
+              if (userInitiated) toast.error("ব্রাউজারে লোকেশন অনুমতি (Allow) দিন যাতে আপনার বর্তমান অবস্থান স্বয়ংক্রিয়ভাবে পাওয়া যায়।");
+            } else if (userInitiated) {
+              toast.info("GPS সিগন্যাল দুর্বল, ডিভাইসের লোকেশন অন করুন।");
+            }
+          },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+        );
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 120000 }
     );
   }, [driverSession?.driverId, isOnline]);
 
@@ -453,7 +503,7 @@ export function DriverRadarPanel({
 
               <button
                 type="button"
-                onClick={updateDriverLocation}
+                onClick={() => updateDriverLocation(true)}
                 disabled={isUpdatingLocation}
                 className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-xl flex items-center gap-1.5 transition-colors shadow-xs"
               >
@@ -568,7 +618,7 @@ export function DriverRadarPanel({
 
                 <button
                   type="button"
-                  onClick={updateDriverLocation}
+                  onClick={() => updateDriverLocation(true)}
                   title="আমার অবস্থানে সেন্টারিং করুন"
                   className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center pointer-events-auto active:scale-95"
                 >
@@ -1094,6 +1144,9 @@ export function DriverRadarPanel({
           </div>
         </div>
       )}
+
+      {/* Safe Area Clearance so cards are never obscured by bottom navbar */}
+      <div className="h-32 w-full shrink-0" aria-hidden="true" />
     </div>
   );
 }

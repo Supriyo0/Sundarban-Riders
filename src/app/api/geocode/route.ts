@@ -139,6 +139,26 @@ export async function GET(req: Request) {
     );
 
     if (!res.ok) {
+      try {
+        const bgRes = await fetch(
+          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=bn`
+        );
+        if (bgRes.ok) {
+          const bgData = await bgRes.json();
+          const place = [
+            bgData.locality || bgData.localityInfo?.administrative?.[3]?.name,
+            bgData.city || bgData.principalSubdivision
+          ].filter(Boolean).join(", ");
+          if (place) {
+            return NextResponse.json({
+              name: place,
+              lat: latitude,
+              lng: longitude,
+            });
+          }
+        }
+      } catch {}
+
       return NextResponse.json({
         name: `লোকেশন (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
         lat: latitude,

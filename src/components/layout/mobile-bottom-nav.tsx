@@ -32,13 +32,13 @@ export function MobileBottomNav({
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-30 px-3 pb-2.5 pt-1.5 select-none"
+      className="fixed sm:absolute bottom-0 left-0 right-0 z-30 px-3 pb-2.5 pt-1.5 select-none pointer-events-none"
       style={{
         background: "linear-gradient(to top, rgba(248,250,252,1) 55%, rgba(248,250,252,0))",
       }}
     >
       <div
-        className="max-w-sm mx-auto rounded-2xl grid grid-cols-4 p-1"
+        className="max-w-sm mx-auto rounded-2xl grid grid-cols-4 p-1 pointer-events-auto"
         style={{
           background: "rgba(255,255,255,0.90)",
           boxShadow: "0 4px 24px rgba(0,0,0,0.09), 0 1px 0 rgba(255,255,255,0.9) inset",

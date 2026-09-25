@@ -73,16 +73,18 @@ export function AppSplashScreen({
 
       {/* Center Hero: Glowing Brand Logo & Title */}
       <div className="relative z-10 flex flex-col items-center text-center my-auto space-y-6 animate-in zoom-in-95 duration-500">
-        {/* Animated Brand Emblem with Actual Logo */}
+        {/* Animated Brand Emblem with Perfectly Circular Logo */}
         <div className="relative">
-          <div className="relative flex items-center justify-center p-4 rounded-3xl bg-white/10 backdrop-blur-xl border border-white/25 shadow-2xl hover:scale-105 transition-transform">
-            <img
-              src="/sundarban-logo.png"
-              alt="Sundarban Riders Logo"
-              className="w-28 h-28 object-contain drop-shadow-[0_10px_25px_rgba(16,185,129,0.35)]"
-            />
+          <div className="relative flex items-center justify-center w-32 h-32 rounded-full bg-white/10 backdrop-blur-xl border-2 border-emerald-400/40 shadow-[0_0_50px_rgba(16,185,129,0.35)] p-1.5 hover:scale-105 transition-transform">
+            <div className="w-full h-full rounded-full overflow-hidden bg-white shadow-inner flex items-center justify-center">
+              <img
+                src="/sundarban-logo.png"
+                alt="Sundarban Riders Logo"
+                className="w-full h-full object-cover scale-[1.05] rounded-full select-none"
+              />
+            </div>
           </div>
-          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-slate-900/90 border border-emerald-500/50 text-[10px] font-black text-emerald-400 uppercase tracking-widest shadow-lg flex items-center gap-1">
+          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-slate-900/90 border border-emerald-500/50 text-[10px] font-black text-emerald-400 uppercase tracking-widest shadow-lg flex items-center gap-1 whitespace-nowrap">
             <Sparkles className="w-2.5 h-2.5 text-amber-400 animate-spin-slow" />
             <span>24×7 LIVE</span>
           </div>

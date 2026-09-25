@@ -469,6 +469,9 @@ export function TripCompletionReceipt({
           <ChevronRight className="w-4 h-4 ml-1" />
         </Button>
       </div>
+
+      {/* Safe Area Clearance so action button is never obscured by bottom navbar */}
+      <div className="h-32 w-full shrink-0" aria-hidden="true" />
     </div>
   );
 }

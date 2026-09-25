@@ -30,22 +30,25 @@ export function SundarbanLogo({
 
   const currentSize = iconSizes[size];
 
-  // Emblem: Actual Official Logo Image with glowing styling
+  // Emblem: Actual Official Logo Image in a 100% circular, polished badge
   const EmblemSvg = (
     <div
-      className={`relative flex items-center justify-center shrink-0 ${animated ? "group" : ""}`}
+      className={`relative shrink-0 flex items-center justify-center ${animated ? "group" : ""}`}
       style={{ width: currentSize.width, height: currentSize.height }}
     >
       {/* Outer Glow Halo on splash or when animated */}
       {animated && (
-        <div className="absolute -inset-2 bg-gradient-to-r from-emerald-500/30 via-teal-400/20 to-amber-400/30 rounded-3xl blur-xl animate-pulse pointer-events-none" />
+        <div className="absolute -inset-1.5 bg-gradient-to-r from-emerald-500/40 via-teal-400/30 to-amber-400/30 rounded-full blur-lg animate-pulse pointer-events-none" />
       )}
 
-      <img
-        src="/sundarban-logo.png"
-        alt="Sundarban Riders Logo"
-        className="w-full h-full object-contain drop-shadow-md select-none rounded-2xl"
-      />
+      {/* Circular Emblem Frame */}
+      <div className="relative w-full h-full rounded-full overflow-hidden bg-white shadow-sm ring-2 ring-emerald-500/30 flex items-center justify-center">
+        <img
+          src="/sundarban-logo.png"
+          alt="Sundarban Riders Logo"
+          className="w-full h-full object-cover scale-[1.05] select-none rounded-full"
+        />
+      </div>
     </div>
   );
 

@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         success: true,
         role: "rider",
         is_registered: true,
-        is_approved: driver.is_approved !== false,
+        is_approved: Boolean(driver.is_approved),
         driver,
         sessionToken,
         message: "লগইন সফল হয়েছে!",

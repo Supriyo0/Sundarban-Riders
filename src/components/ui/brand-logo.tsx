@@ -51,14 +51,14 @@ export function BrandLogo({
       )}
     >
       {/* Official Sundarban Riders Logo Emblem */}
-      <div className="relative flex shrink-0 items-center justify-center rounded-full overflow-hidden shadow-md border-2 border-teal-500/30 bg-white dark:bg-slate-900 transition-transform duration-200 hover:scale-105">
+      <div className="relative flex shrink-0 items-center justify-center rounded-full overflow-hidden shadow-md ring-2 ring-emerald-500/30 bg-white dark:bg-slate-900 transition-transform duration-200 hover:scale-105">
         <Image
           src="/sundarban-logo.png"
           alt="Sundarban Riders Logo"
           width={config.imgSize}
           height={config.imgSize}
           priority={priority}
-          className="object-cover rounded-full"
+          className="object-cover rounded-full scale-[1.05]"
           style={{ width: `${config.imgSize}px`, height: `${config.imgSize}px` }}
         />
       </div>

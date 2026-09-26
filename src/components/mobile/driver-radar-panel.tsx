@@ -322,6 +322,7 @@ export function DriverRadarPanel({
         center: driverCoords,
         zoom: 14,
         zoomControl: false,
+        scrollWheelZoom: false,
       });
 
       L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
@@ -576,7 +577,7 @@ export function DriverRadarPanel({
           {/* Interactive Driver Radar Map */}
           {mapViewOption === "inbuilt" ? (
             <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
-              <div ref={mapContainerRef} className="w-full h-full z-10" />
+              <div ref={mapContainerRef} className="w-full h-full z-10" style={{ touchAction: "pan-y" }} />
 
               {/* Top Floating Entity Filter Pills */}
               <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">

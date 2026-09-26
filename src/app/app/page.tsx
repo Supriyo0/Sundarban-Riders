@@ -1785,9 +1785,9 @@ function MobileAppPageContent() {
           />
         }
       >
-        <div className="min-h-full text-slate-900 flex flex-col justify-between relative overflow-hidden select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
+        <div className="w-full min-h-full text-slate-900 flex flex-col relative select-none pb-28" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
           {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
-        <div className="px-4 py-2.5 flex items-center justify-between" style={{background:"rgba(255,255,255,0.88)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(226,232,240,0.6)",boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
+        <div className="sticky top-0 z-30 px-4 py-2.5 flex items-center justify-between" style={{background:"rgba(255,255,255,0.92)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(226,232,240,0.6)",boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-lg shadow-2xs">
               🛺
@@ -1845,7 +1845,7 @@ function MobileAppPageContent() {
 
         {/* Radar & Status Area (When Idle) */}
         {!activeRide && (
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-12">
+          <div className="w-full p-4 space-y-4">
             <DriverRadarPanel
               driverSession={session}
               isOnline={isOnline}
@@ -1924,7 +1924,7 @@ function MobileAppPageContent() {
 
         {/* Active In-Progress Ride View */}
         {activeRide && (
-          <div className="flex-1 p-4 pb-48 flex flex-col justify-between space-y-4">
+          <div className="w-full p-4 pb-36 flex flex-col space-y-4">
             <div className="space-y-4">
               <div className="p-4 rounded-2xl flex items-center justify-between" style={{background:"rgba(240,253,244,0.9)",border:"1px solid rgba(167,243,208,0.8)",boxShadow:"0 4px 16px rgba(16,185,129,0.08), 0 1px 0 rgba(255,255,255,0.8) inset"}}>
                 <div>
@@ -2043,7 +2043,7 @@ function MobileAppPageContent() {
         {/* ------------------------------------------------------------- */}
         {incomingRide && (
           <div className="fixed inset-0 z-50 flex flex-col justify-end animate-in slide-in-from-bottom duration-300" style={{background:"rgba(15,23,42,0.55)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
-            <div className="rounded-t-3xl p-6 space-y-5 border-t border-white/20" style={{background:"rgba(255,255,255,0.97)",boxShadow:"0 -8px 40px rgba(0,0,0,0.18), 0 -1px 0 rgba(255,255,255,0.6) inset"}}>
+            <div className="rounded-t-3xl p-6 space-y-5 border-t border-white/20 max-h-[90dvh] overflow-y-auto overscroll-contain pb-8" style={{background:"rgba(255,255,255,0.97)",boxShadow:"0 -8px 40px rgba(0,0,0,0.18), 0 -1px 0 rgba(255,255,255,0.6) inset"}}>
               {/* Header with Circular Countdown & Fare */}
               <div className="flex items-center justify-between">
                 <div>

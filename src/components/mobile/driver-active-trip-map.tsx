@@ -80,6 +80,8 @@ export function DriverActiveTripMap({
         center: status === "heading_pickup" ? pickupCoords : dropCoords,
         zoom: 14,
         zoomControl: false,
+        scrollWheelZoom: false,
+        dragging: !L.Browser.mobile,
       });
 
       L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
@@ -220,7 +222,7 @@ export function DriverActiveTripMap({
       {/* View 1: Inbuilt Interactive Leaflet Map */}
       {mapViewOption === "inbuilt" ? (
         <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
-          <div ref={mapContainerRef} className="w-full h-full z-10" />
+          <div ref={mapContainerRef} className="w-full h-full z-10" style={{ touchAction: "pan-y" }} />
 
           <div className="absolute bottom-2.5 right-2.5 z-20">
             <a

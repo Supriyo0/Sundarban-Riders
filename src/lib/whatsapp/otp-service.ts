@@ -64,7 +64,7 @@ export async function sendWhatsAppOtp(
 
   // Formatted strictly as requested
   const roleText = role === "rider" ? "driver" : "passenger";
-  const otpBody = `your ${roleText} otp is ${otp} valid for 5 min`;
+  const otpBody = `${otp} is your ${roleText} otp , valid for 5 min`;
 
   // Fetch WhatsApp configuration
   try {

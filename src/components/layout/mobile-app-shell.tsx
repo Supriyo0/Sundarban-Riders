@@ -5,9 +5,10 @@ import { Wifi, BatteryMedium, Signal } from "lucide-react";
 
 interface MobileAppShellProps {
   children: React.ReactNode;
+  bottomNav?: React.ReactNode;
 }
 
-export function MobileAppShell({ children }: MobileAppShellProps) {
+export function MobileAppShell({ children, bottomNav }: MobileAppShellProps) {
   const [timeStr, setTimeStr] = useState("09:41");
 
   useEffect(() => {
@@ -58,6 +59,13 @@ export function MobileAppShell({ children }: MobileAppShellProps) {
         <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative w-full no-scrollbar">
           {children}
         </div>
+
+        {/* Docked Mobile Bottom Navigation Bar (Never floating or overlapping) */}
+        {bottomNav && (
+          <div className="shrink-0 w-full z-40 bg-white/95 border-t border-slate-200/80 backdrop-blur-md">
+            {bottomNav}
+          </div>
+        )}
 
         {/* Smartphone Home Indicator Bar (Shown on desktop framing) */}
         <div className="hidden sm:block shrink-0 py-1.5 bg-white/90 backdrop-blur-sm z-40 text-center border-t border-slate-100">

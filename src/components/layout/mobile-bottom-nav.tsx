@@ -31,17 +31,12 @@ export function MobileBottomNav({
   };
 
   return (
-    <nav
-      className="fixed sm:absolute bottom-0 left-0 right-0 z-30 px-3 pb-2.5 pt-1.5 select-none pointer-events-none"
-      style={{
-        background: "linear-gradient(to top, rgba(248,250,252,1) 55%, rgba(248,250,252,0))",
-      }}
-    >
+    <nav className="w-full px-3 py-1.5 select-none">
       <div
-        className="max-w-sm mx-auto rounded-2xl grid grid-cols-4 p-1 pointer-events-auto"
+        className="max-w-sm mx-auto rounded-2xl grid grid-cols-4 p-1"
         style={{
-          background: "rgba(255,255,255,0.90)",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.09), 0 1px 0 rgba(255,255,255,0.9) inset",
+          background: "rgba(255,255,255,0.92)",
+          boxShadow: "0 2px 14px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.9) inset",
           border: "1px solid rgba(226,232,240,0.85)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",

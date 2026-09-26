@@ -928,7 +928,8 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   if (phase === "kyc_form") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 p-6 pb-12 overflow-y-auto">
+      <MobileAppShell>
+        <div className="min-h-full bg-slate-50 text-slate-900 p-6 pb-12 overflow-y-auto">
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
@@ -1068,6 +1069,7 @@ function MobileAppPageContent() {
           </form>
         </div>
       </div>
+    </MobileAppShell>
     );
   }
 
@@ -1076,7 +1078,8 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   if (phase === "kyc_pending") {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-6 text-center">
+      <MobileAppShell>
+        <div className="min-h-full bg-slate-50 text-slate-900 flex flex-col justify-between p-6 text-center">
         <div className="pt-16 space-y-6">
           <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-300 flex items-center justify-center text-amber-600 mx-auto animate-pulse shadow-md">
             <Clock className="w-10 h-10" />
@@ -1154,6 +1157,7 @@ function MobileAppPageContent() {
           </div>
         </div>
       </div>
+    </MobileAppShell>
     );
   }
 
@@ -1162,7 +1166,19 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   if (phase === "rider_home") {
     return (
-      <div className="min-h-screen text-slate-900 flex flex-col justify-between relative overflow-hidden select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
+      <MobileAppShell
+        bottomNav={
+          <MobileBottomNav
+            activeTab={bottomNavTab}
+            onTabChange={(t) => {
+              if (t === "safety") setShowSosModal(true);
+              else setBottomNavTab(t);
+            }}
+            role="rider"
+          />
+        }
+      >
+        <div className="min-h-full text-slate-900 flex flex-col justify-between relative overflow-hidden select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
         {/* Modern App Header */}
         <MobileAppHeader
           role="rider"
@@ -1215,7 +1231,7 @@ function MobileAppPageContent() {
 
         {/* Radar & Status Area (When Idle) */}
         {!activeRide && (
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-44">
+          <div className="flex-1 p-4 overflow-y-auto space-y-4 pb-12">
             <DriverRadarPanel
               driverSession={session}
               isOnline={isOnline}
@@ -1525,16 +1541,8 @@ function MobileAppPageContent() {
           </div>
         )}
 
-        {/* Mobile Bottom Navigation Dock for Rider */}
-        <MobileBottomNav
-          activeTab={bottomNavTab}
-          onTabChange={(t) => {
-            if (t === "safety") setShowSosModal(true);
-            else setBottomNavTab(t);
-          }}
-          role="rider"
-        />
-      </div>
+        </div>
+      </MobileAppShell>
     );
   }
 
@@ -1543,7 +1551,8 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   if (phase === "passenger_searching") {
     return (
-      <div className="min-h-screen text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
+      <MobileAppShell>
+        <div className="min-h-full text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
         {/* Radar Header */}
         <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-3">
@@ -1767,6 +1776,7 @@ function MobileAppPageContent() {
           )}
         </div>
       </div>
+    </MobileAppShell>
     );
   }
 
@@ -1799,7 +1809,18 @@ function MobileAppPageContent() {
   // VIEW: PASSENGER HOME / BOOKING SCREEN (Light Theme with Interactive Google Map)
   // -------------------------------------------------------------
   return (
-    <MobileAppShell>
+    <MobileAppShell
+      bottomNav={
+        <MobileBottomNav
+          activeTab={bottomNavTab}
+          onTabChange={(t) => {
+            if (t === "safety") setShowSosModal(true);
+            else setBottomNavTab(t);
+          }}
+          role="passenger"
+        />
+      }
+    >
       <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none bg-slate-50">
       {/* Modern App Header */}
       <MobileAppHeader
@@ -1816,7 +1837,7 @@ function MobileAppPageContent() {
       />
 
       {/* Main Booking Interface */}
-      <div className="flex-1 p-4 sm:p-6 space-y-4 pb-48">
+      <div className="flex-1 p-4 sm:p-5 space-y-4 pb-8">
         {bottomNavTab === "map" && !passengerBooking ? (
           <div className="space-y-4 pb-32">
             <div className="flex items-center justify-between">
@@ -1927,14 +1948,14 @@ function MobileAppPageContent() {
               onRouteSelected={handleRouteSelected}
             />
 
-            {/* Book Button - Placed directly in the flow! */}
-            <div className="pt-2">
+            {/* Book Button - Sleek & Prominent */}
+            <div className="pt-1">
               <Button
                 size="lg"
                 disabled={!dropText || !dropText.trim()}
                 className={`w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
                   dropText && dropText.trim()
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30"
+                    ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
                     : "bg-slate-200 text-slate-500 border border-slate-300 shadow-none cursor-not-allowed"
                 }`}
                 onClick={async () => {
@@ -1982,8 +2003,8 @@ function MobileAppPageContent() {
               </Button>
             </div>
 
-            {/* Dedicated safe area bottom spacer so Book Button & Payment row are NEVER obscured by the navbar */}
-            <div className="h-32 w-full shrink-0" aria-hidden="true" />
+            {/* Bottom spacer for clean visual balance */}
+            <div className="h-6 w-full shrink-0" aria-hidden="true" />
           </div>
         )}
           </>
@@ -2129,15 +2150,6 @@ function MobileAppPageContent() {
         </div>
       )}
 
-      {/* Mobile Bottom Navigation Dock for Passenger */}
-      <MobileBottomNav
-        activeTab={bottomNavTab}
-        onTabChange={(t) => {
-          if (t === "safety") setShowSosModal(true);
-          else setBottomNavTab(t);
-        }}
-        role="passenger"
-      />
       </div>
     </MobileAppShell>
   );

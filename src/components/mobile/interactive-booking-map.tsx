@@ -1292,165 +1292,57 @@ export function InteractiveBookingMap({
       )}
 
       {/* ----------------------------------------------------------- */}
-      {/* 4. Ride Tier Selector (স্ট্যান্ডার্ড/শেয়ার্ড/রিজার্ভ) */}
+      {/* 4. Single Premium Toto Option (একমাত্র স্মার্ট টোটো বিকল্প)    */}
       {/* ----------------------------------------------------------- */}
       <div className="space-y-2 pt-1">
         <div className="flex items-center justify-between px-0.5">
-          <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🛺 রাইড নির্বাচন করুন</span>
+          <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🛺 অনুমোদিত স্মার্ট টোটো রাইড</span>
           </span>
-          <span className="text-[11px] text-slate-500 font-semibold">
+          <span className="text-[11px] text-emerald-800 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
             {distanceKm > 0 ? `${distanceKm} কিমি • ~${roadDurationMin} মিনিট` : "গন্তব্য নির্বাচন করুন"}
           </span>
         </div>
 
-        <div className="space-y-2">
-          {/* Tier 1: Standard Toto (স্ট্যান্ডার্ড টোটো) */}
-          <div
-            onClick={() => handleSelectTier("standard")}
-            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
-              selectedTier === "standard"
-                ? "bg-emerald-50/90 border-emerald-500 shadow-sm"
-                : "bg-white border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
-                🛺
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-extrabold text-sm text-slate-900">স্ট্যান্ডার্ড টোটো</h4>
-                  <span className="text-[9px] font-extrabold bg-emerald-600 text-white px-1.5 py-0.5 rounded-md">
-                    সেরা পছন্দ
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
-                    <User className="w-3 h-3" /> ৪
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিট"} • দ্রুত ও নির্ভরযোগ্য
-                </p>
-              </div>
+        {/* Single Only Toto Card */}
+        <div
+          className="p-4 rounded-3xl border-2 border-emerald-500/80 bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/50 shadow-md shadow-emerald-600/10 flex items-center justify-between transition-all"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-3xl shadow-md shadow-emerald-600/30 shrink-0">
+              🛺
             </div>
-
-            <div className="text-right shrink-0">
-              <div className="text-base font-black text-slate-900">
-                ₹{fares.standard}.00
-                {distanceKm === 0 && <span className="text-[10px] font-normal text-slate-500 block">থেকে শুরু</span>}
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-black text-base text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
+                <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-2xs">
+                  অন-ডিমান্ড
+                </span>
+                <span className="text-[10px] text-slate-500 font-bold flex items-center gap-0.5">
+                  <User className="w-3 h-3 text-slate-400" /> ৪ আসন
+                </span>
               </div>
-              {distanceKm > 0 && <span className="text-[10px] text-slate-400 line-through">₹{fares.standard + 10}</span>}
+              <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিটে পিকআপ"} • দ্রুত ও নিরাপদ
+              </p>
+              <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>যাচাইকৃত স্থানীয় চালক • সরাসরি নন-স্টপ যাত্রা</span>
+              </div>
             </div>
           </div>
 
-          {/* Tier 2: Shared Economy Toto (শেয়ার্ড টোটো) */}
-          <div
-            onClick={() => handleSelectTier("shared")}
-            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
-              selectedTier === "shared"
-                ? "bg-blue-50/90 border-blue-500 shadow-sm"
-                : "bg-white border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
-                🛺⚡
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-extrabold text-sm text-slate-900">শেয়ার্ড ইকোনমি</h4>
-                  <span className="text-[9px] font-extrabold bg-blue-600 text-white px-1.5 py-0.5 rounded-md">
-                    ৩০% সাশ্রয়ী
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-0.5">
-                    <User className="w-3 h-3" /> ১-২
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  সহযাত্রীর সাথে শেয়ার • পকেট-ফ্রেন্ডলি ভাড়া
-                </p>
-              </div>
+          <div className="text-right shrink-0">
+            <div className="text-xl font-black text-emerald-800">
+              ₹{fares.standard}.00
             </div>
-
-            <div className="text-right shrink-0">
-              <div className="text-base font-black text-blue-700">
-                ₹{fares.shared}.00
-                {distanceKm === 0 && <span className="text-[10px] font-normal text-slate-500 block">থেকে শুরু</span>}
-              </div>
-              {distanceKm > 0 && <span className="text-[10px] text-slate-400 line-through">₹{fares.standard}</span>}
-            </div>
+            <span className="text-[10px] font-semibold text-slate-500 block">
+              {distanceKm === 0 ? "নূন্যতম ভাড়া" : "ফিক্সড সঠিক ভাড়া"}
+            </span>
+            {distanceKm > 0 && (
+              <span className="text-[10px] text-slate-400 line-through block">₹{fares.standard + 10}</span>
+            )}
           </div>
-
-          {/* Tier 3: Reserved / Private Toto (রিজার্ভ টোটো) */}
-          <div
-            onClick={() => handleSelectTier("reserved")}
-            className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
-              selectedTier === "reserved"
-                ? "bg-purple-50/90 border-purple-500 shadow-sm"
-                : "bg-white border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center text-2xl shadow-xs shrink-0">
-                🛺✨
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="font-extrabold text-sm text-slate-900">স্পেশাল / রিজার্ভ</h4>
-                  <span className="text-[9px] font-extrabold bg-purple-600 text-white px-1.5 py-0.5 rounded-md">
-                    ভিআইপি প্রাইভেট
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium">
-                  সম্পূর্ণ টোটো একা • সরাসরি নন-স্টপ আরাম
-                </p>
-              </div>
-            </div>
-
-            <div className="text-right shrink-0">
-              <div className="text-base font-black text-purple-700">
-                ₹{fares.reserved}.00
-                {distanceKm === 0 && <span className="text-[10px] font-normal text-slate-500 block">থেকে শুরু</span>}
-              </div>
-              <span className="text-[10px] text-purple-600 font-bold">নন-স্টপ</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ----------------------------------------------------------- */}
-      {/* 5. Payment Method & Safety Shield Bar */}
-      {/* ----------------------------------------------------------- */}
-      <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2">
-          <span className="text-slate-500 font-bold">পেমেন্ট:</span>
-          <button
-            type="button"
-            onClick={() => handleSelectPayment("cash")}
-            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
-              paymentMode === "cash"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            💵 নগদ (Cash)
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSelectPayment("upi")}
-            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
-              paymentMode === "upi"
-                ? "bg-emerald-600 text-white shadow-xs"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            📱 UPI স্ক্যান
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5 text-[11px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>নিরাপদ যাচাই</span>
         </div>
       </div>
     </div>

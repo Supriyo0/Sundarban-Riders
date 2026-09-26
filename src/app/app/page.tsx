@@ -921,6 +921,7 @@ function MobileAppPageContent() {
         </div>
       </MobileAppShell>
     );
+  }
 
   // -------------------------------------------------------------
   // VIEW: DRIVER KYC ONBOARDING FORM (Light Theme)
@@ -2140,7 +2141,6 @@ function MobileAppPageContent() {
       </div>
     </MobileAppShell>
   );
-}
 }
 
 export default function MobileAppPage() {

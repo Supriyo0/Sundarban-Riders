@@ -25,6 +25,12 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import "leaflet/dist/leaflet.css";
 
+// Safely resolve Leaflet ES module default export in Next.js Turbopack
+async function getLeaflet() {
+  const LModule = await import("leaflet");
+  return (LModule as any).default || LModule;
+}
+
 // Curated Hubs & Landmarks around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
 export const REGIONAL_HUBS = [
   // Kakdwip Hubs
@@ -385,7 +391,7 @@ export function InteractiveBookingMap({
       }
 
       try {
-        const L = await import("leaflet");
+        const L = await getLeaflet();
 
         // Prevent Leaflet "Map container is already initialized" crash
         if (mapContainerRef.current) {
@@ -567,7 +573,7 @@ export function InteractiveBookingMap({
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    import("leaflet").then((L) => {
+    getLeaflet().then((L: any) => {
       driverMarkersRef.current.forEach((m) => m.remove());
       driverMarkersRef.current = [];
 
@@ -722,7 +728,7 @@ export function InteractiveBookingMap({
   // Fit bounds to both points
   const handleFitBounds = () => {
     if (mapInstanceRef.current && pickupCoords && dropCoords) {
-      import("leaflet").then((L) => {
+      getLeaflet().then((L: any) => {
         const bounds = L.latLngBounds([pickupCoords, dropCoords]);
         mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
       });
@@ -802,7 +808,7 @@ export function InteractiveBookingMap({
 
     if (mapInstanceRef.current) {
       if (!dropMarkerRef.current) {
-        const L = await import("leaflet");
+        const L = await getLeaflet();
         const redDropIcon = L.divIcon({
           className: "custom-drop-pin",
           html: `

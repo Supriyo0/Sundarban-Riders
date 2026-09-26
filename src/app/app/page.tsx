@@ -38,12 +38,37 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { SwipeToConfirm } from "@/components/mobile/swipe-to-confirm";
 import { playRideAlertSound, playSuccessSound } from "@/lib/mobile/sound";
-import { InteractiveBookingMap } from "@/components/mobile/interactive-booking-map";
-import { NearbyRidersRadarMap } from "@/components/mobile/nearby-riders-radar-map";
+import dynamic from "next/dynamic";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
-import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
-import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
+
+const InteractiveBookingMap = dynamic(
+  () => import("@/components/mobile/interactive-booking-map").then((mod) => mod.InteractiveBookingMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-80 rounded-3xl bg-slate-100 border border-slate-200 animate-pulse flex flex-col items-center justify-center gap-2 text-slate-400">
+        <div className="w-10 h-10 rounded-full bg-slate-200 animate-bounce flex items-center justify-center text-xl">🛺</div>
+        <span className="text-xs font-bold text-slate-500">স্মার্ট বুকিং ম্যাপ প্রস্তুত হচ্ছে...</span>
+      </div>
+    ),
+  }
+);
+
+const NearbyRidersRadarMap = dynamic(
+  () => import("@/components/mobile/nearby-riders-radar-map").then((mod) => mod.NearbyRidersRadarMap),
+  { ssr: false }
+);
+
+const LiveRideTrackingMap = dynamic(
+  () => import("@/components/mobile/live-ride-tracking-map").then((mod) => mod.LiveRideTrackingMap),
+  { ssr: false }
+);
+
+const DriverActiveTripMap = dynamic(
+  () => import("@/components/mobile/driver-active-trip-map").then((mod) => mod.DriverActiveTripMap),
+  { ssr: false }
+);
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";

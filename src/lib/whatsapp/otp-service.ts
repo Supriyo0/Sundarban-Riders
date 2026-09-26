@@ -62,9 +62,9 @@ export async function sendWhatsAppOtp(
     { onConflict: "key" }
   );
 
-  // Message body in Bengali
-  const roleName = role === "rider" ? "চালক (Rider)" : "যাত্রী (Passenger)";
-  const otpBody = `🔐 সুন্দরবন রাইডার (Sundarban Riders)\n=======================\nআপনার ${roleName} লগইন OTP কোড:\n👉 *${otp}*\n\nকোডটি ৫ মিনিটের জন্য কার্যকর থাকবে। সুরক্ষার স্বার্থে এই কোডটি কারো সাথে শেয়ার করবেন না। 🙏`;
+  // Formatted strictly as requested
+  const roleText = role === "rider" ? "driver" : "passenger";
+  const otpBody = `your ${roleText} otp is ${otp} valid for 5 min`;
 
   // Fetch WhatsApp configuration
   try {

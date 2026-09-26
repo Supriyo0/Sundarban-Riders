@@ -176,16 +176,36 @@ function MobileAppPageContent() {
       setKycAadharDoc(dataUrl);
       setKycAadharName(file.name);
 
-      // Upload to ImgBB in background for CDN URL
+      // Upload to ImgBB directly from browser or via /api/upload
       try {
+        const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY || "9629d00aad1613f9bb2f05c5a3a0dd40";
         const formData = new FormData();
         formData.append("image", file);
         formData.append("name", `aadhar_${file.name}`);
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        const json = await res.json();
-        if (json.success && json.url && !json.fallback) {
-          setKycAadharDoc(json.url);
-          toast.success("আধার কার্ড ImgBB-তে সফলভাবে আপলোড হয়েছে!");
+
+        let uploadedUrl: string | null = null;
+        try {
+          const directRes = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+            method: "POST",
+            body: formData,
+          });
+          const directJson = await directRes.json();
+          if (directJson.success && directJson.data?.url) {
+            uploadedUrl = directJson.data.url;
+          }
+        } catch {}
+
+        if (!uploadedUrl) {
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const json = await res.json();
+          if (json.success && json.url && !json.fallback) {
+            uploadedUrl = json.url;
+          }
+        }
+
+        if (uploadedUrl) {
+          setKycAadharDoc(uploadedUrl);
+          toast.success("আধার কার্ড ImgBB-তে সফলভাবে সংরক্ষিত হয়েছে!");
         } else {
           toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
         }
@@ -208,16 +228,36 @@ function MobileAppPageContent() {
       setKycSecondaryDoc(dataUrl);
       setKycSecondaryName(file.name);
 
-      // Upload to ImgBB in background for CDN URL
+      // Upload to ImgBB directly from browser or via /api/upload
       try {
+        const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY || "9629d00aad1613f9bb2f05c5a3a0dd40";
         const formData = new FormData();
         formData.append("image", file);
         formData.append("name", `secondary_${file.name}`);
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
-        const json = await res.json();
-        if (json.success && json.url && !json.fallback) {
-          setKycSecondaryDoc(json.url);
-          toast.success("২য় ডকুমেন্ট ImgBB-তে সফলভাবে আপলোড হয়েছে!");
+
+        let uploadedUrl: string | null = null;
+        try {
+          const directRes = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+            method: "POST",
+            body: formData,
+          });
+          const directJson = await directRes.json();
+          if (directJson.success && directJson.data?.url) {
+            uploadedUrl = directJson.data.url;
+          }
+        } catch {}
+
+        if (!uploadedUrl) {
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const json = await res.json();
+          if (json.success && json.url && !json.fallback) {
+            uploadedUrl = json.url;
+          }
+        }
+
+        if (uploadedUrl) {
+          setKycSecondaryDoc(uploadedUrl);
+          toast.success("২য় ডকুমেন্ট ImgBB-তে সফলভাবে সংরক্ষিত হয়েছে!");
         } else {
           toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
         }

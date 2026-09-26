@@ -43,6 +43,18 @@ export async function POST(req: Request) {
           warning: result.error,
         });
       }
+      if (typeof imagePayload === "object" && imagePayload !== null && "arrayBuffer" in imagePayload) {
+        const buffer = Buffer.from(await (imagePayload as File).arrayBuffer());
+        const mime = (imagePayload as File).type || "image/jpeg";
+        const dataUrl = `data:${mime};base64,${buffer.toString("base64")}`;
+        return NextResponse.json({
+          success: true,
+          url: dataUrl,
+          display_url: dataUrl,
+          fallback: true,
+          warning: result.error,
+        });
+      }
       return NextResponse.json(
         { success: false, message: result.error || "ImgBB আপলোড ব্যর্থ হয়েছে" },
         { status: 502 }

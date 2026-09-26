@@ -112,12 +112,18 @@ export async function POST(request: Request) {
     const distStr = (district || "").toString().trim();
     const blockStr = (block || "").toString().trim();
     const aadharStr = (aadhar_no || "").toString().trim();
+    const aadharCardUrl = (body.aadhar_card_url || "").toString().trim();
+    const secondaryDocUrl = (body.secondary_doc_url || "").toString().trim();
 
-    const metaString = JSON.stringify({
+    const metaObj: Record<string, unknown> = {
       district: distStr,
       block: blockStr,
       aadhar_no: aadharStr,
-    });
+    };
+    if (aadharCardUrl) metaObj.aadhar_card_url = aadharCardUrl;
+    if (secondaryDocUrl) metaObj.secondary_doc_url = secondaryDocUrl;
+
+    const metaString = JSON.stringify(metaObj);
 
     const admin = supabaseAdmin();
 

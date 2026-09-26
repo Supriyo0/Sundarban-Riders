@@ -175,7 +175,23 @@ function MobileAppPageContent() {
       const dataUrl = await processDocumentFile(file);
       setKycAadharDoc(dataUrl);
       setKycAadharName(file.name);
-      toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
+
+      // Upload to ImgBB in background for CDN URL
+      try {
+        const formData = new FormData();
+        formData.append("image", file);
+        formData.append("name", `aadhar_${file.name}`);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const json = await res.json();
+        if (json.success && json.url && !json.fallback) {
+          setKycAadharDoc(json.url);
+          toast.success("আধার কার্ড ImgBB-তে সফলভাবে আপলোড হয়েছে!");
+        } else {
+          toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
+        }
+      } catch {
+        toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
+      }
     } catch {
       toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
     } finally {
@@ -191,7 +207,23 @@ function MobileAppPageContent() {
       const dataUrl = await processDocumentFile(file);
       setKycSecondaryDoc(dataUrl);
       setKycSecondaryName(file.name);
-      toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+
+      // Upload to ImgBB in background for CDN URL
+      try {
+        const formData = new FormData();
+        formData.append("image", file);
+        formData.append("name", `secondary_${file.name}`);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const json = await res.json();
+        if (json.success && json.url && !json.fallback) {
+          setKycSecondaryDoc(json.url);
+          toast.success("২য় ডকুমেন্ট ImgBB-তে সফলভাবে আপলোড হয়েছে!");
+        } else {
+          toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+        }
+      } catch {
+        toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+      }
     } catch {
       toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
     } finally {

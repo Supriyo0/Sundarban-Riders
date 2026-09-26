@@ -118,23 +118,39 @@ export function ProfileForm() {
 
       // Upload a newly-staged image, if any.
       if (pendingAvatar) {
-        const ext =
-          pendingAvatar.name.split('.').pop()?.toLowerCase() || 'png';
-        const path = `${user.id}/avatar-${Date.now()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(path, pendingAvatar, {
-            cacheControl: '3600',
-            upsert: true,
-            contentType: pendingAvatar.type,
+        try {
+          const formData = new FormData();
+          formData.append("image", pendingAvatar);
+          formData.append("name", `avatar_${user.id}`);
+          const uploadRes = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
           });
-        if (uploadError) {
-          throw new Error(t('uploadFailed', { message: uploadError.message }));
+          const uploadJson = await uploadRes.json();
+          if (uploadJson.success && uploadJson.url && !uploadJson.fallback) {
+            nextAvatarUrl = uploadJson.url;
+          } else {
+            throw new Error("ImgBB fallback");
+          }
+        } catch {
+          const ext =
+            pendingAvatar.name.split('.').pop()?.toLowerCase() || 'png';
+          const path = `${user.id}/avatar-${Date.now()}.${ext}`;
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(path, pendingAvatar, {
+              cacheControl: '3600',
+              upsert: true,
+              contentType: pendingAvatar.type,
+            });
+          if (uploadError) {
+            throw new Error(t('uploadFailed', { message: uploadError.message }));
+          }
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from('avatars').getPublicUrl(path);
+          nextAvatarUrl = publicUrl;
         }
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from('avatars').getPublicUrl(path);
-        nextAvatarUrl = publicUrl;
       } else if (removeAvatar) {
         nextAvatarUrl = null;
       }

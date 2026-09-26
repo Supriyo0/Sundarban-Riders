@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cleanPhoneNumber } from "@/lib/whatsapp/otp-service";
 import { sendTextMessage } from "@/lib/whatsapp/meta-api";
 import { decrypt, isLegacyFormat } from "@/lib/whatsapp/encryption";
+import { uploadImageToImgBB } from "@/lib/imgbb/upload";
 
 function getSupabaseAdmin() {
   return createClient(
@@ -44,13 +45,31 @@ export async function POST(req: Request) {
       .or(`phone.eq.${cleanPhone},phone.eq.${cleanPhone.replace(/^91/, "")}`)
       .maybeSingle();
 
+    // Upload documents to ImgBB if base64 data URLs were passed
+    let finalAadharUrl = aadhar_doc || null;
+    let finalSecondaryUrl = secondary_doc || null;
+
+    if (finalAadharUrl && typeof finalAadharUrl === "string" && finalAadharUrl.startsWith("data:image")) {
+      const uploadRes = await uploadImageToImgBB(finalAadharUrl, `aadhar_${cleanPhone}`);
+      if (uploadRes.success && uploadRes.url) {
+        finalAadharUrl = uploadRes.url;
+      }
+    }
+
+    if (finalSecondaryUrl && typeof finalSecondaryUrl === "string" && finalSecondaryUrl.startsWith("data:image")) {
+      const uploadRes = await uploadImageToImgBB(finalSecondaryUrl, `secondary_${cleanPhone}`);
+      if (uploadRes.success && uploadRes.url) {
+        finalSecondaryUrl = uploadRes.url;
+      }
+    }
+
     const metadata = {
       district: district || "দক্ষিণ ২৪ পরগনা",
       block: block || "কাকদ্বীপ",
       aadhar_no: aadhar_number,
       email: email || "",
-      aadhar_card_url: aadhar_doc || null,
-      secondary_doc_url: secondary_doc || null,
+      aadhar_card_url: finalAadharUrl,
+      secondary_doc_url: finalSecondaryUrl,
       secondary_doc_type: secondary_doc_type,
       applied_at: new Date().toISOString(),
       status: "pending_approval",

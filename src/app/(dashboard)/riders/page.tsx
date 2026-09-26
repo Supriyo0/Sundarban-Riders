@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Car,
@@ -18,6 +18,8 @@ import {
   FileText,
   Clock,
   ExternalLink,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +75,33 @@ export default function RidersPage() {
   const [newDistrict, setNewDistrict] = useState("");
   const [newBlock, setNewBlock] = useState("");
   const [newAadharNo, setNewAadharNo] = useState("");
+  const [newAadharCardUrl, setNewAadharCardUrl] = useState("");
+  const [uploadingAadharDoc, setUploadingAadharDoc] = useState(false);
+  const aadharFileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+
+  const handleAadharDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingAadharDoc(true);
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("name", `admin_aadhar_${file.name}`);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.success && json.url) {
+        setNewAadharCardUrl(json.url);
+        toast.success("আধার কার্ড ImgBB-তে সফলভাবে আপলোড হয়েছে");
+      } else {
+        toast.error(json.message || "আপলোড ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("আপলোড ব্যর্থ হয়েছে");
+    } finally {
+      setUploadingAadharDoc(false);
+    }
+  };
 
   // Helper to determine status
   const getDriverStatus = (d: Driver): "online" | "busy" | "offline" => {
@@ -252,6 +280,7 @@ export default function RidersPage() {
           district: newDistrict.trim(),
           block: newBlock.trim(),
           aadhar_no: newAadharNo.trim(),
+          aadhar_card_url: newAadharCardUrl.trim() || undefined,
         }),
       });
 
@@ -268,6 +297,7 @@ export default function RidersPage() {
       setNewDistrict("");
       setNewBlock("");
       setNewAadharNo("");
+      setNewAadharCardUrl("");
       loadDrivers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "চালক যুক্ত করা যায়নি";
@@ -663,6 +693,57 @@ export default function RidersPage() {
                 maxLength={16}
                 className="bg-muted border-border text-foreground font-mono"
               />
+            </div>
+
+            {/* ImgBB Aadhar Document Upload */}
+            <div className="space-y-2">
+              <Label className="text-foreground">আধার কার্ড ছবি (ImgBB হোস্টিং)</Label>
+              <input
+                ref={aadharFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAadharDocUpload}
+              />
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 border-dashed border-border"
+                  disabled={uploadingAadharDoc}
+                  onClick={() => aadharFileInputRef.current?.click()}
+                >
+                  {uploadingAadharDoc ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  {newAadharCardUrl ? "ছবি পরিবর্তন করুন" : "আধার ছবি আপলোড (ImgBB)"}
+                </Button>
+                {newAadharCardUrl && (
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={newAadharCardUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary underline truncate max-w-[180px] flex items-center gap-1"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      লিংক প্রিভিউ
+                    </a>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-destructive"
+                      onClick={() => setNewAadharCardUrl("")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <DialogFooter className="pt-4">

@@ -5,10 +5,11 @@ import { Wifi, BatteryMedium, Signal } from "lucide-react";
 
 interface MobileAppShellProps {
   children: React.ReactNode;
+  topHeader?: React.ReactNode;
   bottomNav?: React.ReactNode;
 }
 
-export function MobileAppShell({ children, bottomNav }: MobileAppShellProps) {
+export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShellProps) {
   const [timeStr, setTimeStr] = useState("09:41");
 
   useEffect(() => {
@@ -24,13 +25,13 @@ export function MobileAppShell({ children, bottomNav }: MobileAppShellProps) {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-slate-950/95 sm:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] sm:from-slate-900 sm:via-slate-950 sm:to-emerald-950/40 flex items-center justify-center sm:p-4 select-none">
+    <div className="h-[100dvh] min-h-[100dvh] w-full bg-slate-950/95 sm:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] sm:from-slate-900 sm:via-slate-950 sm:to-emerald-950/40 flex items-center justify-center sm:p-4 select-none overflow-hidden">
       {/* Background Decorative Ambient Radial Glows (Desktop view only) */}
       <div className="hidden sm:block absolute top-12 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="hidden sm:block absolute bottom-12 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Smartphone Chassis Container */}
-      <div className="w-full sm:max-w-[430px] min-h-screen sm:min-h-[850px] sm:max-h-[900px] bg-slate-50 relative sm:rounded-[48px] sm:shadow-[0_30px_90px_rgba(0,0,0,0.65)] sm:border-[8px] sm:border-slate-800/95 flex flex-col overflow-hidden ring-1 ring-white/10">
+      {/* Smartphone Chassis Container: Exactly 100dvh on mobile, framed on desktop */}
+      <div className="w-full sm:max-w-[430px] h-[100dvh] max-h-[100dvh] sm:h-[880px] sm:max-h-[900px] bg-slate-50 relative sm:rounded-[48px] sm:shadow-[0_30px_90px_rgba(0,0,0,0.65)] sm:border-[8px] sm:border-slate-800/95 flex flex-col overflow-hidden ring-1 ring-white/10">
         
         {/* Native Smartphone Status Bar with Dynamic Island (Shown on desktop framing) */}
         <div className="hidden sm:flex items-center justify-between px-6 pt-2.5 pb-1 bg-white/95 backdrop-blur-md z-40 border-b border-slate-100/60 shrink-0">
@@ -55,14 +56,24 @@ export function MobileAppShell({ children, bottomNav }: MobileAppShellProps) {
           </div>
         </div>
 
-        {/* Scrollable Screen Content */}
-        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative w-full no-scrollbar">
+        {/* Dedicated Sticky Top Header (Pinned at the top across all screen sizes) */}
+        {topHeader && (
+          <div className="sticky top-0 z-40 w-full shrink-0 bg-white/95 backdrop-blur-xl border-b border-slate-200/80">
+            {topHeader}
+          </div>
+        )}
+
+        {/* Scrollable Screen Content (The only element that scrolls) */}
+        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative w-full no-scrollbar overscroll-contain">
           {children}
         </div>
 
-        {/* Docked Mobile Bottom Navigation Bar (Never floating or overlapping) */}
+        {/* Docked Sticky Mobile Bottom Navigation Bar (Pinned at the bottom across all screen sizes) */}
         {bottomNav && (
-          <div className="shrink-0 w-full z-40 bg-white/95 border-t border-slate-200/80 backdrop-blur-md">
+          <div
+            className="sticky bottom-0 z-40 w-full shrink-0 bg-white/95 border-t border-slate-200/80 backdrop-blur-xl"
+            style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom, 0px))" }}
+          >
             {bottomNav}
           </div>
         )}

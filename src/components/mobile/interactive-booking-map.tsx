@@ -756,23 +756,31 @@ export function InteractiveBookingMap({
           </div>
         </div>
 
-        {/* Real Live Place Suggestions Dropdown */}
+        {/* Real Live Place Suggestions List (In-flow expansion so it CANNOT hide behind map) */}
         {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
           <div
-            className="absolute left-2 right-2 top-full mt-2 z-50 rounded-2xl p-2 bg-white/98 border border-slate-200 shadow-2xl backdrop-blur-2xl max-h-64 overflow-y-auto space-y-1 divide-y divide-slate-100"
-            style={{ filter: "drop-shadow(0 20px 25px rgba(0, 0, 0, 0.15))" }}
+            className="mt-3 pt-2.5 border-t border-slate-200/90 max-h-64 overflow-y-auto space-y-1.5 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-200"
           >
-            <div className="px-2 py-1.5 flex items-center justify-between text-[11px] font-bold text-slate-600">
+            <div className="px-1 pb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
               <span className="flex items-center gap-1.5 text-emerald-800">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 {activeSearchField === "drop" ? "গন্তব্যের পরামর্শ (Google Maps / লাইভ অবস্থান)" : "পিকআপ পয়েন্টের পরামর্শ"}
               </span>
-              {isSearchingPlaces && (
-                <span className="flex items-center gap-1 text-[10px] text-emerald-600">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  <span>খোঁজা হচ্ছে...</span>
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {isSearchingPlaces && (
+                  <span className="flex items-center gap-1 text-[10px] text-emerald-600">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>খোঁজা হচ্ছে...</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveSearchField(null)}
+                  className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  ✕ বন্ধ করুন
+                </button>
+              </div>
             </div>
 
             {placeSuggestions.map((place, idx) => (
@@ -780,7 +788,7 @@ export function InteractiveBookingMap({
                 key={idx}
                 type="button"
                 onClick={() => handleSelectSuggestion(place)}
-                className="w-full p-2.5 pt-2 rounded-xl hover:bg-emerald-50/90 text-left transition-all flex items-center gap-3 cursor-pointer group active:scale-[0.99]"
+                className="w-full p-2.5 pt-2 rounded-xl hover:bg-emerald-50/90 text-left transition-all flex items-center gap-3 cursor-pointer group active:scale-[0.99] bg-white border border-slate-100/90 shadow-2xs"
               >
                 <div className="w-8 h-8 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                   <MapPin className="w-4 h-4" />

@@ -336,13 +336,38 @@ function MobileAppPageContent() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as MobileSession;
-        setSession(parsed);
-        setRole(parsed.role);
+        if (parsed.role === "passenger") {
+          const p = parsed.phone?.replace(/\D/g, "").slice(-10);
+          if (p && p.length === 10 && parsed.phone !== "918348122122") {
+            setSession(parsed);
+            setRole("passenger");
+          } else {
+            localStorage.removeItem("sr_mobile_session");
+          }
+        } else {
+          setSession(parsed);
+          setRole(parsed.role);
+        }
       } catch {
         // fallback
       }
     }
   }, []);
+
+  // Strict Guard: Passenger must be logged in with a valid 10-digit WhatsApp phone
+  useEffect(() => {
+    if (phase === "passenger_home") {
+      const p = session?.phone?.replace(/\D/g, "").slice(-10);
+      if (!p || p.length !== 10 || session?.phone === "918348122122") {
+        setRole("passenger");
+        setPhoneInput("");
+        setOtpInput("");
+        setOtpSent(false);
+        setPhase("otp_login");
+        toast.info("টোটো বুক করতে অনুগ্রহ করে আপনার হোয়াটসঅ্যাপ নম্বর দিয়ে লগইন করুন");
+      }
+    }
+  }, [phase, session]);
 
   // OTP Countdown timer
   useEffect(() => {
@@ -1294,6 +1319,20 @@ function MobileAppPageContent() {
   if (phase === "rider_home") {
     return (
       <MobileAppShell
+        topHeader={
+          <MobileAppHeader
+            role="rider"
+            userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
+            isSoundMuted={isSoundMuted}
+            onToggleSound={() => {
+              setIsSoundMuted(!isSoundMuted);
+              toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
+            }}
+            onSwitchRole={handleSwitchRole}
+            onSosClick={() => setShowSosModal(true)}
+            onLogout={handleLogout}
+          />
+        }
         bottomNav={
           <MobileBottomNav
             activeTab={bottomNavTab}
@@ -1306,21 +1345,7 @@ function MobileAppPageContent() {
         }
       >
         <div className="min-h-full text-slate-900 flex flex-col justify-between relative overflow-hidden select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
-        {/* Modern App Header */}
-        <MobileAppHeader
-          role="rider"
-          userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
-          isSoundMuted={isSoundMuted}
-          onToggleSound={() => {
-            setIsSoundMuted(!isSoundMuted);
-            toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
-          }}
-          onSwitchRole={handleSwitchRole}
-          onSosClick={() => setShowSosModal(true)}
-          onLogout={handleLogout}
-        />
-
-        {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
+          {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
         <div className="px-4 py-2.5 flex items-center justify-between" style={{background:"rgba(255,255,255,0.88)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(226,232,240,0.6)",boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-lg shadow-2xs">
@@ -1970,6 +1995,20 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   return (
     <MobileAppShell
+      topHeader={
+        <MobileAppHeader
+          role="passenger"
+          userName={session?.passengerName || "যাত্রী বন্ধু"}
+          isSoundMuted={isSoundMuted}
+          onToggleSound={() => {
+            setIsSoundMuted(!isSoundMuted);
+            toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
+          }}
+          onSwitchRole={handleSwitchRole}
+          onSosClick={() => setShowSosModal(true)}
+          onLogout={handleLogout}
+        />
+      }
       bottomNav={
         <MobileBottomNav
           activeTab={bottomNavTab}
@@ -1982,22 +2021,8 @@ function MobileAppPageContent() {
       }
     >
       <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none bg-slate-50">
-      {/* Modern App Header */}
-      <MobileAppHeader
-        role="passenger"
-        userName={session?.passengerName || "যাত্রী বন্ধু"}
-        isSoundMuted={isSoundMuted}
-        onToggleSound={() => {
-          setIsSoundMuted(!isSoundMuted);
-          toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
-        }}
-        onSwitchRole={handleSwitchRole}
-        onSosClick={() => setShowSosModal(true)}
-        onLogout={handleLogout}
-      />
-
-      {/* Main Booking Interface */}
-      <div className="flex-1 p-4 sm:p-5 space-y-4 pb-8">
+        {/* Main Booking Interface */}
+        <div className="flex-1 p-4 sm:p-5 space-y-4 pb-8">
         {bottomNavTab === "map" && !passengerBooking ? (
           <div className="space-y-4 pb-32">
             <div className="flex items-center justify-between">

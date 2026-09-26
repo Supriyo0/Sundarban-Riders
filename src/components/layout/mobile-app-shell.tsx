@@ -25,13 +25,13 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
   }, []);
 
   return (
-    <div className="h-[100dvh] min-h-[100dvh] w-full bg-slate-950/95 sm:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] sm:from-slate-900 sm:via-slate-950 sm:to-emerald-950/40 flex items-center justify-center sm:p-4 select-none overflow-hidden">
+    <div className="h-[100dvh] min-h-[100dvh] w-full bg-slate-100 sm:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] sm:from-emerald-50/80 sm:via-slate-100 sm:to-teal-50/50 flex items-center justify-center sm:p-4 select-none overflow-hidden">
       {/* Background Decorative Ambient Radial Glows (Desktop view only) */}
       <div className="hidden sm:block absolute top-12 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="hidden sm:block absolute bottom-12 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Smartphone Chassis Container: Exactly 100dvh on mobile, framed on desktop */}
-      <div className="w-full sm:max-w-[430px] h-[100dvh] max-h-[100dvh] sm:h-[880px] sm:max-h-[900px] bg-slate-50 relative sm:rounded-[48px] sm:shadow-[0_30px_90px_rgba(0,0,0,0.65)] sm:border-[8px] sm:border-slate-800/95 flex flex-col overflow-hidden ring-1 ring-white/10">
+      <div className="w-full sm:max-w-[430px] h-[100dvh] max-h-[100dvh] sm:h-[880px] sm:max-h-[900px] bg-slate-50 relative sm:rounded-[48px] sm:shadow-[0_20px_60px_rgba(0,0,0,0.12)] sm:border-[8px] sm:border-slate-300 flex flex-col overflow-hidden ring-1 ring-slate-200">
         
         {/* Native Smartphone Status Bar with Dynamic Island (Shown on desktop framing) */}
         <div className="hidden sm:flex items-center justify-between px-6 pt-2.5 pb-1 bg-white/95 backdrop-blur-md z-40 border-b border-slate-100/60 shrink-0">
@@ -41,8 +41,8 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
           </span>
 
           {/* Center: Dynamic Island Capsule Pill */}
-          <div className="h-5 w-24 bg-slate-950 rounded-full flex items-center justify-center px-2 gap-1.5 shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <div className="h-5 w-24 bg-slate-800 rounded-full flex items-center justify-center px-2 gap-1.5 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[9px] font-bold text-white tracking-widest uppercase">SR LIVE</span>
           </div>
 

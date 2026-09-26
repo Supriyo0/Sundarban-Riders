@@ -28,6 +28,9 @@ import {
   Smartphone,
   Globe,
   ExternalLink,
+  X,
+  ThumbsUp,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -157,6 +160,32 @@ export function LiveRideTrackingMap({
       setActiveRouteView("arriving");
     }
   }, [rideStep]);
+
+  // Poll booking status every 8s to detect rider-initiated step changes
+  useEffect(() => {
+    if (!booking.id || rideStep === "arrived") return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/bookings?id=${booking.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const status = data?.booking?.status || data?.status;
+        if (status === "completed") {
+          onStepChange("arrived");
+          clearInterval(interval);
+        } else if (status === "on_trip" && rideStep !== "in_trip") {
+          onStepChange("in_trip");
+        } else if (status === "accepted" && rideStep === "assigned") {
+          onStepChange("arriving");
+        }
+      } catch {
+        // ignore network errors silently
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking.id, rideStep]);
+
 
   // Function to perform Auto Route Switch if rider takes a different route
   const triggerAutoRouteSwitch = useCallback(
@@ -566,9 +595,9 @@ export function LiveRideTrackingMap({
       {/* ------------------------------------------------------------- */}
       {/* 1. LIVE ROAD NAVIGATION & AUTO ROUTE SWITCH BAR               */}
       {/* ------------------------------------------------------------- */}
-      <div className="bg-slate-900 text-white rounded-3xl p-4 shadow-xl border border-slate-800 space-y-3">
+      <div className="bg-white text-slate-900 rounded-3xl p-4 shadow-sm border border-slate-200/90 space-y-3">
         {/* Route Selector Switcher Tabs */}
-        <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-xs">
+        <div className="flex items-center justify-between pb-1 border-b border-slate-100 text-xs">
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -576,7 +605,7 @@ export function LiveRideTrackingMap({
               className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
                 activeRouteView === "arriving"
                   ? "bg-sky-500 text-white shadow-md shadow-sky-500/30 scale-102"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
               <span>🚗 পিকআপে আসার রুট</span>
@@ -590,8 +619,8 @@ export function LiveRideTrackingMap({
               onClick={() => handleSwitchRouteView("drop")}
               className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
                 activeRouteView === "drop"
-                  ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 scale-102"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 scale-102"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
               <span>🏁 গন্তব্যে যাওয়ার রুট</span>
@@ -604,17 +633,17 @@ export function LiveRideTrackingMap({
           {/* Auto-Route Switch Indicator */}
           <div className="flex items-center gap-1">
             {isAutoRerouting ? (
-              <span className="flex items-center gap-1 text-[10px] text-amber-400 font-bold bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-800">
-                <RefreshCw className="w-3 h-3 animate-spin text-amber-400" />
+              <span className="flex items-center gap-1 text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
                 রুট পুনর্গণনা...
               </span>
             ) : currentActiveRoute?.isAutoSwitched ? (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800">
-                <Sparkles className="w-3 h-3 text-emerald-400" />
+              <span className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <Sparkles className="w-3 h-3 text-emerald-600" />
                 স্বয়ংক্রিয় রুট সুইচড
               </span>
             ) : (
-              <span className="text-[10px] text-slate-400 font-mono font-semibold">
+              <span className="text-[10px] text-slate-500 font-mono font-semibold">
                 লাইভ রোড
               </span>
             )}
@@ -627,8 +656,8 @@ export function LiveRideTrackingMap({
             <div
               className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
                 activeRouteView === "arriving"
-                  ? "bg-sky-500/20 text-sky-400 border border-sky-500/40"
-                  : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                  ? "bg-sky-50 text-sky-600 border border-sky-200"
+                  : "bg-emerald-50 text-emerald-600 border border-emerald-200"
               }`}
             >
               <Compass className="w-4 h-4 animate-spin-slow" />
@@ -636,20 +665,20 @@ export function LiveRideTrackingMap({
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400 uppercase font-extrabold tracking-wider block">
+                <span className="text-[10px] text-slate-500 uppercase font-extrabold tracking-wider block">
                   {activeRouteView === "arriving"
                     ? "📍 চালকের আগমন পথ (Arriving Route):"
                     : "🏁 গন্তব্যের মূল সড়ক পথ (Drop Location Route):"}
                 </span>
 
                 {currentActiveRoute?.isAutoSwitched && (
-                  <span className="text-[9px] text-amber-300 font-bold bg-amber-500/20 px-2 py-0.5 rounded-md">
+                  <span className="text-[9px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                     ভিন্ন রাস্তায় সুইচড ✓
                   </span>
                 )}
               </div>
 
-              <p className="text-sm font-black text-white leading-snug tracking-tight mt-0.5">
+              <p className="text-sm font-black text-slate-900 leading-snug tracking-tight mt-0.5">
                 {currentActiveRoute?.routeSummaryBengali ||
                   (activeRouteView === "arriving"
                     ? "কাকদ্বীপ স্টেশন রোড ➔ ডায়মন্ড হারবার রোড (NH-117) হয়ে আসছেন"
@@ -660,23 +689,23 @@ export function LiveRideTrackingMap({
 
           {/* Quick Metrics Bar: ETA + Distance + Current Road */}
           <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-            <div className="bg-slate-800/80 rounded-2xl p-2 border border-slate-700/60">
-              <span className="text-[9px] text-slate-400 uppercase font-bold block">দূরত্ব</span>
-              <span className="text-sm font-extrabold text-emerald-400">
+            <div className="bg-slate-50 rounded-2xl p-2 border border-slate-200/80">
+              <span className="text-[9px] text-slate-500 uppercase font-bold block">দূরত্ব</span>
+              <span className="text-sm font-extrabold text-emerald-700">
                 {currentActiveRoute?.distanceKm ? `${currentActiveRoute.distanceKm} কিমি` : `${distanceToTargetKm} কিমি`}
               </span>
             </div>
 
-            <div className="bg-slate-800/80 rounded-2xl p-2 border border-slate-700/60">
-              <span className="text-[9px] text-slate-400 uppercase font-bold block">আনুমানিক সময়</span>
-              <span className="text-sm font-extrabold text-amber-300">
+            <div className="bg-slate-50 rounded-2xl p-2 border border-slate-200/80">
+              <span className="text-[9px] text-slate-500 uppercase font-bold block">আনুমানিক সময়</span>
+              <span className="text-sm font-extrabold text-amber-600">
                 {currentActiveRoute?.durationMin ? `~${currentActiveRoute.durationMin} মিনিট` : `~${driverEtaMin} মিনিট`}
               </span>
             </div>
 
-            <div className="bg-slate-800/80 rounded-2xl p-2 border border-slate-700/60">
-              <span className="text-[9px] text-slate-400 uppercase font-bold block">প্রধান সড়ক</span>
-              <span className="text-xs font-bold text-slate-200 truncate block">
+            <div className="bg-slate-50 rounded-2xl p-2 border border-slate-200/80">
+              <span className="text-[9px] text-slate-500 uppercase font-bold block">প্রধান সড়ক</span>
+              <span className="text-xs font-bold text-slate-800 truncate block">
                 {currentActiveRoute?.primaryRoad || "NH-117"}
               </span>
             </div>
@@ -684,14 +713,14 @@ export function LiveRideTrackingMap({
 
           {/* Quick Detour / Different Route Simulation Button */}
           <div className="pt-1 flex items-center justify-between">
-            <span className="text-[10px] text-slate-400 font-medium">
+            <span className="text-[10px] text-slate-500 font-medium">
               চালক রাস্তা পরিবর্তন করলে ম্যাপ স্বয়ংক্রিয়ভাবে রুট বদল করবে
             </span>
             <button
               type="button"
               onClick={handleSimulateDifferentRoute}
               disabled={isAutoRerouting}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-lg text-[10px] font-bold border border-slate-700 flex items-center gap-1 transition-all active:scale-95"
+              className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-lg text-[10px] font-bold border border-sky-200 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
             >
               <Shuffle className="w-3 h-3" />
               <span>বিকল্প রাস্তা টেস্ট করুন</span>
@@ -745,21 +774,21 @@ export function LiveRideTrackingMap({
 
           {/* Top Status Banner (Sundarban Riders Live Indicator) */}
           <div className="absolute top-3 left-3 right-16 z-20">
-            <div className="bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 rounded-2xl shadow-xl border border-slate-700/60 flex items-center gap-2.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <div className="bg-white/95 backdrop-blur-md text-slate-900 px-3.5 py-2 rounded-2xl shadow-lg border border-slate-200/90 flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
               <div className="text-xs truncate">
                 {rideStep === "assigned" || rideStep === "arriving" ? (
                   <span>
-                    চালক আসছেন: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> দূরে •{" "}
-                    <strong className="text-amber-300">~{driverEtaMin} মিনিটে পিকআপ</strong>
+                    চালক আসছেন: <strong className="text-emerald-700">{distanceToTargetKm} কিমি</strong> দূরে •{" "}
+                    <strong className="text-amber-700">~{driverEtaMin} মিনিটে পিকআপ</strong>
                   </span>
                 ) : rideStep === "in_trip" ? (
                   <span>
-                    যাত্রা চলমান: <strong className="text-emerald-400">{distanceToTargetKm} কিমি</strong> বাকি •{" "}
-                    <strong className="text-amber-300">~{driverEtaMin} মিনিটে গন্তব্যে</strong>
+                    যাত্রা চলমান: <strong className="text-emerald-700">{distanceToTargetKm} কিমি</strong> বাকি •{" "}
+                    <strong className="text-amber-700">~{driverEtaMin} মিনিটে গন্তব্যে</strong>
                   </span>
                 ) : (
-                  <span className="text-emerald-400 font-bold">✓ আপনি গন্তব্যে পৌঁছে গেছেন!</span>
+                  <span className="text-emerald-700 font-bold">✓ আপনি গন্তব্যে পৌঁছে গেছেন!</span>
                 )}
               </div>
             </div>
@@ -860,27 +889,17 @@ export function LiveRideTrackingMap({
               <button
                 key={step.id}
                 type="button"
-                onClick={() => {
-                  onStepChange(step.id as RideJourneyStep);
-                  if (step.id === "in_trip") {
-                    setActiveRouteView("drop");
-                    playSuccessSound();
-                    toast.success("যাত্রা শুরু হয়েছে! চালক আপনাকে গন্তব্যে নিয়ে যাচ্ছেন।");
-                  } else if (step.id === "arrived") {
-                    setActiveRouteView("drop");
-                    playSuccessSound();
-                    toast.success("গন্তব্যে পৌঁছেছেন! ট্রিপ সমাপ্ত করুন।");
-                  }
-                }}
-                className={`p-2 rounded-2xl text-center border transition-all ${
-                  isDone
-                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold"
-                    : "bg-slate-50 text-slate-400 border-slate-200 font-medium hover:bg-slate-100"
-                }`}
-              >
-                <div className="text-xs mb-0.5">{step.icon}</div>
-                <div className="text-[10px] leading-tight">{step.label}</div>
-              </button>
+              // Read-only for passenger — rider drives step changes
+              className={`p-2 rounded-2xl text-center border transition-all pointer-events-none select-none ${
+                isDone
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs font-bold"
+                  : "bg-slate-50 text-slate-400 border-slate-200 font-medium"
+              }`}
+              disabled
+            >
+              <div className="text-xs mb-0.5">{step.icon}</div>
+              <div className="text-[10px] leading-tight">{step.label}</div>
+            </button>
             );
           })}
         </div>
@@ -927,7 +946,7 @@ export function LiveRideTrackingMap({
             {/* Direct Phone Call Button */}
             <a
               href={`tel:${booking.driverPhone}`}
-              className="w-10 h-10 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
+              className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md active:scale-95 transition-all"
               title="চালকের সাথে কথা বলুন"
             >
               <Phone className="w-4 h-4 fill-white" />
@@ -998,29 +1017,199 @@ export function LiveRideTrackingMap({
       </div>
 
       {/* ------------------------------------------------------------- */}
-      {/* 7. FINISH TRIP & CANCEL ACTIONS                                */}
+      {/* 7. PASSENGER ACTIONS: Cancel (before trip only) + Status info   */}
       {/* ------------------------------------------------------------- */}
       <div className="space-y-2 pt-1">
-        <Button
-          size="lg"
-          className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2"
-          onClick={onFinishTrip}
-        >
-          <span>🏁 ট্রিপ সমাপ্ত ও ডিজিটাল রসিদ দেখুন</span>
-        </Button>
+        {/* Show cancel ONLY before trip has started */}
+        {(rideStep === "assigned" || rideStep === "arriving") && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-9 font-semibold border border-red-200 rounded-xl"
+            onClick={onCancelClick}
+          >
+            ❌ বুকিং বাতিল করুন
+          </Button>
+        )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-9 font-semibold"
-          onClick={onCancelClick}
-        >
-          বুকিং বাতিল করুন
-        </Button>
+        {/* Trip in progress — inform passenger */}
+        {rideStep === "in_trip" && (
+          <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+            যাত্রা চলমান — চালক আপনাকে গন্তব্যে নিয়ে যাচ্ছেন। ক্যান্সেল করা যাবে না।
+          </div>
+        )}
+
+        {/* Arrived — waiting for rider to complete */}
+        {rideStep === "arrived" && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-xs text-amber-900 font-semibold flex items-center gap-2 shadow-xs">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+            <span>গন্তব্যে পৌঁছেছেন! চালক যত্নসহ রাইড সমাপ্ত করলে ডিজিটাল রসিদ দেখাবেন।</span>
+          </div>
+        )}
       </div>
 
-      {/* Safe Area Clearance so action buttons are never obscured by bottom navbar */}
-      <div className="h-32 w-full shrink-0" aria-hidden="true" />
+      {/* Safe Area Clearance */}
+      <div className="h-4 w-full shrink-0" aria-hidden="true" />
+
+      {/* ------------------------------------------------------------- */}
+      {/* 8. TRIP COMPLETED BOTTOM SHEET (slides up when ride ends)       */}
+      {/* ------------------------------------------------------------- */}
+      {rideStep === "arrived" && (
+        <TripCompletedSheet
+          driverName={booking.driverName}
+          totoNumber={booking.totoNumber}
+          tripFare={tripFare}
+          pickupText={pickupText}
+          dropText={dropText}
+          onViewReceipt={onFinishTrip}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRIP COMPLETED SLIDING BOTTOM SHEET COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+function TripCompletedSheet({
+  driverName,
+  totoNumber,
+  tripFare,
+  pickupText,
+  dropText,
+  onViewReceipt,
+}: {
+  driverName: string;
+  totoNumber: string;
+  tripFare: number;
+  pickupText: string;
+  dropText: string;
+  onViewReceipt: () => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [hoveredRating, setHoveredRating] = useState(0);
+  const [feedback, setFeedback] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmitRating = async () => {
+    setSubmitted(true);
+    // Small delay then show receipt
+    setTimeout(() => {
+      onViewReceipt();
+    }, 1200);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end"
+      style={{ background: "rgba(15,23,42,0.60)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+    >
+      <div
+        className="rounded-t-[32px] p-6 space-y-5 animate-in slide-in-from-bottom duration-400"
+        style={{
+          background: "rgba(255,255,255,0.98)",
+          boxShadow: "0 -8px 40px rgba(0,0,0,0.22), 0 -1px 0 rgba(255,255,255,0.6) inset",
+        }}
+      >
+        {/* Header */}
+        <div className="text-center space-y-1">
+          <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl mx-auto shadow-xs">
+            🏁
+          </div>
+          <h3 className="text-lg font-black text-slate-900">যাত্রা সাফল্যের সাথে সমাপ্ত! ✨</h3>
+          <p className="text-xs text-slate-500 font-medium">সুন্দরবন রাইডার্সে যাত্রা করার জন্য ধন্যবাদ!</p>
+        </div>
+
+        {/* Fare Summary */}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 flex items-center justify-between">
+          <div className="text-xs text-emerald-700 font-bold">
+            <div className="text-[10px] text-emerald-600 uppercase tracking-wider">মোট ভাড়া</div>
+            <div className="text-2xl font-black text-emerald-800">₹{tripFare}.০০</div>
+          </div>
+          <div className="text-xs text-right space-y-0.5">
+            <div className="font-bold text-slate-700">{driverName}</div>
+            <div className="font-mono text-slate-500 text-[10px]">{totoNumber}</div>
+            <div className="text-[10px] text-slate-400">নগদ প্রদান করুন</div>
+          </div>
+        </div>
+
+        {/* Star Rating */}
+        {!submitted ? (
+          <div className="space-y-3">
+            <div className="text-center">
+              <p className="text-sm font-bold text-slate-800">{driverName}-কে রেট করুন</p>
+              <p className="text-xs text-slate-500">আপনার মতামত চালকের মান উন্নত করতে সাহায্য করবে।</p>
+            </div>
+
+            {/* Star buttons */}
+            <div className="flex items-center justify-center gap-3">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => setRating(star)}
+                  onMouseEnter={() => setHoveredRating(star)}
+                  onMouseLeave={() => setHoveredRating(0)}
+                  className="transition-transform active:scale-90 hover:scale-110"
+                  aria-label={`${star} তারা`}
+                >
+                  <Star
+                    className={`w-9 h-9 transition-all ${
+                      star <= (hoveredRating || rating)
+                        ? "fill-amber-400 text-amber-400 drop-shadow-sm"
+                        : "fill-slate-200 text-slate-300"
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            {/* Optional text feedback */}
+            <textarea
+              placeholder="অভিজ্ঞতা শেয়ার করুন (সাবেক্শনাল)..."
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              rows={2}
+              className="w-full text-xs p-3 rounded-xl border border-slate-200 bg-slate-50 resize-none text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            />
+
+            {/* Submit rating + view receipt */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleSubmitRating}
+                disabled={rating === 0}
+                className={`h-11 rounded-2xl font-bold text-xs transition-all ${
+                  rating > 0
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                }`}
+              >
+                ⏩ রেটিং দিন ও রসিদ দেখুন
+              </button>
+              <button
+                type="button"
+                onClick={onViewReceipt}
+                className="h-11 rounded-2xl font-bold text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 active:scale-95 transition-all"
+              >
+                🧲 সরাসরি রসিদ দেখুন
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4 space-y-2">
+            <div className="flex justify-center gap-1">
+              {[1,2,3,4,5].map(s => (
+                <Star key={s} className={`w-7 h-7 ${s <= rating ? 'fill-amber-400 text-amber-400' : 'fill-slate-200 text-slate-200'}`} />
+              ))}
+            </div>
+            <p className="text-sm font-bold text-emerald-700">ধন্যবাদ! রেটিং দেওয়ার জন্য কৃতজ্ঞ ❤️</p>
+            <p className="text-xs text-slate-500">ডিজিটাল রসিদ লোড হচ্ছে...</p>
+            <RefreshCw className="w-5 h-5 animate-spin text-emerald-600 mx-auto" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

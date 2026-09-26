@@ -12,6 +12,7 @@ interface MobileAppHeaderProps {
   onSwitchRole?: () => void;
   onSosClick?: () => void;
   onLogout?: () => void;
+  onOpenDisclaimers?: () => void;
 }
 
 export function MobileAppHeader({
@@ -22,6 +23,7 @@ export function MobileAppHeader({
   onSwitchRole,
   onSosClick,
   onLogout,
+  onOpenDisclaimers,
 }: MobileAppHeaderProps) {
   return (
     <header className="sticky top-0 z-30 px-3.5 py-2.5 bg-white/92 backdrop-blur-xl border-b border-slate-200/80 shadow-xs flex items-center justify-between select-none">
@@ -77,6 +79,18 @@ export function MobileAppHeader({
             ) : (
               <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
             )}
+          </button>
+        )}
+
+        {/* In-App Disclaimers & Rules Button */}
+        {onOpenDisclaimers && (
+          <button
+            type="button"
+            onClick={onOpenDisclaimers}
+            title="নিয়মাবলী ও নির্দেশিকা (Disclaimers)"
+            className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200/90 flex items-center justify-center transition-all active:scale-95 shadow-2xs text-slate-700"
+          >
+            <span className="text-xs">📜</span>
           </button>
         )}
 

@@ -78,6 +78,12 @@ import { MobileBottomNav, MobileNavTab } from "@/components/layout/mobile-bottom
 import { MobileAppShell } from "@/components/layout/mobile-app-shell";
 import { OnboardingCarousel } from "@/components/mobile/onboarding-carousel";
 import { AppErrorBoundary } from "@/components/mobile/app-error-boundary";
+import {
+  DisclaimerScreen,
+  DisclaimerViewerModal,
+  hasUserAcceptedDisclaimer,
+  setUserAcceptedDisclaimer,
+} from "@/components/mobile/disclaimer-screen";
 
 interface MobileSession {
   phone: string;
@@ -141,6 +147,15 @@ function MobileAppPageContent() {
   const [session, setSession] = useState<MobileSession | null>(null);
   const [bottomNavTab, setBottomNavTab] = useState<MobileNavTab>("home");
   const [isSoundMuted, setIsSoundMuted] = useState(false);
+  const [showDisclaimerViewer, setShowDisclaimerViewer] = useState(false);
+  const [pendingAuthResult, setPendingAuthResult] = useState<{
+    role: "rider" | "passenger";
+    phone: string;
+    is_registered?: boolean;
+    is_approved?: boolean;
+    driver?: any;
+    customer?: any;
+  } | null>(null);
 
   // OTP Form State
   const [phoneInput, setPhoneInput] = useState("");
@@ -604,6 +619,30 @@ function MobileAppPageContent() {
     };
   }, [role, isOnline, session?.driverId, session?.phone]);
 
+  // Two-way online/offline status synchronization between App and WhatsApp/Database
+  useEffect(() => {
+    if (phase !== "rider_home" || (!session?.driverId && !session?.phone)) return;
+    const phone = session?.phone || "";
+    const driverId = session?.driverId || "";
+
+    const syncDriverStatus = async () => {
+      try {
+        const query = driverId ? `id=${driverId}` : `phone=${phone}`;
+        const res = await fetch(`/api/drivers?${query}`);
+        const data = await res.json();
+        const d = data.driver || (data.drivers && data.drivers[0]);
+        if (d && typeof d.is_active === "boolean") {
+          const serverIsOnline = Boolean(d.is_active && d.is_available);
+          setIsOnline(serverIsOnline);
+        }
+      } catch {}
+    };
+
+    syncDriverStatus();
+    const interval = setInterval(syncDriverStatus, 4000);
+    return () => clearInterval(interval);
+  }, [phase, session?.driverId, session?.phone]);
+
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
@@ -793,6 +832,32 @@ function MobileAppPageContent() {
     }
   };
 
+  // Handle Disclaimer Accepted Callback
+  const handleDisclaimerAccepted = () => {
+    const effectivePhone = (phoneInput || session?.phone || "").replace(/\D/g, "").slice(-10);
+    setUserAcceptedDisclaimer(role, effectivePhone);
+    playSuccessSound();
+    toast.success("শর্তাবলী সফলভাবে গৃহীত হয়েছে!");
+
+    if (role === "rider") {
+      const isReg = pendingAuthResult ? pendingAuthResult.is_registered : session?.driverId;
+      const isApp = pendingAuthResult ? pendingAuthResult.is_approved : session?.isApproved;
+
+      if (!isReg) {
+        setPhase("kyc_form");
+        toast.info("অনুগ্রহ করে চালকের তথ্য ও ডকুমেন্ট সাবমিট করুন");
+      } else if (isApp === false) {
+        setPhase("kyc_pending");
+      } else {
+        setPhase("rider_home");
+        toast.success("স্বাগতম চালক বন্ধু!");
+      }
+    } else {
+      setPhase("passenger_home");
+      toast.success(session?.passengerName ? `স্বাগতম ${session.passengerName}!` : "স্বাগতম যাত্রী বন্ধু!");
+    }
+  };
+
   // Handle Verify OTP
   const handleVerifyOtp = async () => {
     if (!otpInput || otpInput.length < 4) {
@@ -810,50 +875,68 @@ function MobileAppPageContent() {
 
       if (json.success) {
         playSuccessSound();
+        const cleanPhone = (json.phone || phoneInput).replace(/\D/g, "").slice(-10);
+        const alreadyAccepted = hasUserAcceptedDisclaimer(role, cleanPhone);
+
         if (role === "rider") {
-          if (!json.is_registered) {
-            // New driver needs KYC
-            setPhase("kyc_form");
-            toast.info("অনুগ্রহ করে চালকের তথ্য ও ডকুমেন্ট সাবমিট করুন");
-          } else if (json.is_approved === false) {
-            // Pending approval
-            const newSession: MobileSession = {
-              phone: json.phone || phoneInput,
-              role: "rider",
-              isApproved: false,
-              driverName: json.driver?.name,
-              totoNumber: json.driver?.toto_number,
-            };
-            setSession(newSession);
-            localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
-            setPhase("kyc_pending");
+          const isReg = Boolean(json.is_registered);
+          const isApp = json.is_approved !== false;
+          const newSession: MobileSession = {
+            phone: cleanPhone,
+            role: "rider",
+            isApproved: isReg ? isApp : false,
+            driverId: json.driver?.id,
+            driverName: json.driver?.name,
+            totoNumber: json.driver?.toto_number,
+          };
+          setSession(newSession);
+          localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
+
+          // If already registered and already accepted disclaimer: bypass directly
+          if (isReg && alreadyAccepted) {
+            if (isApp) {
+              setPhase("rider_home");
+              toast.success("স্বাগতম চালক বন্ধু!");
+            } else {
+              setPhase("kyc_pending");
+            }
           } else {
-            // Approved driver
-            const newSession: MobileSession = {
-              phone: json.phone || phoneInput,
+            // New driver or has not accepted rider disclaimer yet
+            setPendingAuthResult({
               role: "rider",
-              isApproved: true,
-              driverId: json.driver?.id,
-              driverName: json.driver?.name,
-              totoNumber: json.driver?.toto_number,
-            };
-            setSession(newSession);
-            localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
-            setPhase("rider_home");
-            toast.success("স্বাগতম চালক বন্ধু!");
+              phone: cleanPhone,
+              is_registered: isReg,
+              is_approved: isApp,
+              driver: json.driver,
+            });
+            setPhase("disclaimer");
+            toast.info("অনুগ্রহ করে চালক পার্টনার শর্তাবলীতে সম্মতি জানান");
           }
         } else {
           // Passenger login with WhatsApp number
           const pName = passengerNameInput.trim() || json.customer?.name || "যাত্রী বন্ধু";
           const newSession: MobileSession = {
-            phone: json.customer?.phone || phoneInput,
+            phone: cleanPhone,
             role: "passenger",
             passengerName: pName,
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
-          setPhase("passenger_home");
-          toast.success(`স্বাগতম ${pName}!`);
+
+          // If already registered / accepted disclaimer: bypass directly
+          if (alreadyAccepted) {
+            setPhase("passenger_home");
+            toast.success(`স্বাগতম ${pName}!`);
+          } else {
+            // New passenger or has not accepted passenger disclaimer yet
+            setPendingAuthResult({
+              role: "passenger",
+              phone: cleanPhone,
+              customer: { name: pName, phone: cleanPhone },
+            });
+            setPhase("disclaimer");
+            toast.info("অনুগ্রহ করে যাত্রী সুরক্ষা শর্তাবলীতে সম্মতি জানান");
+          }
         }
       } else {
         toast.error(json.message || "ভুল OTP কোড");
@@ -1002,8 +1085,13 @@ function MobileAppPageContent() {
                   const parsed = JSON.parse(saved) as MobileSession;
                   if (parsed.role === "rider" && parsed.driverId) {
                     setSession(parsed);
-                    setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
-                    return;
+                    if (hasUserAcceptedDisclaimer("rider", parsed.phone)) {
+                      setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
+                      return;
+                    } else {
+                      setPhase("disclaimer");
+                      return;
+                    }
                   }
                 } catch {}
               }
@@ -1019,8 +1107,13 @@ function MobileAppPageContent() {
                   const parsed = JSON.parse(saved) as MobileSession;
                   if (parsed.role === "passenger" && parsed.phone) {
                     setSession(parsed);
-                    setPhase("passenger_home");
-                    return;
+                    if (hasUserAcceptedDisclaimer("passenger", parsed.phone)) {
+                      setPhase("passenger_home");
+                      return;
+                    } else {
+                      setPhase("disclaimer");
+                      return;
+                    }
                   }
                 } catch {}
               }
@@ -1120,17 +1213,17 @@ function MobileAppPageContent() {
   if (phase === "otp_login") {
     return (
       <MobileAppShell>
-        <div className="min-h-full flex-1 bg-slate-50 text-slate-900 flex flex-col justify-between p-6 select-none">
-          <div className="pt-4 space-y-6 max-w-md mx-auto w-full">
+        <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none" style={{background: "linear-gradient(180deg, #f0fdf4 0%, #f8fafc 40%, #ffffff 100%)"}}>
+          {/* Top gradient hero area */}
+          <div className="px-6 pt-5 space-y-6 max-w-md mx-auto w-full">
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setPhase("select_role")}
-                className="text-xs text-slate-500 hover:text-slate-900 font-bold flex items-center gap-1 p-1 -ml-1 rounded-lg transition-colors"
+                className="text-xs text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs transition-all active:scale-95"
               >
-                ← ভূমিকা পরিবর্তন
+                ← ফিরে যান
               </button>
-              <SundarbanLogo size="sm" variant="badge" showTagline={false} />
-            </div>
+              <SundarbanLogo size="sm" variant="badge" showTagline={false} /></div>
 
             <div>
               <span
@@ -1215,7 +1308,7 @@ function MobileAppPageContent() {
             </div>
           </div>
 
-          <div className="pb-4">
+          <div className="pb-6 px-6 max-w-md mx-auto w-full">
             {!otpSent ? (
               <Button
                 size="lg"
@@ -1250,13 +1343,31 @@ function MobileAppPageContent() {
   }
 
   // -------------------------------------------------------------
+  // VIEW: ROLE-BASED DISCLAIMER & TERMS SCREEN (Mandatory for New Users)
+  // -------------------------------------------------------------
+  if (phase === "disclaimer") {
+    return (
+      <MobileAppShell>
+        <DisclaimerScreen
+          role={role}
+          phone={phoneInput || session?.phone}
+          onAccept={handleDisclaimerAccepted}
+          onBack={() => {
+            setPhase("otp_login");
+          }}
+        />
+      </MobileAppShell>
+    );
+  }
+
+  // -------------------------------------------------------------
   // VIEW: DRIVER KYC ONBOARDING FORM (Light Theme)
   // -------------------------------------------------------------
   if (phase === "kyc_form") {
     return (
       <MobileAppShell>
-        <div className="min-h-full bg-slate-50 text-slate-900 p-6 pb-12 overflow-y-auto">
-        <div className="space-y-6">
+        <div className="min-h-full text-slate-900 pb-12" style={{background: "linear-gradient(180deg, #fefce8 0%, #f8fafc 30%, #ffffff 100%)"}}>
+        <div className="px-6 pt-5 space-y-6">
           <div className="flex items-center justify-between">
             <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
               নতুন চালক নিবন্ধন
@@ -1557,14 +1668,17 @@ function MobileAppPageContent() {
   if (phase === "kyc_pending") {
     return (
       <MobileAppShell>
-        <div className="min-h-full bg-slate-50 text-slate-900 flex flex-col justify-between p-6 text-center">
-        <div className="pt-16 space-y-6">
-          <div className="w-20 h-20 rounded-full bg-amber-50 border-2 border-amber-300 flex items-center justify-center text-amber-600 mx-auto animate-pulse shadow-md">
-            <Clock className="w-10 h-10" />
+        <div className="min-h-full text-slate-900 flex flex-col justify-between p-6 text-center" style={{background:"linear-gradient(180deg,#fefce8 0%,#f8fafc 50%,#f0fdf4 100%)"}}>
+        <div className="pt-12 space-y-6">
+          <div className="relative w-24 h-24 mx-auto">
+            <div className="absolute inset-0 rounded-full bg-amber-200/40 animate-ping" />
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-300 flex items-center justify-center text-amber-600 shadow-lg">
+              <Clock className="w-11 h-11" />
+            </div>
           </div>
 
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+            <h2 className="text-2xl font-black tracking-tight text-slate-900">
               আবেদন অনুমোদনের অপেক্ষায়
             </h2>
             <p className="text-slate-600 text-sm mt-2 max-w-xs mx-auto font-medium">
@@ -1657,6 +1771,7 @@ function MobileAppPageContent() {
             onSwitchRole={handleSwitchRole}
             onSosClick={() => setShowSosModal(true)}
             onLogout={handleLogout}
+            onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
           />
         }
         bottomNav={
@@ -1684,17 +1799,38 @@ function MobileAppPageContent() {
                   ★ 5.0
                 </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-slate-500">{session?.totoNumber || "WB-96-T-8421"}</span>
+              <span className="text-[10px] font-mono font-bold text-slate-500">{session?.totoNumber || "রেজিস্ট্রেশন নম্বর নান পাওয়ায়"}</span>
             </div>
           </div>
 
           {/* Online / Offline Toggle */}
           <button
             type="button"
-            onClick={() => {
-              setIsOnline(!isOnline);
+            onClick={async () => {
+              const nextOnline = !isOnline;
+              setIsOnline(nextOnline);
               if (!isSoundMuted) playSuccessSound();
-              toast.success(!isOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+              toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+
+              // Sync online/offline status with server and WhatsApp
+              const driverId = session?.driverId;
+              const phone = session?.phone;
+              if (driverId || phone) {
+                try {
+                  await fetch("/api/drivers", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: driverId,
+                      phone: phone,
+                      is_active: nextOnline,
+                      is_available: nextOnline,
+                    }),
+                  });
+                } catch (err) {
+                  console.error("Failed to sync driver online status:", err);
+                }
+              }
             }}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
               isOnline
@@ -1724,8 +1860,8 @@ function MobileAppPageContent() {
                       bookingId: b.id || b.booking_number,
                       driverId: session?.driverId || "",
                       driverName: session?.driverName || "সুন্দরবন চালক",
-                      driverPhone: session?.phone || "9593177885",
-                      totoNumber: session?.totoNumber || "WB-96-T-8421",
+                      driverPhone: session?.phone || "",
+                      totoNumber: session?.totoNumber || "",
                     }),
                   });
                   const data = await res.json();
@@ -1740,7 +1876,7 @@ function MobileAppPageContent() {
                     bookingNumber: b.booking_number,
                     fare: b.estimated_fare || b.fare || 50,
                     passengerName: b.customer_name || b.passengerName || "যাত্রী",
-                    passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
+                    passengerPhone: b.customer_phone || b.passengerPhone || "",
                     pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
                     drop: b.drop_location || b.drop || "গন্তব্য",
                     pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
@@ -1756,7 +1892,7 @@ function MobileAppPageContent() {
                     bookingNumber: b.booking_number,
                     fare: b.estimated_fare || b.fare || 50,
                     passengerName: b.customer_name || b.passengerName || "যাত্রী",
-                    passengerPhone: b.customer_phone || b.passengerPhone || "918348122122",
+                    passengerPhone: b.customer_phone || b.passengerPhone || "",
                     pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
                     drop: b.drop_location || b.drop || "গন্তব্য",
                     pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
@@ -1769,15 +1905,18 @@ function MobileAppPageContent() {
               }}
             />
 
-            {/* Quick Metrics */}
+            {/* Quick Metrics — from real driver trip history */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
                 <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">আজকের ট্রিপ</span>
-                <div className="text-2xl font-black text-slate-900 mt-0.5">৬ টি</div>
+                <div className="text-2xl font-black text-slate-900 mt-0.5">—</div>
+                <span className="text-[10px] text-slate-400 font-medium">হিস্ট্রি ট্যাবে দেখুন</span>
               </div>
               <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">সংগৃহীত নগদ</span>
-                <div className="text-2xl font-black text-emerald-600 mt-0.5">₹৩৬০.০০</div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">রাইড স্ট্যাটাস</span>
+                <div className={`text-base font-black mt-0.5 ${isOnline ? "text-emerald-600" : "text-slate-400"}`}>
+                  {isOnline ? "🟢 অনলাইন" : "🔴 অফলাইন"}
+                </div>
               </div>
             </div>
           </div>
@@ -2034,6 +2173,98 @@ function MobileAppPageContent() {
           </div>
         )}
 
+        {/* MODAL: EMERGENCY SOS SAFETY SHIELD */}
+        {showSosModal && (
+          <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 border border-red-200 animate-in zoom-in-95">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-red-600 font-bold">
+                  <ShieldAlert className="w-5 h-5 text-red-600" />
+                  <h3 className="text-base text-slate-900">জরুরি সুরক্ষা ও হেল্পলাইন</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSosModal(false)}
+                  className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-600 font-medium">
+                যেকোনো জরুরি পরিস্থিতিতে অবিলম্বে নিচের সরকারি ও সুন্দরবন রাইডার্স নম্বরে কল করুন:
+              </p>
+
+              <div className="space-y-2 pt-1 text-xs">
+                <a
+                  href="tel:112"
+                  className="p-3.5 rounded-2xl bg-red-600 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 fill-white" />
+                    <span>জাতীয় জরুরি নম্বর (পুলিশ/দমকল)</span>
+                  </div>
+                  <span className="font-mono text-sm">১১২</span>
+                </a>
+
+                <a
+                  href="tel:1091"
+                  className="p-3.5 rounded-2xl bg-purple-600 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 fill-white" />
+                    <span>মহিলা সুরক্ষা হেল্পলাইন</span>
+                  </div>
+                  <span className="font-mono text-sm">১০৯১</span>
+                </a>
+
+                <a
+                  href="tel:102"
+                  className="p-3.5 rounded-2xl bg-amber-500 text-white font-bold flex items-center justify-between shadow-md active:scale-98 transition-all"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 fill-white" />
+                    <span>অ্যাম্বুলেন্স জরুরি পরিষেবা</span>
+                  </div>
+                  <span className="font-mono text-sm">১০২</span>
+                </a>
+              </div>
+
+              {/* View Disclaimers & Guidelines Link */}
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSosModal(false);
+                    setShowDisclaimerViewer(true);
+                  }}
+                  className="w-full p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-between transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>📜</span>
+                    <span>নীতিমালা ও ব্যবহারের শর্তাবলী (Disclaimers)</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-emerald-600" />
+                </button>
+              </div>
+
+              <Button
+                onClick={() => setShowSosModal(false)}
+                variant="outline"
+                className="w-full h-11 rounded-2xl text-xs font-bold border-slate-300 text-slate-700 mt-2"
+              >
+                বন্ধ করুন
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <DisclaimerViewerModal
+          isOpen={showDisclaimerViewer}
+          onClose={() => setShowDisclaimerViewer(false)}
+          defaultRole="rider"
+        />
+
         </div>
       </MobileAppShell>
     );
@@ -2172,23 +2403,7 @@ function MobileAppPageContent() {
                   ❌ রিকোয়েস্ট বাতিল করুন
                 </Button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPassengerBooking({
-                      id: activeBookingId || "SR-9412",
-                      driverName: "রাজেশ মন্ডল",
-                      driverPhone: "9593177885",
-                      totoNumber: "WB-96-T-8421",
-                    });
-                    setPhase("passenger_home");
-                    playSuccessSound();
-                    toast.success("চালক রাজেশ মন্ডল রাইড গ্রহণ করেছেন!");
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <span>⚡ ডেমো: চালক রাইড গ্রহণ করুন (Test Accept)</span>
-                </button>
+
               </div>
               <div className="h-24 w-full shrink-0" aria-hidden="true" />
             </div>
@@ -2297,12 +2512,12 @@ function MobileAppPageContent() {
   if (phase === "passenger_trip_completed") {
     return (
       <TripCompletionReceipt
-        tripId="SR-9412"
+        tripId={passengerBooking?.id || activeBookingId || ""}
         customerName={session?.passengerName || "যাত্রী বন্ধু"}
-        customerPhone={session?.phone || "9876543210"}
-        driverName={passengerBooking?.driverName || "রাজেশ মন্ডল"}
-        driverPhone={passengerBooking?.driverPhone || "9593177885"}
-        totoNumber={passengerBooking?.totoNumber || "WB-96-T-8421"}
+        customerPhone={session?.phone || ""}
+        driverName={passengerBooking?.driverName || "টোটো চালক"}
+        driverPhone={passengerBooking?.driverPhone || ""}
+        totoNumber={passengerBooking?.totoNumber || ""}
         pickup={pickupText}
         drop={dropText}
         distanceKm={tripDistance}
@@ -2333,6 +2548,7 @@ function MobileAppPageContent() {
           onSwitchRole={handleSwitchRole}
           onSosClick={() => setShowSosModal(true)}
           onLogout={handleLogout}
+          onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
         />
       }
       bottomNav={
@@ -2346,11 +2562,28 @@ function MobileAppPageContent() {
         />
       }
     >
-      <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none bg-slate-50">
+      <div className="min-h-full flex-1 text-slate-900 flex flex-col select-none" style={{background:"linear-gradient(180deg,#f0fdf4 0%,#f8fafc 50%,#ffffff 100%)"}}>
         {/* Main Booking Interface */}
-        <div className="flex-1 p-4 sm:p-5 space-y-4 pb-8">
-        {bottomNavTab === "map" && !passengerBooking ? (
-          <div className="space-y-4 pb-32">
+        <div className="p-4 sm:p-5 space-y-4 pb-4">
+        {bottomNavTab === "map" ? (
+          <div className="space-y-4 pb-4">
+            {/* Active ride mini-banner when on map tab */}
+            {passengerBooking && (
+              <button
+                type="button"
+                onClick={() => setBottomNavTab("home")}
+                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white font-bold text-xs flex items-center justify-between shadow-md active:scale-98 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping shrink-0" />
+                  <span>🛺 আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                </div>
+                <span className="text-[11px] font-mono bg-white/20 px-2 py-0.5 rounded-md">
+                  #{passengerBooking.bookingNumber || passengerBooking.id?.slice(0, 6)} →
+                </span>
+              </button>
+            )}
+
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">লাইভ ম্যাপ ও নিকটবর্তী চালক</h3>
@@ -2359,9 +2592,9 @@ function MobileAppPageContent() {
               <button
                 type="button"
                 onClick={() => setBottomNavTab("home")}
-                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs"
+                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs cursor-pointer"
               >
-                ← রাইড বুকিং
+                ← {passengerBooking ? "চলমান ট্র্যাকিং" : "রাইড বুকিং"}
               </button>
             </div>
             <div className="h-[420px] w-full rounded-3xl overflow-hidden shadow-md">
@@ -2372,10 +2605,26 @@ function MobileAppPageContent() {
                 dropName={dropText}
               />
             </div>
-            <div className="h-28 w-full" aria-hidden="true" />
           </div>
-        ) : bottomNavTab === "trips" && !passengerBooking ? (
-          <div className="space-y-4 pb-24">
+        ) : bottomNavTab === "trips" ? (
+          <div className="space-y-4 pb-4">
+            {/* Active ride mini-banner when on trips history tab */}
+            {passengerBooking && (
+              <button
+                type="button"
+                onClick={() => setBottomNavTab("home")}
+                className="w-full p-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white font-bold text-xs flex items-center justify-between shadow-md active:scale-98 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping shrink-0" />
+                  <span>🛺 আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                </div>
+                <span className="text-[11px] font-mono bg-white/20 px-2 py-0.5 rounded-md">
+                  #{passengerBooking.bookingNumber || passengerBooking.id?.slice(0, 6)} →
+                </span>
+              </button>
+            )}
+
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">আমার রাইড হিস্ট্রি</h3>
@@ -2386,7 +2635,7 @@ function MobileAppPageContent() {
                 onClick={() => setBottomNavTab("home")}
                 className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs cursor-pointer"
               >
-                ← নতুন রাইড
+                ← {passengerBooking ? "চলমান ট্র্যাকিং" : "নতুন রাইড"}
               </button>
             </div>
 
@@ -2497,24 +2746,25 @@ function MobileAppPageContent() {
                 })}
               </div>
             )}
-            <div className="h-16 w-full" aria-hidden="true" />
           </div>
         ) : (
           <>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
-              <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
-              </p>
-            </div>
+            {!passengerBooking && (
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
+                <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                  পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
+                </p>
+              </div>
+            )}
 
             {passengerBooking ? (
               <LiveRideTrackingMap
             booking={{
               id: passengerBooking.id,
-              driverName: passengerBooking.driverName || "রাজেশ মন্ডল",
-              driverPhone: passengerBooking.driverPhone || "9593177885",
-              totoNumber: passengerBooking.totoNumber || "WB-96-T-8421",
+              driverName: passengerBooking.driverName || "টোটো চালক",
+              driverPhone: passengerBooking.driverPhone || "",
+              totoNumber: passengerBooking.totoNumber || "",
             }}
             pickupCoords={pickupCoords}
             dropCoords={dropCoords}
@@ -2535,36 +2785,13 @@ function MobileAppPageContent() {
             onSosClick={() => setShowSosModal(true)}
           />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 pb-2">
             <InteractiveBookingMap
               initialPickup={pickupText}
               initialDrop={dropText}
               onRouteSelected={handleRouteSelected}
               onConfirmBooking={handleConfirmBooking}
             />
-
-            {/* Book Button - Sleek & Prominent */}
-            <div className="pt-1">
-              <Button
-                size="lg"
-                disabled={!dropText || !dropText.trim()}
-                className={`w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all ${
-                  dropText && dropText.trim()
-                    ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
-                    : "bg-slate-200 text-slate-500 border border-slate-300 shadow-none cursor-not-allowed"
-                }`}
-                onClick={handleConfirmBooking}
-              >
-                {dropText && dropText.trim() ? (
-                  <span>🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)</span>
-                ) : (
-                  <span>📍 অনুগ্রহ করে গন্তব্য নির্বাচন করুন</span>
-                )}
-              </Button>
-            </div>
-
-            {/* Bottom spacer for clean visual balance */}
-            <div className="h-6 w-full shrink-0" aria-hidden="true" />
           </div>
         )}
           </>
@@ -2629,6 +2856,24 @@ function MobileAppPageContent() {
                 <span className="font-mono text-sm">১০২</span>
               </a>
             </div>
+
+              {/* View Disclaimers & Guidelines Link */}
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSosModal(false);
+                    setShowDisclaimerViewer(true);
+                  }}
+                  className="w-full p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-between transition-all cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>📜</span>
+                    <span>নীতিমালা ও ব্যবহারের শর্তাবলী (Disclaimers)</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-emerald-600" />
+                </button>
+              </div>
 
             <Button
               onClick={() => setShowSosModal(false)}
@@ -2709,6 +2954,15 @@ function MobileAppPageContent() {
           </div>
         </div>
       )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: IN-APP DISCLAIMERS & POLICIES VIEWER                   */}
+      {/* ------------------------------------------------------------- */}
+      <DisclaimerViewerModal
+        isOpen={showDisclaimerViewer}
+        onClose={() => setShowDisclaimerViewer(false)}
+        defaultRole="passenger"
+      />
 
       </div>
     </MobileAppShell>

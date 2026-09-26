@@ -25,19 +25,31 @@ export interface TotoMessageContext {
 
 export interface OutboundWhatsAppAction {
   toPhone: string;
-  type: "text" | "interactive_buttons" | "location_request";
+  type: "text" | "interactive_buttons" | "location_request" | "media";
   bodyText: string;
   buttons?: Array<{ id: string; title: string }>;
+  media?: {
+    kind: "image" | "document" | "video" | "audio";
+    url: string;
+    filename?: string;
+    caption?: string;
+  };
   extraNotifications?: Array<{
     toPhone: string;
-    type: "text" | "interactive_buttons";
+    type: "text" | "interactive_buttons" | "media";
     bodyText: string;
     buttons?: Array<{ id: string; title: string }>;
+    media?: {
+      kind: "image" | "document" | "video" | "audio";
+      url: string;
+      filename?: string;
+      caption?: string;
+    };
   }>;
 }
 
 interface CustomerBookingState {
-  step: "awaiting_location" | "awaiting_drop" | "awaiting_complaint" | "awaiting_feedback";
+  step: "awaiting_disclaimer" | "awaiting_location" | "awaiting_drop" | "awaiting_complaint" | "awaiting_feedback";
   pickupLocation?: string;
   pickupLat?: number;
   pickupLng?: number;
@@ -295,6 +307,14 @@ async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>):
   }
 }
 
+export const RIDER_DISCLAIMER_PDF_URL =
+  process.env.RIDER_DISCLAIMER_PDF_URL ||
+  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/rider-disclaimer.pdf";
+
+export const CUSTOMER_DISCLAIMER_IMAGE_URL =
+  process.env.CUSTOMER_DISCLAIMER_IMAGE_URL ||
+  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/Customer.jpeg";
+
 export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্টব্য: ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী
 "সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। এই প্ল্যাটফর্মটি স্থানীয় টোটো চালক ও যাত্রীদের সরাসরি যোগাযোগের মাধ্যম। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:
 
@@ -308,6 +328,15 @@ export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্
 
 💫 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে... "সুন্দরবন রাইডার" 🙏ধন্যবাদ`;
 
+export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT = `📜 *ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী*
+"সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:
+
+• যাতায়াতে ক্ষতি/দুর্ঘটনায় ‘সুন্দরবন রাইডার’ দায়ী থাকবে না।
+• চালক ও যাত্রী সম্পূর্ণ নিজ দায়িত্বে ও ঝুঁকিতে ভ্রমণ করবেন।
+• নির্ধারিত রেট চার্ট অনুযায়ী ভাড়া প্রযোজ্য হবে।
+
+(সম্পূর্ণ আইনি শর্তাবলী ও রেট চার্ট দেখতে 'বিস্তারিত দেখুন' চাপুন)`;
+
 export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী* 🛺
 ==============================
 নমস্কার! সুন্দরবন রাইডার প্ল্যাটফর্মে পরিষেবা শুরু করার পূর্বে চালক চুক্তি ও শর্তাবলি পড়ে সম্মতি দিন:
@@ -319,12 +348,34 @@ export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন �
 ৫. প্ল্যাটফর্ম টেকনোলজি ফি প্রযোজ্য হতে পারে।
 ৬. নিয়মানুবর্তিতা ও আইনি সুরক্ষায় সুন্দরবন রাইডার্স পূর্ণ অধিকার সংরক্ষণ করে।
 
+📄 বিস্তারিত অফিসিয়াল চালক চুক্তি PDF ফাইলে সংযুক্ত করা হলো।
+
 > আপনি কি উপরোক্ত সকল শর্তাবলীতে সম্মত আছেন?`;
 
-export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 নমস্কার! "সুন্দরবন রাইডার"-এ আপনাকে স্বাগতম।
-আমরা সুন্দরবনের সহজ, দ্রুত ও নিরাপদ টোটো বুকিং প্ল্যাটফর্ম।
+export const formatTotoWelcomeMessage = (name?: string) => {
+  const greeting = name && name.trim() && name.trim() !== "সুন্দরবন কাস্টমার" ? `🙏🏻 নমস্কার ${name.trim()} 🙏🏻` : `🙏🏻 নমস্কার 🙏🏻`;
+  return `${greeting}
+            "সুন্দরবন রাইডার"  
+আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
+🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
+               🙏🏻 সুন্দরবন রাইডার 🙏🏻
 
-অনুগ্রহ করে নিচের অপশন নির্বাচন করুন:`;
+Licence No :- 1554
+Reg. No :- WB-18-0208526
+Email :- sr.rider122@gmail.com
+Help No :- 8348122122 (WhatsApp)`;
+};
+
+export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏🏻 নমস্কার 🙏🏻
+            "সুন্দরবন রাইডার"  
+আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
+🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
+               🙏🏻 সুন্দরবন রাইডার 🙏🏻
+
+Licence No :- 1554
+Reg. No :- WB-18-0208526
+Email :- sr.rider122@gmail.com
+Help No :- 8348122122 (WhatsApp)`;
 
 interface DriverRecord {
   id: string;
@@ -351,6 +402,8 @@ interface CustomerRecord {
   name?: string;
   cancellation_count?: number;
   is_blocked?: boolean;
+  disclaimer_agreed?: boolean;
+  disclaimer_agreed_at?: string;
 }
 
 /**
@@ -624,8 +677,7 @@ export async function processTotoMessage(
     isRegisteredDriver &&
     driver &&
     (payload === "driver_agree_terms" ||
-      payload === "agree_disclaimer" ||
-      (!driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ")))
+      (!driver.agreed_terms && (incomingText.includes("চালক শর্তে সম্মত") || incomingText === "হ্যাঁ চালক")))
   ) {
     // Clear any accidental customer booking state
     customerBookingStates.delete(cleanPhone);
@@ -658,10 +710,12 @@ export async function processTotoMessage(
   // FLOW B.1.1: DRIVER LOCATION RECEIVER (Live Location or Typed Text)
   // -------------------------------------------------------------
   const driverLocState = driverLocationStates.get(cleanPhone);
+  const isCustomerBooking = customerBookingStates.has(cleanPhone);
   if (
     isRegisteredDriver &&
     driver &&
-    (driverLocState?.step === "awaiting_driver_location" || ctx.location) &&
+    !isCustomerBooking &&
+    driverLocState?.step === "awaiting_driver_location" &&
     payload !== "cancel_ride" &&
     payload !== "driver_go_offline" &&
     payload !== "book_toto" &&
@@ -771,7 +825,7 @@ export async function processTotoMessage(
     incomingText.includes("take ride")
   ) {
     if (isRegisteredDriver && driver) {
-      // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button
+      // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button and attached PDF
       if (!driver.agreed_terms) {
         const driverTerms =
           settings.driver_terms_bengali ||
@@ -781,6 +835,12 @@ export async function processTotoMessage(
           toPhone: rawPhone,
           type: "interactive_buttons",
           bodyText: driverTerms,
+          media: {
+            kind: "document",
+            url: RIDER_DISCLAIMER_PDF_URL,
+            filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
+            caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+          },
           buttons: [
             { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
           ],
@@ -849,6 +909,14 @@ export async function processTotoMessage(
         .eq("id", driver.id);
     }
 
+    driverLocationStates.delete(cleanPhone);
+    void Promise.resolve(
+      supabase
+        .from("toto_riders")
+        .update({ duty_status: "offline" })
+        .or(`phone_number.eq.${cleanPhone},phone_number.ilike.%${last10}`)
+    ).catch(() => {});
+
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
@@ -874,7 +942,12 @@ export async function processTotoMessage(
     driver &&
     driver.agreed_terms &&
     isLocExpired &&
+    !customerBookingStates.has(cleanPhone) &&
     payload !== "book_toto" &&
+    payload !== "agree_disclaimer" &&
+    payload !== "see_more_disclaimer" &&
+    payload !== "view_customer_disclaimer" &&
+    payload !== "customer_disclaimer" &&
     payload !== "driver_go_offline" &&
     !payload.startsWith("driver_accept_") &&
     !payload.startsWith("driver_decline_") &&
@@ -897,7 +970,17 @@ export async function processTotoMessage(
   // FLOW B.5: FIRST-TIME REGISTERED DRIVER DISCLAIMER (Strictly ONE TIME)
   // If registered driver sends any message and has NOT agreed to terms yet
   // -------------------------------------------------------------
-  if (isRegisteredDriver && driver && !driver.agreed_terms && payload !== "book_toto") {
+  if (
+    isRegisteredDriver &&
+    driver &&
+    !driver.agreed_terms &&
+    !customerBookingStates.has(cleanPhone) &&
+    payload !== "book_toto" &&
+    payload !== "agree_disclaimer" &&
+    payload !== "see_more_disclaimer" &&
+    payload !== "view_customer_disclaimer" &&
+    payload !== "customer_disclaimer"
+  ) {
     const driverTerms =
       settings.driver_terms_bengali ||
       DEFAULT_TOTO_DRIVER_DISCLAIMER;
@@ -906,6 +989,12 @@ export async function processTotoMessage(
       toPhone: rawPhone,
       type: "interactive_buttons",
       bodyText: driverTerms,
+      media: {
+        kind: "document",
+        url: RIDER_DISCLAIMER_PDF_URL,
+        filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
+        caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+      },
       buttons: [
         { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
       ],
@@ -1002,10 +1091,9 @@ export async function processTotoMessage(
   // FLOW D: CUSTOMER DISCLAIMER ACCEPTED -> ASK FOR PICKUP LOCATION
   // -------------------------------------------------------------
   if (
-    !isRegisteredDriver &&
-    (payload === "agree_disclaimer" ||
-      (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক")) ||
-      incomingText === "হ্যাঁ")
+    payload === "agree_disclaimer" ||
+    (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক")) ||
+    (customerBookingStates.has(cleanPhone) && incomingText === "হ্যাঁ")
   ) {
     customerBookingStates.set(cleanPhone, {
       step: "awaiting_location",
@@ -1135,8 +1223,11 @@ export async function processTotoMessage(
         .select("*")
         .neq("is_active", false);
 
-      // Filter drivers within 5km radius of pickup location
+      // Filter drivers within 5km radius of pickup location (exclude sender driver if they are booking as passenger)
       const nearbyDrivers = (onlineDrivers || []).filter((d) => {
+        if (driver && d.id === driver.id) return false;
+        const dClean = (d.phone || "").replace(/\D/g, "").slice(-10);
+        if (dClean === last10) return false;
         if (!pLat || !pLng) return true;
         let dLat = d.latitude;
         let dLng = d.longitude;
@@ -1201,45 +1292,74 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
-  // FLOW F: CUSTOMER BOOKING INITIATION & DISCLAIMER (Only Accept Button)
+  // FLOW F.1: SEE MORE / FULL CUSTOMER DISCLAIMER WITH IMAGE
   // -------------------------------------------------------------
   if (
-    payload === "book_toto" ||
-    incomingText.includes("টোটো") ||
-    incomingText.includes("toto") ||
-    incomingText === "book"
+    payload === "see_more_disclaimer" ||
+    payload === "view_customer_disclaimer" ||
+    payload === "customer_disclaimer" ||
+    incomingText.includes("বিস্তারিত দেখুন") ||
+    incomingText.includes("see more") ||
+    incomingText === "disclaimer" ||
+    incomingText === "শর্তাবলী" ||
+    incomingText === "শর্ত"
   ) {
-    const disclaimer =
+    const fullDisclaimer =
       settings.customer_disclaimer_bengali ||
       DEFAULT_TOTO_CUSTOMER_DISCLAIMER;
 
-    if (disclaimer.length <= 1024) {
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: fullDisclaimer,
+      media: {
+        kind: "image",
+        url: CUSTOMER_DISCLAIMER_IMAGE_URL,
+        caption: "🖼️ সুন্দরবন রাইডার — ভার্চুয়াল ডিসক্লেইমার ও রেট চার্ট",
+      },
+      buttons: [
+        { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
+      ],
+    };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW F: CUSTOMER BOOKING INITIATION & DISCLAIMER
+  // -------------------------------------------------------------
+  if (
+    payload === "book_toto" ||
+    incomingText.includes("টোটো বুকিং") ||
+    incomingText.includes("book toto") ||
+    incomingText === "book" ||
+    incomingText === "টোটো" ||
+    incomingText === "toto"
+  ) {
+    // Registered driver clicked book toto: clear any driver location state
+    driverLocationStates.delete(cleanPhone);
+
+    // Keep user in customer booking flow
+    customerBookingStates.set(cleanPhone, {
+      step: customer?.disclaimer_agreed ? "awaiting_location" : "awaiting_disclaimer",
+      timestamp: Date.now(),
+    });
+
+    // If customer has already agreed to the disclaimer previously, jump straight to pickup location
+    if (customer?.disclaimer_agreed) {
       return {
         toPhone: rawPhone,
-        type: "interactive_buttons",
-        bodyText: disclaimer,
-        buttons: [
-          { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
-        ],
+        type: "text",
+        bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:\n\nদয়া করে নিচের মতো করে আপনার পিকআপ লোকেশন শেয়ার করুন:\n👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার Current Location সেন্ড করুন।\n\n(অথবা আপনার পিকআপ জায়গার নাম লিখে পাঠান, যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")`,
       };
     }
 
-    // Disclaimer exceeds Meta's 1024 char interactive body limit:
-    // 1. Send the full legal terms as text (Meta allows up to 4096 chars)
-    // 2. Immediately follow with the interactive confirmation button
+    // First time booking: Send short disclaimer with "See More" and "Agree" buttons
     return {
       toPhone: rawPhone,
-      type: "text",
-      bodyText: disclaimer,
-      extraNotifications: [
-        {
-          toPhone: rawPhone,
-          type: "interactive_buttons",
-          bodyText: "👆 উপরের ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলীতে আপনি কি রাজি আছেন?\n\nবুকিং এগিয়ে নিতে নিচের বোতামে চাপুন:",
-          buttons: [
-            { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
-          ],
-        },
+      type: "interactive_buttons",
+      bodyText: DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT,
+      buttons: [
+        { id: "see_more_disclaimer", title: "📖 বিস্তারিত দেখুন" },
+        { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
       ],
     };
   }
@@ -1287,7 +1407,7 @@ export async function processTotoMessage(
   // DEFAULT: MAIN WELCOME MENU (100% Bengali)
   // -------------------------------------------------------------
   if (isRegisteredDriver && driver) {
-    // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button
+    // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button and attached PDF
     if (!driver.agreed_terms) {
       const driverTerms =
         settings.driver_terms_bengali ||
@@ -1297,6 +1417,12 @@ export async function processTotoMessage(
         toPhone: rawPhone,
         type: "interactive_buttons",
         bodyText: driverTerms,
+        media: {
+          kind: "document",
+          url: RIDER_DISCLAIMER_PDF_URL,
+          filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
+          caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+        },
         buttons: [
           { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
         ],
@@ -1329,7 +1455,20 @@ export async function processTotoMessage(
   }
 
   // Regular Customer Welcome Menu
-  const welcomeText = settings.welcome_message_bengali || DEFAULT_TOTO_WELCOME_MESSAGE;
+  const senderDisplayName =
+    customer?.name && customer.name !== "সুন্দরবন কাস্টমার"
+      ? customer.name
+      : (ctx.senderName || "");
+
+  let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
+  if (
+    settings.welcome_message_bengali &&
+    !settings.welcome_message_bengali.includes("সহজ, দ্রুত ও নিরাপদ টোটো বুকিং")
+  ) {
+    welcomeText = settings.welcome_message_bengali
+      .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
+      .replace("ABC", senderDisplayName || "");
+  }
 
   return {
     toPhone: rawPhone,

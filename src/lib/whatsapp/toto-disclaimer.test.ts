@@ -1,0 +1,114 @@
+import { describe, it, expect } from "vitest";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+
+import {
+  processTotoMessage,
+  DEFAULT_TOTO_CUSTOMER_DISCLAIMER,
+  DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT,
+  DEFAULT_TOTO_DRIVER_DISCLAIMER,
+  RIDER_DISCLAIMER_PDF_URL,
+  CUSTOMER_DISCLAIMER_IMAGE_URL,
+} from "./toto-engine";
+
+describe("WhatsApp Disclaimers & Media Attachments", () => {
+  it("has correct URLs configured for the rider PDF and customer image", () => {
+    expect(RIDER_DISCLAIMER_PDF_URL).toContain("rider-disclaimer.pdf");
+    expect(CUSTOMER_DISCLAIMER_IMAGE_URL).toContain("Customer.jpeg");
+  });
+
+  it("returns short customer disclaimer on initial book_toto request with See More button", async () => {
+    const freshPhone = "+919112233445";
+    const action = await processTotoMessage({
+      fromPhone: freshPhone,
+      buttonPayload: "book_toto",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.type).toBe("interactive_buttons");
+    expect(action?.bodyText).toBe(DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT);
+    expect(action?.buttons).toEqual([
+      { id: "see_more_disclaimer", title: "📖 বিস্তারিত দেখুন" },
+      { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
+    ]);
+  });
+
+  it("returns full customer disclaimer with Customer.jpeg image on see_more_disclaimer click", async () => {
+    const freshPhone = "+919112233445";
+    const action = await processTotoMessage({
+      fromPhone: freshPhone,
+      buttonPayload: "see_more_disclaimer",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.type).toBe("interactive_buttons");
+    expect(action?.bodyText).toBe(DEFAULT_TOTO_CUSTOMER_DISCLAIMER);
+    expect(action?.media?.kind).toBe("image");
+    expect(action?.media?.url).toBe(CUSTOMER_DISCLAIMER_IMAGE_URL);
+    expect(action?.buttons).toEqual([
+      { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
+    ]);
+  });
+
+  it("returns driver disclaimer with attached PDF for first-time rider login", async () => {
+    // 919876543210 is a driver without agreed_terms in DB
+    const action = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "take_ride",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.type).toBe("interactive_buttons");
+    expect(action?.media?.kind).toBe("document");
+    expect(action?.media?.url).toBe(RIDER_DISCLAIMER_PDF_URL);
+    expect(action?.media?.filename).toContain("Rider_Disclaimer");
+    expect(action?.buttons).toEqual([
+      { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+    ]);
+  });
+
+  it("allows a registered driver to book toto as a passenger and get passenger options", async () => {
+    // 1. Driver clicks book_toto
+    const step1 = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "book_toto",
+    });
+    expect(step1).not.toBeNull();
+    // Driver gets passenger disclaimer (or location prompt if agreed), NOT driver duty options
+    expect(step1?.buttons?.some(b => b.id === "driver_go_offline")).toBeFalsy();
+    expect(step1?.buttons?.some(b => b.id === "driver_agree_terms")).toBeFalsy();
+
+    // 2. Driver agrees to customer disclaimer as a passenger
+    const step2 = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "agree_disclaimer",
+    });
+    expect(step2).not.toBeNull();
+    // Must ask for passenger pickup location, NOT driver duty location
+    expect(step2?.bodyText).toContain("Current Pickup Location");
+    expect(step2?.bodyText).not.toContain("Driver Location");
+
+    // 3. Driver sends pickup location as passenger
+    const step3 = await processTotoMessage({
+      fromPhone: "+919876543210",
+      textBody: "কাকদ্বীপ স্টেশন",
+    });
+    expect(step3).not.toBeNull();
+    // Must ask for drop location as passenger, NOT turn online on duty
+    expect(step3?.bodyText).toContain("Drop Location");
+    expect(step3?.bodyText).not.toContain("ডিউটি স্ট্যাটাস: অনলাইন");
+  });
+
+  it("handles driver going offline via WhatsApp", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "driver_go_offline",
+    });
+    expect(action).not.toBeNull();
+    expect(action?.bodyText).toContain("অফলাইনে আছেন");
+    expect(action?.buttons).toEqual([
+      { id: "take_ride", title: "🛺 রাইডার লগইন" },
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+    ]);
+  });
+});

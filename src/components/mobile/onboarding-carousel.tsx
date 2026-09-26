@@ -318,22 +318,22 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
                   type="button"
                   id="btn-rider-login-main"
                   onClick={() => onSelectRole("rider")}
-                  className="w-full p-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/25 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-slate-700 text-left"
+                  className="w-full p-3.5 rounded-2xl bg-white hover:bg-emerald-50/50 text-slate-900 shadow-md shadow-slate-200/50 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border-2 border-emerald-500/40 text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xl shrink-0">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center text-xl shrink-0">
                       ⚡
                     </div>
                     <div>
-                      <div className="text-sm font-black text-white tracking-tight leading-snug">
+                      <div className="text-sm font-black text-slate-900 tracking-tight leading-snug">
                         ক্যাপ্টেন / চালক লগইন (Rider Login)
                       </div>
-                      <span className="text-[11px] font-medium text-emerald-400">
+                      <span className="text-[11px] font-bold text-emerald-700">
                         উপার্জন শুরু করুন • চালক পার্টনার হাব
                       </span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-slate-400" />
+                  <ChevronRight className="w-5 h-5 text-emerald-600" />
                 </button>
 
                 {/* Staff / CRM Shortcut Link */}

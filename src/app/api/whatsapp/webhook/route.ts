@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia, sendInteractiveButtons, sendTextMessage } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, sendInteractiveButtons, sendTextMessage, sendMediaMessage } from '@/lib/whatsapp/meta-api'
 import { processTotoMessage } from '@/lib/whatsapp/toto-engine'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
@@ -641,6 +641,25 @@ async function processMessage(
       let metaMessageId: string | null = null
       const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
 
+      // 1. Send media attachment (e.g. Driver Disclaimer PDF or Customer Image) if provided
+      if (totoAction.media) {
+        try {
+          const mediaRes = await sendMediaMessage({
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            kind: totoAction.media.kind,
+            link: totoAction.media.url,
+            filename: totoAction.media.filename,
+            caption: totoAction.media.caption,
+          })
+          metaMessageId = mediaRes.messageId
+        } catch (mediaErr) {
+          console.error('[webhook] Media send failed:', mediaErr)
+        }
+      }
+
+      // 2. Send interactive buttons or text message
       if (
         totoAction.type === 'interactive_buttons' &&
         totoAction.buttons &&
@@ -670,7 +689,7 @@ async function processMessage(
             console.error('[webhook] Text fallback send also failed:', textErr)
           }
         }
-      } else {
+      } else if (totoAction.type === 'text' || (!totoAction.media && totoAction.bodyText)) {
         try {
           const res = await sendTextMessage({
             phoneNumberId,
@@ -688,6 +707,21 @@ async function processMessage(
       if (totoAction.extraNotifications && totoAction.extraNotifications.length > 0) {
         for (const notif of totoAction.extraNotifications) {
           const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
+          if (notif.media) {
+            try {
+              await sendMediaMessage({
+                phoneNumberId,
+                accessToken,
+                to: destPhone,
+                kind: notif.media.kind,
+                link: notif.media.url,
+                filename: notif.media.filename,
+                caption: notif.media.caption,
+              })
+            } catch (err) {
+              console.error('[webhook] extraNotification media error:', err)
+            }
+          }
           if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
             try {
               await sendInteractiveButtons({
@@ -700,7 +734,7 @@ async function processMessage(
             } catch (err) {
               console.error('[webhook] extraNotification button error:', err)
             }
-          } else {
+          } else if (notif.bodyText) {
             try {
               await sendTextMessage({
                 phoneNumberId,

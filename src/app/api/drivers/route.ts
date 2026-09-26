@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
+import { driverLocationStates } from "@/lib/whatsapp/toto-engine";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const filterPhone = url.searchParams.get("phone");
+    const filterId = url.searchParams.get("id");
+
     const admin = supabaseAdmin();
-    const { data, error } = await admin
+    let query = admin
       .from("drivers")
       .select("*")
       .order("created_at", { ascending: false });
+
+    if (filterId) {
+      query = query.eq("id", filterId);
+    } else if (filterPhone) {
+      const cleanPhone = filterPhone.replace(/\D/g, "");
+      const last10 = cleanPhone.slice(-10);
+      query = query.or(`phone.eq.${filterPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -69,7 +84,10 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ drivers });
+    return NextResponse.json({
+      driver: drivers[0] || null,
+      drivers,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -200,11 +218,11 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json().catch(() => null);
-    if (!body || !body.id) {
-      return NextResponse.json({ error: "Driver ID is required" }, { status: 400 });
+    if (!body || (!body.id && !body.phone)) {
+      return NextResponse.json({ error: "Driver ID or Phone is required" }, { status: 400 });
     }
 
-    const { id, is_active, is_available, latitude, longitude, current_location_name } = body;
+    const { id, phone, is_active, is_available, latitude, longitude, current_location_name } = body;
     const admin = supabaseAdmin();
 
     const updates: Record<string, unknown> = {
@@ -222,15 +240,44 @@ export async function PATCH(request: Request) {
       updates.current_location_name = current_location_name;
     }
 
-    const { data, error } = await admin
-      .from("drivers")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
+    let updateQuery = admin.from("drivers").update(updates);
+    if (id) {
+      updateQuery = updateQuery.eq("id", id);
+    } else if (phone) {
+      const clean = phone.replace(/\D/g, "");
+      const last10 = clean.slice(-10);
+      updateQuery = updateQuery.or(`phone.eq.${phone},phone.eq.${clean},phone.eq.+${clean},phone.eq.${last10},phone.ilike.%${last10}`);
+    }
+
+    const { data, error } = await updateQuery.select().maybeSingle();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Sync online/offline across WhatsApp toto-engine and toto_riders table
+    const targetPhone = (phone || data?.phone || "").replace(/\D/g, "");
+    if (targetPhone) {
+      if (is_active === false || is_available === false) {
+        // Driver is going offline: clear WhatsApp memory cache and update toto_riders table
+        driverLocationStates.delete(targetPhone);
+        const last10 = targetPhone.slice(-10);
+        void Promise.resolve(
+          admin
+            .from("toto_riders")
+            .update({ duty_status: "offline" })
+            .or(`phone_number.eq.${targetPhone},phone_number.ilike.%${last10}`)
+        ).catch(() => {});
+      } else if (is_active === true && is_available === true) {
+        // Driver is going online
+        const last10 = targetPhone.slice(-10);
+        void Promise.resolve(
+          admin
+            .from("toto_riders")
+            .update({ duty_status: "online_available" })
+            .or(`phone_number.eq.${targetPhone},phone_number.ilike.%${last10}`)
+        ).catch(() => {});
+      }
     }
 
     return NextResponse.json({ driver: data });

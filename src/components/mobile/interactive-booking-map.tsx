@@ -3,64 +3,27 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   MapPin,
-  Navigation,
   LocateFixed,
   Search,
-  IndianRupee,
   RefreshCw,
   X,
   User,
   ShieldCheck,
-  Layers,
-  Sparkles,
-  Clock,
-  Check,
-  Zap,
-  Maximize2,
+  ArrowUpDown,
   Compass,
-  Route as RouteIcon,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import "leaflet/dist/leaflet.css";
 
-// Safely resolve Leaflet ES module default export in Next.js Turbopack
+// Safely resolve Leaflet ES module default export in Next.js
 async function getLeaflet() {
   const LModule = await import("leaflet");
   return (LModule as any).default || LModule;
 }
-
-// Curated Hubs & Landmarks around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
-export const REGIONAL_HUBS = [
-  // Kakdwip Hubs
-  { name: "কাকদ্বীপ স্টেশন রোড", shortName: "কাকদ্বীপ স্টেশন", type: "রেল", lat: 21.8760, lng: 88.1920, desc: "কাকদ্বীপ রেল স্টেশন ও বাজার চত্বর", aliases: ["কাকদ্বীপ", "kakdwip", "kakdwip station", "কাকদ্বীপ বাজার"] },
-  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", shortName: "লট ৮ ঘাট", type: "ফেরি", lat: 21.8680, lng: 88.1630, desc: "গঙ্গাসাগর ও কচুবেড়িয়া ফেরি পয়েন্ট", aliases: ["লট ৮", "হারউড পয়েন্ট", "lot 8", "harwood point", "কাকদ্বীপ ঘাট"] },
-  { name: "কাকদ্বীপ হাসপাতাল মোড়", shortName: "হাসপাতাল মোড়", type: "হাসপাতাল", lat: 21.8745, lng: 88.1880, desc: "মহকুমা হাসপাতাল ও চৌরাস্তা", aliases: ["কাকদ্বীপ হাসপাতাল", "হাসপাতাল মোড়", "kakdwip hospital"] },
-  { name: "গণেশপুর মোড়", shortName: "গণেশপুর", type: "মোড়", lat: 21.8540, lng: 88.1980, desc: "কাকদ্বীপ-নামখানা সংযোগস্থল", aliases: ["গণেশপুর", "ganeshpur"] },
-
-  // Namkhana Hubs
-  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", shortName: "নামখানা টার্মিনাল", type: "বাস", lat: 21.7674, lng: 88.2325, desc: "নামখানা প্রধান বাস ও ট্রেন টার্মিনাল", aliases: ["নামখানা", "namkhana", "নামখানা বাসস্ট্যান্ড", "নামখানা স্টেশন"] },
-  { name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়", shortName: "হাতানিয়া ব্রিজ", type: "ব্রিজ", lat: 21.7640, lng: 88.2350, desc: "নামখানা সেতু ও সংযোগ সড়ক", aliases: ["হাতানিয়া ব্রিজ", "দোয়ানিয়া ব্রিজ", "নামখানা ব্রিজ", "hatania bridge"] },
-  { name: "নারায়ণপুর মোড়", shortName: "নারায়ণপুর", type: "মোড়", lat: 21.7450, lng: 88.2380, desc: "নামখানা নারায়ণপুর সংযোগস্থল", aliases: ["নারায়ণপুর", "নারায়নপুর", "narayanpur"] },
-  { name: "বকখালি সৈকত বাসস্ট্যান্ড", shortName: "বকখালি সৈকত", type: "সৈকত", lat: 21.5645, lng: 88.2570, desc: "বকখালি সমুদ্র সৈকত ও হোটেল হাব", aliases: ["বকখালি", "bakkhali", "বকখালি সৈকত"] },
-  { name: "ফ্রেজারগঞ্জ ফিশিং হারবার", shortName: "ফ্রেজারগঞ্জ", type: "বন্দর", lat: 21.5850, lng: 88.2510, desc: "ফ্রেজারগঞ্জ বন্দর ও সৈকত", aliases: ["ফ্রেজারগঞ্জ", "fraserganj"] },
-
-  // Diamond Harbour Hubs
-  { name: "ডায়মন্ড হারবার স্টেশন ও টার্মিনাল", shortName: "ডায়মন্ড হারবার", type: "রেল", lat: 22.1912, lng: 88.1903, desc: "ডায়মন্ড হারবার প্রধান টার্মিনাল", aliases: ["ডায়মন্ড হারবার", "diamond harbour", "diamond", "ডায়মন্ড"] },
-  { name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)", shortName: "কেল্লা ঘাট", type: "ঘাট", lat: 22.1935, lng: 88.1820, desc: "হুগলি নদী পারাপার ও পুরানো কেল্লা", aliases: ["কেল্লা ঘাট", "ডায়মন্ড জেটি", "diamond jetty"] },
-  { name: "ডায়মন্ড হারবার এসডিও মোড়", shortName: "এসডিও মোড়", type: "প্রশাসনিক", lat: 22.1980, lng: 88.1950, desc: "প্রশাসনিক ভবন ও মহকুমা আদালত", aliases: ["এসডিও মোড়", "sdo more", "diamond hospital"] },
-  { name: "সরিষা আশ্রম মোড়", shortName: "সরিষা আশ্রম", type: "আশ্রম", lat: 22.2530, lng: 88.2040, desc: "সরিষা রামকৃষ্ণ মিশন ও ১১৭ নং জাতীয় সড়ক", aliases: ["সরিষা", "sarisha", "রামকৃষ্ণ মিশন"] },
-
-  // Lakshmikantapur Hubs
-  { name: "লক্ষ্মীকান্তপুর স্টেশন বাজার", shortName: "লক্ষ্মীকান্তপুর", type: "রেল", lat: 22.1220, lng: 88.3180, desc: "লক্ষ্মীকান্তপুর রেলওয়ে জংশন ও বাজার", aliases: ["লক্ষ্মীকান্তপুর", "lakshmikantapur", "laxmikantapur"] },
-  { name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়", shortName: "চৌমাথা মোড়", type: "মোড়", lat: 22.1250, lng: 88.3195, desc: "কুলপী-মন্দিরবাজার প্রধান মোড়", aliases: ["লক্ষ্মীকান্তপুর চৌমাথা", "চৌমাথা মোড়"] },
-  { name: "মথুরাপুর রোড স্টেশন বাজার", shortName: "মথুরাপুর", type: "রেল", lat: 22.1700, lng: 88.3300, desc: "মথুরাপুর রেল স্টেশন চত্বর", aliases: ["মথুরাপুর", "mathurapur", "mathurapur road"] },
-  { name: "মন্দিরবাজার থানা মোড়", shortName: "মন্দিরবাজার", type: "থানা", lat: 22.1480, lng: 88.3350, desc: "মন্দিরবাজার থানা ও ব্লক চত্বর", aliases: ["মন্দিরবাজার", "mandirbazar"] },
-  { name: "কুলপী থানা ও বাজার মোড়", shortName: "কুলপী", type: "থানা", lat: 22.0830, lng: 88.2430, desc: "কুলপী বাসস্টপ ও ১১৭ নং জাতীয় সড়ক", aliases: ["কুলপী", "kulpi"] },
-  { name: "নিশ্চিন্দাপুর স্টেশন বাজার", shortName: "নিশ্চিন্দাপুর", type: "রেল", lat: 21.9830, lng: 88.2120, desc: "কাকদ্বীপ রোড নিশ্চিন্দাপুর মোড়", aliases: ["নিশ্চিন্দাপুর", "nischindapur"] },
-  { name: "রায়দিঘি বাজার ও জেটিঘাট", shortName: "রায়দিঘি", type: "ঘাট", lat: 22.0010, lng: 88.4350, desc: "মনি নদী জেটিঘাট ও প্রধান বাজার", aliases: ["রায়দিঘি", "raidighi"] },
-];
 
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
@@ -83,81 +46,37 @@ function calculateTierFares(distanceKm: number) {
   const perKm = 10;
   const raw = base + distanceKm * perKm;
   const standard = Math.max(20, Math.ceil(raw / 5) * 5);
-  // Shared: ~30% off, minimum 15
-  const shared = Math.max(15, Math.ceil((standard * 0.7) / 5) * 5);
-  // Reserved: ~50% premium for entire private toto
-  const reserved = Math.max(40, Math.ceil((standard * 1.5) / 5) * 5);
-
-  return { standard, shared, reserved };
+  return { standard };
 }
 
-function getNearestHub(lat: number, lng: number): string | null {
-  let closest = REGIONAL_HUBS[0];
-  let minD = 999999;
-  for (const lm of REGIONAL_HUBS) {
-    const d = calculateDistanceKm(lat, lng, lm.lat, lm.lng);
-    if (d < minD) {
-      minD = d;
-      closest = lm;
-    }
-  }
-  if (minD < 0.8) {
-    return closest.name;
-  }
-  return null;
-}
-
-// Client-side address resolution with regional hubs, BigDataCloud, and server API fallback
-async function resolveLocationAddress(lat: number, lng: number): Promise<string> {
-  const hub = getNearestHub(lat, lng);
-  if (hub) return hub;
-
-  try {
-    const bgRes = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=bn`
-    );
-    if (bgRes.ok) {
-      const bgData = await bgRes.json();
-      const placeParts = [
-        bgData.locality || bgData.localityInfo?.administrative?.[3]?.name,
-        bgData.city || bgData.principalSubdivision,
-      ].filter(Boolean);
-      if (placeParts.length > 0) {
-        return placeParts.join(", ");
-      }
-    }
-  } catch {}
-
-  try {
-    const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`);
-    const data = await res.json();
-    if (data && data.name) {
-      return data.name;
-    }
-  } catch {}
-
-  return `বর্তমান অবস্থান (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+interface PlaceSuggestion {
+  name: string;
+  full_address: string;
+  lat: number;
+  lng: number;
 }
 
 interface InteractiveBookingMapProps {
-  onRouteSelected: (route: {
+  initialPickup?: string;
+  initialDrop?: string;
+  onRouteSelected?: (route: {
     pickup: string;
     drop: string;
     distanceKm: number;
     estimatedFare: number;
     rideTier?: RideTier;
-    pickupCoords: [number, number];
-    dropCoords: [number, number];
+    pickupCoords?: [number, number];
+    dropCoords?: [number, number];
     paymentMode?: "cash" | "upi";
   }) => void;
-  initialPickup?: string;
-  initialDrop?: string;
+  onConfirmBooking?: () => void;
 }
 
 export function InteractiveBookingMap({
-  onRouteSelected,
   initialPickup = "আপনার বর্তমান অবস্থান (Live GPS)",
   initialDrop = "",
+  onRouteSelected,
+  onConfirmBooking,
 }: InteractiveBookingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -166,63 +85,41 @@ export function InteractiveBookingMap({
   const dropMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const driverMarkersRef = useRef<any[]>([]);
-  const hasFetchedLocationRef = useRef(false);
-
-  // Stable ref for parent callback to prevent infinite re-render loops
   const onRouteSelectedRef = useRef(onRouteSelected);
-  useEffect(() => {
-    onRouteSelectedRef.current = onRouteSelected;
-  }, [onRouteSelected]);
+  onRouteSelectedRef.current = onRouteSelected;
 
-  // Default coordinate center (Sundarban corridor default: Kakdwip - Lot 8)
-  const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
-  const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
+  // Active Coordinates
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.876, 88.192]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([21.868, 88.163]);
+
+  // Input States
   const [pickupInputValue, setPickupInputValue] = useState(initialPickup);
   const [dropInputValue, setDropInputValue] = useState(initialDrop);
 
-  const [distanceKm, setDistanceKm] = useState(0);
+  // Live Real Place Suggestions (Google Maps / OpenStreetMap Geocoding)
+  const [activeSearchField, setActiveSearchField] = useState<"pickup" | "drop" | null>(null);
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Geolocation & Permissions
   const [isLocating, setIsLocating] = useState(false);
   const [gpsDetected, setGpsDetected] = useState(false);
-  const [permissionState, setPermissionState] = useState<"granted" | "prompt" | "denied" | "unknown">("unknown");
+  const [permissionState, setPermissionState] = useState<"prompt" | "granted" | "denied">("prompt");
+  const hasFetchedLocationRef = useRef(false);
 
-  // Sundarban Riders Ride Options
-  const [selectedTier, setSelectedTier] = useState<RideTier>("standard");
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
-  const [mapLayer, setMapLayer] = useState<"streets" | "hybrid">("streets");
-  const [showMapPreview, setShowMapPreview] = useState<boolean>(true);
-
-  // Road Routing Data from /api/route
-  const [roadRouteSummary, setRoadRouteSummary] = useState<string>(
-    "কাকদ্বীপ স্টেশন রোড ➔ ডায়মন্ড হারবার রোড (NH-117) ➔ লট ৮ ফেরিঘাট রোড"
-  );
-  const [roadDurationMin, setRoadDurationMin] = useState<number>(7);
-  const [isLoadingRoadRoute, setIsLoadingRoadRoute] = useState<boolean>(false);
-
-  // Search states for typed locations
-  const [pickupSearchResults, setPickupSearchResults] = useState<typeof REGIONAL_HUBS>([]);
-  const [showPickupSearch, setShowPickupSearch] = useState(false);
-  const [dropSearchResults, setDropSearchResults] = useState<typeof REGIONAL_HUBS>([]);
-  const [showDropSearch, setShowDropSearch] = useState(false);
-
-  // Real registered drivers only (Strictly NO mock data)
+  // Metrics
+  const [distanceKm, setDistanceKm] = useState(0);
+  const [roadDurationMin, setRoadDurationMin] = useState(2);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
 
-  // Dynamic Fares calculation
+  // Dynamic Fares calculation (Single Toto Option)
   const fares = useMemo(() => {
-    if (distanceKm === 0) {
-      return { standard: 20, shared: 15, reserved: 40 };
-    }
+    if (distanceKm === 0) return { standard: 20 };
     return calculateTierFares(distanceKm);
   }, [distanceKm]);
 
-  // Current active fare based on tier
-  const activeFare = useMemo(() => {
-    if (selectedTier === "shared") return fares.shared;
-    if (selectedTier === "reserved") return fares.reserved;
-    return fares.standard;
-  }, [selectedTier, fares]);
-
-  // Proximity to nearest real registered driver
+  // Nearest Driver Proximity
   const nearestDriverInfo = useMemo(() => {
     if (realDrivers.length === 0) return null;
     let minKm = 9999;
@@ -249,31 +146,36 @@ export function InteractiveBookingMap({
     };
   }, [realDrivers, pickupCoords]);
 
-  // Update route data and notify parent (with live road route geometry & accurate road distance)
+  // Resolve Location Address from Coordinates
+  const resolveLocationAddress = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`);
+      const data = await res.json();
+      if (data && data.name) return data.name;
+    } catch {}
+    return `লোকেশন (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+  };
+
+  // Update Route Polyline & notify parent
   const updateRoute = useCallback(
     async (
       pText: string,
       dText: string,
       pCoords: [number, number],
-      dCoords: [number, number],
-      tier: RideTier = selectedTier,
-      payMode: "cash" | "upi" = paymentMode
+      dCoords: [number, number]
     ) => {
       if (!dText || !dText.trim()) {
         setDistanceKm(0);
-        if (routeLineRef.current) {
-          routeLineRef.current.setLatLngs([]);
-        }
-        setRoadRouteSummary("গন্তব্য নির্বাচন করুন বা ম্যাপে ক্লিক করুন");
+        if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
         onRouteSelectedRef.current?.({
           pickup: pText,
           drop: "",
           distanceKm: 0,
-          estimatedFare: 0,
-          rideTier: tier,
+          estimatedFare: 20,
+          rideTier: "standard",
           pickupCoords: pCoords,
           dropCoords: dCoords,
-          paymentMode: payMode,
+          paymentMode: "cash",
         });
         return;
       }
@@ -281,59 +183,40 @@ export function InteractiveBookingMap({
       let safeDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
       if (safeDist === 0) safeDist = 1.0;
 
-      setIsLoadingRoadRoute(true);
-
       try {
         const res = await fetch(
           `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`
         );
         const data = await res.json();
-
-        if (data && data.coordinates && data.coordinates.length > 0) {
-          if (routeLineRef.current) {
-            routeLineRef.current.setLatLngs(data.coordinates);
-          }
-          if (data.routeSummaryBengali) {
-            setRoadRouteSummary(data.routeSummaryBengali);
-          }
-          if (data.distanceKm) {
-            safeDist = data.distanceKm;
-          }
-          if (data.durationMin) {
-            setRoadDurationMin(data.durationMin);
-          }
+        if (data?.coordinates?.length) {
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(data.coordinates);
+          if (data.distanceKm) safeDist = data.distanceKm;
+          if (data.durationMin) setRoadDurationMin(data.durationMin);
         } else if (routeLineRef.current) {
           routeLineRef.current.setLatLngs([pCoords, dCoords]);
         }
-      } catch (err) {
-        console.warn("Could not fetch road route:", err);
-        if (routeLineRef.current) {
-          routeLineRef.current.setLatLngs([pCoords, dCoords]);
-        }
-      } finally {
-        setIsLoadingRoadRoute(false);
+      } catch {
+        if (routeLineRef.current) routeLineRef.current.setLatLngs([pCoords, dCoords]);
       }
 
       setDistanceKm(safeDist);
       const tierFares = calculateTierFares(safeDist);
-      const fareToReport =
-        tier === "shared" ? tierFares.shared : tier === "reserved" ? tierFares.reserved : tierFares.standard;
 
       onRouteSelectedRef.current?.({
         pickup: pText,
         drop: dText,
         distanceKm: safeDist,
-        estimatedFare: fareToReport,
-        rideTier: tier,
+        estimatedFare: tierFares.standard,
+        rideTier: "standard",
         pickupCoords: pCoords,
         dropCoords: dCoords,
-        paymentMode: payMode,
+        paymentMode: "cash",
       });
     },
-    [selectedTier, paymentMode]
+    []
   );
 
-  // Load ONLY real registered drivers from database
+  // Load registered active drivers from database
   useEffect(() => {
     async function loadRealDrivers() {
       try {
@@ -355,29 +238,29 @@ export function InteractiveBookingMap({
           });
           setRealDrivers(valid);
         }
-      } catch (err) {
-        console.warn("Could not fetch real drivers:", err);
-      }
+      } catch {}
     }
     loadRealDrivers();
   }, []);
 
-  // Check browser geolocation permission status
+  // Check Geolocation Permission
   useEffect(() => {
     if (typeof navigator !== "undefined" && navigator.permissions?.query) {
       navigator.permissions
         .query({ name: "geolocation" as PermissionName })
         .then((result) => {
           setPermissionState(result.state as any);
+          if (result.state === "granted") setGpsDetected(true);
           result.onchange = () => {
             setPermissionState(result.state as any);
+            if (result.state === "granted") setGpsDetected(true);
           };
         })
         .catch(() => {});
     }
   }, []);
 
-  // 1. Initialize Leaflet Map ONCE on mount
+  // 1. Initialize Map
   useEffect(() => {
     let isMounted = true;
 
@@ -393,37 +276,31 @@ export function InteractiveBookingMap({
       try {
         const L = await getLeaflet();
 
-        // Prevent Leaflet "Map container is already initialized" crash
         if (mapContainerRef.current) {
           (mapContainerRef.current as any)._leaflet_id = null;
         }
 
-        // Create map
         const map = L.map(mapContainerRef.current, {
           center: pickupCoords,
           zoom: 14,
           zoomControl: false,
         });
 
-        // Google Maps Tile Layer
-        const tileUrl =
-          mapLayer === "hybrid"
-            ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-            : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
-
+        // Google Hybrid Map Tile Layer
+        const tileUrl = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
         const tiles = L.tileLayer(tileUrl, {
           maxZoom: 20,
           attribution: "© Google Maps",
         }).addTo(map);
         tileLayerRef.current = tiles;
 
-        // Custom Green Pickup DivIcon
+        // Pickup Icon (Green)
         const greenPickupIcon = L.divIcon({
           className: "custom-pickup-pin",
           html: `
             <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%);">
               <div style="background: #10b981; color: white; font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
-                📍 পিকআপ (আপনার অবস্থান)
+                📍 পিকআপ
               </div>
               <div style="position: relative; width: 26px; height: 26px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center;">
                 <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
@@ -433,73 +310,68 @@ export function InteractiveBookingMap({
           iconSize: [0, 0],
         });
 
-        // Custom Red Drop DivIcon
-        const createRedDropIcon = () =>
-          L.divIcon({
-            className: "custom-drop-pin",
-            html: `
-              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
-                <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
-                  <span>🏁 গন্তব্য (টেনে সরান)</span>
-                </div>
-                <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
-                  <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
-                </div>
-              </div>
-            `,
-            iconSize: [0, 0],
-          });
-
-        // 1. Pickup Marker (Green)
-        const pMarker = L.marker(pickupCoords, { icon: greenPickupIcon }).addTo(map);
+        const pMarker = L.marker(pickupCoords, { icon: greenPickupIcon, draggable: true }).addTo(map);
         pickupMarkerRef.current = pMarker;
 
-        // 2. Drop Marker (Red & Draggable)
+        pMarker.on("dragend", async () => {
+          const newPos = pMarker.getLatLng();
+          const newCoords: [number, number] = [newPos.lat, newPos.lng];
+          setPickupCoords(newCoords);
+          setGpsDetected(true);
+          const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
+          setPickupInputValue(resolved);
+          updateRoute(resolved, dropInputValue, newCoords, dropCoords);
+        });
+
+        // Drop Icon (Red Draggable Pin)
+        const redDropIcon = L.divIcon({
+          className: "custom-drop-pin",
+          html: `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
+              <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
+                <span>🏁 গন্তব্য (টেনে সরান)</span>
+              </div>
+              <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
+                <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
+              </div>
+            </div>
+          `,
+          iconSize: [0, 0],
+        });
+
         if (dropInputValue) {
-          const dMarker = L.marker(dropCoords, {
-            icon: createRedDropIcon(),
-            draggable: true,
-            autoPan: true,
-          }).addTo(map);
+          const dMarker = L.marker(dropCoords, { icon: redDropIcon, draggable: true }).addTo(map);
           dropMarkerRef.current = dMarker;
 
           dMarker.on("dragend", async () => {
             const newPos = dMarker.getLatLng();
             const newCoords: [number, number] = [newPos.lat, newPos.lng];
             setDropCoords(newCoords);
-            if (routeLineRef.current) {
-              routeLineRef.current.setLatLngs([pickupCoords, newCoords]);
-            }
             const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
             setDropInputValue(resolved);
             updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
-            toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
           });
         }
 
-        // 3. Connect Pickup and Drop with Route Polyline
+        // Road Route Polyline
         const line = L.polyline(dropInputValue ? [pickupCoords, dropCoords] : [], {
-          color: "#059669",
+          color: "#10b981",
           weight: 5,
-          opacity: 0.85,
+          opacity: 0.9,
           lineCap: "round",
           lineJoin: "round",
         }).addTo(map);
         routeLineRef.current = line;
 
-        // Center on pickup
-        map.setView(pickupCoords, 15);
-
-        // Event: Tap anywhere on map to select Drop Location
+        // Tap on map to set/drag drop location
         map.on("click", async (e: any) => {
           const clickedCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
           setDropCoords(clickedCoords);
 
           if (!dropMarkerRef.current) {
             const dMarker = L.marker(clickedCoords, {
-              icon: createRedDropIcon(),
+              icon: redDropIcon,
               draggable: true,
-              autoPan: true,
             }).addTo(map);
             dropMarkerRef.current = dMarker;
 
@@ -507,13 +379,9 @@ export function InteractiveBookingMap({
               const newPos = dMarker.getLatLng();
               const newCoords: [number, number] = [newPos.lat, newPos.lng];
               setDropCoords(newCoords);
-              if (routeLineRef.current) {
-                routeLineRef.current.setLatLngs([pickupCoords, newCoords]);
-              }
               const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
               setDropInputValue(resolved);
               updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
-              toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
             });
           } else {
             dropMarkerRef.current.setLatLng(clickedCoords);
@@ -537,39 +405,14 @@ export function InteractiveBookingMap({
       }
     }
 
-    if (showMapPreview) {
-      initMap();
-    }
+    initMap();
 
     return () => {
       isMounted = false;
     };
-  }, [showMapPreview]);
-
-  // Clean cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      if (mapInstanceRef.current) {
-        try {
-          mapInstanceRef.current.remove();
-        } catch {}
-        mapInstanceRef.current = null;
-      }
-    };
   }, []);
 
-  // Update Tile Layer when mapLayer changes
-  useEffect(() => {
-    if (tileLayerRef.current) {
-      const tileUrl =
-        mapLayer === "hybrid"
-          ? "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-          : "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
-      tileLayerRef.current.setUrl(tileUrl);
-    }
-  }, [mapLayer]);
-
-  // Update Driver Markers when realDrivers changes without recreating map
+  // Update drivers on map
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -588,7 +431,7 @@ export function InteractiveBookingMap({
             html: `
               <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
                 <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 2px 7px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                  🛺 ${driver.name || "টোটো চালক"} (${driver.toto_number})
+                  🛺 ${driver.name || "টোটো চালক"}
                 </div>
                 <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">
                   🛺
@@ -607,43 +450,17 @@ export function InteractiveBookingMap({
     });
   }, [realDrivers]);
 
-  // Update markers and route polyline when coords change
-  useEffect(() => {
-    if (pickupMarkerRef.current && pickupCoords) {
-      try {
-        pickupMarkerRef.current.setLatLng(pickupCoords);
-      } catch {}
-    }
-    if (dropMarkerRef.current && dropCoords) {
-      try {
-        dropMarkerRef.current.setLatLng(dropCoords);
-      } catch {}
-    }
-    if (routeLineRef.current && pickupCoords && dropCoords && dropInputValue) {
-      try {
-        routeLineRef.current.setLatLngs([pickupCoords, dropCoords]);
-      } catch {}
-    }
-  }, [pickupCoords, dropCoords, dropInputValue]);
-
-  // Initial Route & Fare calculation on component load
-  useEffect(() => {
-    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, selectedTier, paymentMode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 2. Real Browser GPS Auto-Fetch: Dual-stage (fast coarse network fix + high-accuracy GPS refinement)
+  // Real Browser GPS Location Fetch
   const fetchCurrentLocation = useCallback(
-    (userInitiated: any = false) => {
-      const isUserTap = userInitiated === true;
+    (userInitiated = false) => {
       if (typeof window === "undefined" || !navigator.geolocation) {
-        if (isUserTap) toast.error("আপনার ব্রাউজারে GPS লোকেশন সমর্থিত নয়");
+        if (userInitiated) toast.error("আপনার ব্রাউজারে GPS লোকেশন সমর্থিত নয়");
         return;
       }
 
       setIsLocating(true);
 
-      const handleSuccess = async (latitude: number, longitude: number, isHighAccuracy = false) => {
+      const handleSuccess = async (latitude: number, longitude: number) => {
         const newPickup: [number, number] = [latitude, longitude];
         setPickupCoords(newPickup);
         setGpsDetected(true);
@@ -652,13 +469,8 @@ export function InteractiveBookingMap({
         if (pickupMarkerRef.current) {
           pickupMarkerRef.current.setLatLng(newPickup);
         }
-
         if (mapInstanceRef.current) {
           mapInstanceRef.current.flyTo(newPickup, 16, { duration: 1.0 });
-        }
-
-        if (dropInputValue && routeLineRef.current) {
-          routeLineRef.current.setLatLngs([newPickup, dropCoords]);
         }
 
         const detectedName = await resolveLocationAddress(latitude, longitude);
@@ -671,53 +483,28 @@ export function InteractiveBookingMap({
         }
 
         setIsLocating(false);
-        if (userInitiated) {
-          toast.success(`📍 আপনার বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
-        }
+        if (userInitiated) toast.success(`📍 আপনার অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
       };
 
-      // Stage 1: Fast coarse / network position (< 300ms, works without GPS chip on laptops/PCs)
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          handleSuccess(pos.coords.latitude, pos.coords.longitude, false);
-
-          // Stage 2: Background High-Accuracy GPS refinement if hardware available
+        (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
+        () => {
           navigator.geolocation.getCurrentPosition(
-            (accuratePos) => {
-              handleSuccess(accuratePos.coords.latitude, accuratePos.coords.longitude, true);
-            },
-            () => {},
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-          );
-        },
-        (err) => {
-          // If Stage 1 fails, try with high accuracy in case coarse was disallowed
-          navigator.geolocation.getCurrentPosition(
-            (highPos) => {
-              handleSuccess(highPos.coords.latitude, highPos.coords.longitude, true);
-            },
-            (finalErr) => {
+            (accuratePos) => handleSuccess(accuratePos.coords.latitude, accuratePos.coords.longitude),
+            (err) => {
               setIsLocating(false);
-              console.warn("Geolocation warning:", finalErr.message);
-              if (finalErr.code === 1) {
-                setPermissionState("denied");
-                if (userInitiated) {
-                  toast.error("ব্রাউজারে লোকেশন অনুমতি দেওয়া হয়নি। অনুগ্রহ করে ব্রাউজার সেটিংসে গিয়ে পারমিশন Allow করুন।");
-                }
-              } else if (userInitiated) {
-                toast.info("GPS অবস্থান নির্ণয় করা যায়নি, ম্যাপ থেকে পিকআপ নির্বাচন করুন।");
-              }
+              if (err.code === 1) setPermissionState("denied");
+              if (userInitiated) toast.error("GPS পারমিশন সক্রিয় করা সম্ভব হয়নি");
             },
-            { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+            { enableHighAccuracy: true, timeout: 8000 }
           );
         },
-        { enableHighAccuracy: false, timeout: 4000, maximumAge: 120000 }
+        { enableHighAccuracy: false, timeout: 4000 }
       );
     },
     [dropCoords, dropInputValue, updateRoute]
   );
 
-  // Automatically fetch customer real-time location ONCE on component mount
   useEffect(() => {
     if (!hasFetchedLocationRef.current) {
       hasFetchedLocationRef.current = true;
@@ -725,373 +512,193 @@ export function InteractiveBookingMap({
     }
   }, [fetchCurrentLocation]);
 
-  // Fit bounds to both points
-  const handleFitBounds = () => {
-    if (mapInstanceRef.current && pickupCoords && dropCoords) {
-      getLeaflet().then((L: any) => {
-        const bounds = L.latLngBounds([pickupCoords, dropCoords]);
-        mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50] });
-      });
-    }
-  };
+  // Live Real Place Search Query (Calling /api/geocode?q=...)
+  const handleQueryPlaces = (query: string, field: "pickup" | "drop") => {
+    if (field === "pickup") setPickupInputValue(query);
+    else setDropInputValue(query);
 
-  // 3. Handle Pickup Typing & Regional Hub Autocomplete
-  const handlePickupSearchInput = (val: string) => {
-    setPickupInputValue(val);
-    setGpsDetected(false);
+    setActiveSearchField(field);
 
-    if (!val.trim()) {
-      setPickupSearchResults([]);
-      setShowPickupSearch(false);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (!query.trim() || query.trim().length < 2) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
       return;
     }
 
-    const q = val.toLowerCase();
-    const matches = REGIONAL_HUBS.filter(
-      (lm) =>
-        lm.name.toLowerCase().includes(q) ||
-        lm.desc.toLowerCase().includes(q) ||
-        lm.aliases?.some((a) => a.toLowerCase().includes(q))
-    );
-    setPickupSearchResults(matches);
-    setShowPickupSearch(true);
+    setIsSearchingPlaces(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (data?.suggestions && Array.isArray(data.suggestions)) {
+          setPlaceSuggestions(data.suggestions);
+        } else {
+          setPlaceSuggestions([]);
+        }
+      } catch {
+        setPlaceSuggestions([]);
+      } finally {
+        setIsSearchingPlaces(false);
+      }
+    }, 250);
   };
 
-  // Select typed pickup location
-  const handleSelectPickupLocation = (lm: (typeof REGIONAL_HUBS)[0]) => {
-    const targetCoords: [number, number] = [lm.lat, lm.lng];
-    setPickupCoords(targetCoords);
-    setPickupInputValue(lm.name);
-    setShowPickupSearch(false);
+  // Select Place Suggestion
+  const handleSelectSuggestion = (place: PlaceSuggestion) => {
+    const coords: [number, number] = [place.lat, place.lng];
 
-    if (pickupMarkerRef.current) {
-      pickupMarkerRef.current.setLatLng(targetCoords);
-    }
-    if (routeLineRef.current) {
-      routeLineRef.current.setLatLngs([targetCoords, dropCoords]);
-    }
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(targetCoords, 15, { duration: 1.0 });
-    }
+    if (activeSearchField === "pickup") {
+      setPickupInputValue(place.name);
+      setPickupCoords(coords);
+      if (pickupMarkerRef.current) pickupMarkerRef.current.setLatLng(coords);
+      if (mapInstanceRef.current) mapInstanceRef.current.flyTo(coords, 15, { duration: 1.0 });
+      updateRoute(place.name, dropInputValue, coords, dropCoords);
+    } else {
+      setDropInputValue(place.name);
+      setDropCoords(coords);
 
-    updateRoute(lm.name, dropInputValue, targetCoords, dropCoords);
-    toast.success(`পিকআপ অবস্থান: ${lm.name}`);
-  };
-
-  // 4. Handle Drop Typing & Regional Hub Autocomplete
-  const handleDropSearchInput = (val: string) => {
-    setDropInputValue(val);
-
-    if (!val.trim()) {
-      setDropSearchResults([]);
-      setShowDropSearch(false);
-      return;
-    }
-
-    const q = val.toLowerCase();
-    const matches = REGIONAL_HUBS.filter(
-      (lm) =>
-        lm.name.toLowerCase().includes(q) ||
-        lm.desc.toLowerCase().includes(q) ||
-        lm.aliases?.some((a) => a.toLowerCase().includes(q))
-    );
-    setDropSearchResults(matches);
-    setShowDropSearch(true);
-  };
-
-  // Select drop location (both from autocomplete and Quick Destination Pills)
-  const handleSelectDropLocation = async (lm: (typeof REGIONAL_HUBS)[0]) => {
-    const targetCoords: [number, number] = [lm.lat, lm.lng];
-    setDropCoords(targetCoords);
-    setDropInputValue(lm.name);
-    setShowDropSearch(false);
-
-    if (mapInstanceRef.current) {
-      if (!dropMarkerRef.current) {
-        const L = await getLeaflet();
-        const redDropIcon = L.divIcon({
-          className: "custom-drop-pin",
-          html: `
-            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
-              <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white; display: flex; align-items: center; gap: 4px;">
-                <span>🏁 গন্তব্য (টেনে সরান)</span>
+      if (!dropMarkerRef.current && mapInstanceRef.current) {
+        getLeaflet().then((L: any) => {
+          const redDropIcon = L.divIcon({
+            className: "custom-drop-pin",
+            html: `
+              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: grab;">
+                <div style="background: #ef4444; color: white; font-weight: 800; font-size: 11px; padding: 3px 9px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(239,68,68,0.4); white-space: nowrap; margin-bottom: 3px; border: 1.5px solid white;">
+                  <span>🏁 গন্তব্য (টেনে সরান)</span>
+                </div>
+                <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
+                  <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
+                </div>
               </div>
-              <div style="width: 28px; height: 28px; background: #dc2626; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(239,68,68,0.6); display: flex; align-items: center; justify-content: center;">
-                <div style="width: 10px; height: 10px; background: white; border-radius: 50%;"></div>
-              </div>
-            </div>
-          `,
-          iconSize: [0, 0],
+            `,
+            iconSize: [0, 0],
+          });
+          const dm = L.marker(coords, { icon: redDropIcon, draggable: true }).addTo(mapInstanceRef.current);
+          dropMarkerRef.current = dm;
+          dm.on("dragend", async () => {
+            const p = dm.getLatLng();
+            const nc: [number, number] = [p.lat, p.lng];
+            setDropCoords(nc);
+            const resolved = await resolveLocationAddress(nc[0], nc[1]);
+            setDropInputValue(resolved);
+            updateRoute(pickupInputValue, resolved, pickupCoords, nc);
+          });
         });
-
-        const dMarker = L.marker(targetCoords, {
-          icon: redDropIcon,
-          draggable: true,
-          autoPan: true,
-        }).addTo(mapInstanceRef.current);
-        dropMarkerRef.current = dMarker;
-
-        dMarker.on("dragend", async () => {
-          const newPos = dMarker.getLatLng();
-          const newCoords: [number, number] = [newPos.lat, newPos.lng];
-          setDropCoords(newCoords);
-          if (routeLineRef.current) {
-            routeLineRef.current.setLatLngs([pickupCoords, newCoords]);
-          }
-          const resolved = await resolveLocationAddress(newCoords[0], newCoords[1]);
-          setDropInputValue(resolved);
-          updateRoute(pickupInputValue, resolved, pickupCoords, newCoords);
-          toast.success(`ড্রপ লোকেশন আপডেট: ${resolved}`);
-        });
-      } else {
-        dropMarkerRef.current.setLatLng(targetCoords);
+      } else if (dropMarkerRef.current) {
+        dropMarkerRef.current.setLatLng(coords);
       }
 
-      if (routeLineRef.current) {
-        routeLineRef.current.setLatLngs([pickupCoords, targetCoords]);
-      }
-      mapInstanceRef.current.flyTo(targetCoords, 14, { duration: 1.0 });
+      if (mapInstanceRef.current) mapInstanceRef.current.flyTo(coords, 14, { duration: 1.0 });
+      updateRoute(pickupInputValue, place.name, pickupCoords, coords);
     }
 
-    updateRoute(pickupInputValue, lm.name, pickupCoords, targetCoords);
-    toast.success(`গন্তব্য: ${lm.name}`);
+    setPlaceSuggestions([]);
+    setActiveSearchField(null);
+    toast.success(`স্থান নির্বাচিত: ${place.name}`);
   };
 
-  // Swap Pickup and Drop Locations
-  const handleSwapRoute = () => {
-    const nextPickupText = dropInputValue;
-    const nextDropText = pickupInputValue;
+  // Swap pickup and drop
+  const handleSwap = () => {
+    const nextPickup = dropInputValue;
+    const nextDrop = pickupInputValue;
     const nextPickupCoords = dropCoords;
     const nextDropCoords = pickupCoords;
 
-    setPickupInputValue(nextPickupText);
-    setDropInputValue(nextDropText);
+    setPickupInputValue(nextPickup);
+    setDropInputValue(nextDrop);
     setPickupCoords(nextPickupCoords);
     setDropCoords(nextDropCoords);
 
-    if (pickupMarkerRef.current) {
-      pickupMarkerRef.current.setLatLng(nextPickupCoords);
-    }
-    if (dropMarkerRef.current) {
-      dropMarkerRef.current.setLatLng(nextDropCoords);
-    }
-    if (routeLineRef.current) {
-      routeLineRef.current.setLatLngs([nextPickupCoords, nextDropCoords]);
-    }
+    if (pickupMarkerRef.current) pickupMarkerRef.current.setLatLng(nextPickupCoords);
+    if (dropMarkerRef.current) dropMarkerRef.current.setLatLng(nextDropCoords);
 
-    updateRoute(nextPickupText, nextDropText, nextPickupCoords, nextDropCoords, selectedTier, paymentMode);
-    toast.success("পিকআপ ও গন্তব্য স্থান অদল-বদল করা হয়েছে ⇅");
-  };
-
-  // Select Ride Tier
-  const handleSelectTier = (tier: RideTier) => {
-    setSelectedTier(tier);
-    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, tier, paymentMode);
-  };
-
-  // Select Payment Mode
-  const handleSelectPayment = (mode: "cash" | "upi") => {
-    setPaymentMode(mode);
-    updateRoute(pickupInputValue, dropInputValue, pickupCoords, dropCoords, selectedTier, mode);
+    updateRoute(nextPickup, nextDrop, nextPickupCoords, nextDropCoords);
+    toast.success("পিকআপ ও গন্তব্য অদল-বদল করা হয়েছে ⇅");
   };
 
   return (
-    <div className="space-y-3.5">
-      {/* ----------------------------------------------------------- */}
-      {/* 1. Fast Availability & Proximity Bar (Sundarban Riders Live) */}
-      {/* ----------------------------------------------------------- */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg shrink-0">
-            🛺
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900">
-                {realDrivers.length > 0 ? `${realDrivers.length}টি টোটো সক্রিয়` : "সুন্দরবন রাইডার্স"}
-              </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            </div>
-            <p className="text-[11px] text-slate-500 font-medium">
-              {nearestDriverInfo ? `কাছের টোটো ~${nearestDriverInfo.etaMin} মিনিটে পৌঁছাবে` : "নিকটবর্তী সক্রিয় চালকদের দ্রুত বুকিং"}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setShowMapPreview((p) => !p)}
-          className="text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1 transition-colors"
-        >
-          <span>{showMapPreview ? "ম্যাপ লুকান ▲" : "🗺️ ম্যাপ প্রিভিউ ▼"}</span>
-        </button>
-      </div>
-
-      {/* Conditionally Render Map Preview only if passenger explicitly toggled it */}
-      {showMapPreview && (
-        <div className="relative w-full h-[320px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100 animate-in fade-in duration-200">
-          <div ref={mapContainerRef} className="w-full h-full z-10" />
-
-          {/* Top Floating Bar: Real Registered Drivers Badge */}
-          <div className="absolute top-3 left-3 z-20 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-md border border-slate-200 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-            <span className="text-xs font-bold text-slate-800">
-              {realDrivers.length > 0
-                ? `${realDrivers.length}টি নিবন্ধিত টোটো সক্রিয়`
-                : "নিকটবর্তী টোটো খুঁজছে..."}
-            </span>
-          </div>
-
-          {/* Top-Right Map Controls: Satellite Toggle & Fit Route */}
-          <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setMapLayer((prev) => (prev === "streets" ? "hybrid" : "streets"))}
-              title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "ম্যাপ ভিউ"}
-              className="h-9 px-2.5 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center gap-1 text-[11px] font-bold transition-all active:scale-95"
-            >
-              <Layers className="w-3.5 h-3.5 text-blue-600" />
-              <span>{mapLayer === "streets" ? "স্যাটেলাইট" : "রোড"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleFitBounds}
-              title="সম্পূর্ণ রুট দেখুন"
-              className="w-9 h-9 bg-white/95 backdrop-blur hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200 flex items-center justify-center transition-all active:scale-95"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Bottom Floating Bar: Proximity ETA Banner */}
-          {nearestDriverInfo && (
-            <div className="absolute bottom-3 left-3 z-20 bg-slate-900/90 backdrop-blur-md text-white px-3.5 py-1.5 rounded-2xl shadow-lg border border-slate-700/50 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-medium">
-                কাছের টোটো <strong className="text-emerald-400">{nearestDriverInfo.distanceKm} কিমি</strong> দূরে •{" "}
-                <strong className="text-amber-300">~{nearestDriverInfo.etaMin} মিনিটে</strong> পিকআপ
-              </span>
-            </div>
-          )}
-
-          {/* Bottom-Right GPS Live Locate Button */}
-          <button
-            type="button"
-            onClick={() => fetchCurrentLocation(true)}
-            disabled={isLocating}
-            title="আমার রিয়েলটাইম জিপিএস অবস্থানে যান"
-            className="absolute bottom-3 right-3 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
-          >
-            {isLocating ? (
-              <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
-            ) : (
-              <LocateFixed className="w-5 h-5 text-emerald-600" />
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------- */}
-      {/* 1.5. Prominent Real-time GPS Detection & Permission Banner  */}
-      {/* ----------------------------------------------------------- */}
-      {!gpsDetected ? (
-        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-3 flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+    <div className="space-y-3 relative">
+      {/* ------------------------------------------------------------- */}
+      {/* 1. LOCATION PERMISSION PROMPT (ONLY SHOWN IF NOT GRANTED)     */}
+      {/* ------------------------------------------------------------- */}
+      {!gpsDetected && permissionState !== "granted" && (
+        <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/90 shadow-sm flex items-center justify-between animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 text-sm shrink-0">
               📍
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-900">
-                {permissionState === "denied"
-                  ? "লোকেশন পারমিশন বন্ধ রয়েছে"
-                  : "আপনার সঠিক অবস্থান দিন"}
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium">
-                {permissionState === "denied"
-                  ? "ব্রাউজারের 🔒 লক আইকন থেকে Allow করুন"
-                  : "সঠিক পিকআপ পয়েন্ট পেতে ১-ক্লিক করুন"}
+              <h5 className="text-xs font-bold text-amber-950">লোকেশন পারমিশন প্রয়োজন</h5>
+              <p className="text-[10px] text-amber-700 font-medium">
+                সঠিক পিকআপ পয়েন্ট পেতে লোকেশন সক্রিয় করুন
               </p>
             </div>
           </div>
-
           <button
             type="button"
             onClick={() => fetchCurrentLocation(true)}
             disabled={isLocating}
-            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all shrink-0"
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
           >
-            {isLocating ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <LocateFixed className="w-3.5 h-3.5" />
-            )}
-            <span>{isLocating ? "খুঁজছে..." : "অনুমতি দিন"}</span>
-          </button>
-        </div>
-      ) : (
-        <div className="bg-emerald-50/70 border border-emerald-200/60 rounded-xl px-3 py-1.5 flex items-center justify-between text-[11px] font-semibold text-emerald-800">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>লাইভ GPS পিকআপ সক্রিয়</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => fetchCurrentLocation(true)}
-            disabled={isLocating}
-            className="text-[10px] text-emerald-700 font-bold hover:underline flex items-center gap-1"
-          >
-            <RefreshCw className={`w-3 h-3 ${isLocating ? "animate-spin" : ""}`} />
-            <span>পুনরায় মাপুন</span>
+            {isLocating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <LocateFixed className="w-3.5 h-3.5" />}
+            <span>অনুমতি দিন</span>
           </button>
         </div>
       )}
 
-      {/* ----------------------------------------------------------- */}
-      {/* 2. Pickup & Drop Location Search Inputs                     */}
-      {/* ----------------------------------------------------------- */}
-      <div className="space-y-2.5">
-        {/* Typable Pickup Input */}
-        <div className="relative">
+      {/* ------------------------------------------------------------- */}
+      {/* 2. PICKUP & DROP LOCATION SELECTION (ABOVE THE MAP)           */}
+      {/* ------------------------------------------------------------- */}
+      <div
+        className="p-3.5 rounded-3xl space-y-2 relative"
+        style={{
+          background: "linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.92) 100%)",
+          boxShadow: "0 8px 30px -4px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.9) inset",
+          border: "1px solid rgba(226,232,240,0.85)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+        }}
+      >
+        <div className="relative flex flex-col gap-2">
+          {/* Pickup Input */}
           <div className="relative flex items-center">
             <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-600">
-              <MapPin className="w-4 h-4 text-emerald-600" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 block ring-4 ring-emerald-100" />
             </div>
             <Input
               type="text"
-              placeholder="পিকআপ অবস্থান লিখুন বা জিপিএস ব্যবহার করুন..."
+              placeholder="পিকআপ অবস্থান লিখুন বা জিপিএস নিন..."
               value={pickupInputValue}
-              onChange={(e) => handlePickupSearchInput(e.target.value)}
+              onChange={(e) => handleQueryPlaces(e.target.value, "pickup")}
               onFocus={() => {
-                if (REGIONAL_HUBS.length > 0 && !pickupInputValue) {
-                  setPickupSearchResults(REGIONAL_HUBS.slice(0, 5));
-                  setShowPickupSearch(true);
-                }
+                if (pickupInputValue.length >= 2) handleQueryPlaces(pickupInputValue, "pickup");
               }}
-              className="h-12 pl-10 pr-28 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-xs focus:border-emerald-500"
+              className="h-11 pl-9 pr-20 bg-slate-50/80 border-slate-200 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => fetchCurrentLocation(true)}
                 disabled={isLocating}
-                className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center gap-1 transition-colors"
+                title="লাইভ GPS অবস্থান"
+                className="w-7 h-7 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center transition-colors"
               >
                 {isLocating ? (
-                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <LocateFixed className="w-3 h-3" />
+                  <LocateFixed className="w-3.5 h-3.5" />
                 )}
-                <span>লাইভ GPS</span>
               </button>
               {pickupInputValue && (
                 <button
                   type="button"
                   onClick={() => {
                     setPickupInputValue("");
-                    setShowPickupSearch(false);
+                    setPlaceSuggestions([]);
                   }}
-                  className="w-5 h-5 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400"
+                  className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1099,252 +706,170 @@ export function InteractiveBookingMap({
             </div>
           </div>
 
-          {/* Pickup Autocomplete Search Dropdown */}
-          {showPickupSearch && pickupSearchResults.length > 0 && (
-            <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
-              <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
-                <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
-                <span className="text-emerald-700 font-bold">পিকআপ পয়েন্ট</span>
-              </div>
-              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                {pickupSearchResults.map((lm, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectPickupLocation(lm)}
-                    className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">{lm.name}</div>
-                        <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                      নির্বাচন করুন
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Swap Pickup & Drop Button */}
-        <div className="relative flex justify-center -my-1 z-20">
-          <button
-            type="button"
-            onClick={handleSwapRoute}
-            title="পিকআপ ও গন্তব্য অদল-বদল করুন"
-            className="h-7 px-3 rounded-full bg-white hover:bg-slate-50 border border-slate-200 shadow-sm text-slate-700 flex items-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 hover:border-slate-300"
-          >
-            <span className="text-sm">⇅</span>
-            <span>স্থান অদল-বদল</span>
-          </button>
-        </div>
-
-        {/* Typable Drop Input */}
-        <div className="relative">
+          {/* Drop Input */}
           <div className="relative flex items-center">
             <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-500">
-              <span className="w-3.5 h-3.5 rounded-full bg-red-500 inline-block shadow-xs" />
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 block ring-4 ring-red-100" />
             </div>
             <Input
               type="text"
-              placeholder="কোথায় যাবেন? গন্তব্য লিখুন (যেমন: লট ৮ ফেরিঘাট)..."
+              placeholder="কোথায় যাবেন? গন্তব্য লিখুন (যেমন: লট ৮, নামখানা...)"
               value={dropInputValue}
-              onChange={(e) => handleDropSearchInput(e.target.value)}
+              onChange={(e) => handleQueryPlaces(e.target.value, "drop")}
               onFocus={() => {
-                if (REGIONAL_HUBS.length > 0 && !dropInputValue) {
-                  setDropSearchResults(REGIONAL_HUBS.slice(0, 5));
-                  setShowDropSearch(true);
-                }
+                if (dropInputValue.length >= 2) handleQueryPlaces(dropInputValue, "drop");
               }}
-              className="h-12 pl-10 pr-16 bg-white border-slate-200 text-slate-900 rounded-2xl text-sm font-semibold shadow-xs focus:border-red-500"
+              className="h-11 pl-9 pr-14 bg-slate-50/80 border-slate-200 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              {dropInputValue ? (
+              <button
+                type="button"
+                onClick={handleSwap}
+                title="পিকআপ ও গন্তব্য অদল-বদল"
+                className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" />
+              </button>
+              {dropInputValue && (
                 <button
                   type="button"
                   onClick={() => {
                     setDropInputValue("");
-                    setShowDropSearch(false);
-                    if (routeLineRef.current) {
-                      routeLineRef.current.setLatLngs([]);
-                    }
-                    if (dropMarkerRef.current) {
-                      dropMarkerRef.current.remove();
-                      dropMarkerRef.current = null;
-                    }
+                    setPlaceSuggestions([]);
                     updateRoute(pickupInputValue, "", pickupCoords, dropCoords);
                   }}
-                  className="w-6 h-6 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              ) : (
-                <Search className="w-4 h-4 text-slate-400 mr-1.5 pointer-events-none" />
               )}
             </div>
           </div>
+        </div>
 
-          {/* Drop Autocomplete Search Dropdown */}
-          {showDropSearch && dropSearchResults.length > 0 && (
-            <div className="absolute top-14 left-0 right-0 z-50 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2">
-              <div className="p-2 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-bold px-3 bg-slate-50">
-                <span>কাকদ্বীপ, নামখানা, ডায়মন্ড ও লক্ষ্মীকান্তপুর হাব</span>
-                <span className="text-red-600 font-bold">লাল পিন সরবে</span>
+        {/* Real Live Place Suggestions Dropdown */}
+        {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
+          <div
+            className="absolute left-3 right-3 top-full mt-1.5 z-50 rounded-2xl p-2 bg-white/95 border border-slate-200 shadow-xl backdrop-blur-xl max-h-56 overflow-y-auto space-y-1"
+          >
+            {isSearchingPlaces && (
+              <div className="p-3 text-center text-xs font-semibold text-slate-500 flex items-center justify-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                <span>ম্যাপে সঠিক স্থান খোঁজা হচ্ছে...</span>
               </div>
-              <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                {dropSearchResults.map((lm, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectDropLocation(lm)}
-                    className="w-full p-3 text-left hover:bg-slate-50 flex items-center justify-between transition-colors"
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <div className="w-6 h-6 rounded-full bg-red-50 text-red-600 flex items-center justify-center shrink-0 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">{lm.name}</div>
-                        <div className="text-[11px] text-slate-500 font-medium">{lm.desc}</div>
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
-                      নির্বাচন করুন
-                    </span>
-                  </button>
-                ))}
+            )}
+            {placeSuggestions.map((place, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelectSuggestion(place)}
+                className="w-full p-2.5 rounded-xl hover:bg-emerald-50/80 text-left transition-colors flex items-center gap-2.5 cursor-pointer"
+              >
+                <div className="w-7 h-7 rounded-lg bg-emerald-100/70 text-emerald-700 flex items-center justify-center shrink-0">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <div className="overflow-hidden">
+                  <div className="text-xs font-bold text-slate-900 truncate">{place.name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{place.full_address}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 3. HERO INTERACTIVE MAP                                        */}
+      {/* ------------------------------------------------------------- */}
+      <div className="relative w-full h-80 sm:h-96 rounded-3xl overflow-hidden border border-slate-200/90 shadow-md">
+        <div ref={mapContainerRef} className="w-full h-full" />
+
+        {/* Floating Quick Action Overlay on Map: Real Drivers Count + GPS Button */}
+        <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-200 shadow-xs flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+          <span className="text-[11px] font-bold text-slate-800">
+            {realDrivers.length > 0 ? `${realDrivers.length}টি টোটো সক্রিয়` : "সুন্দরবন রাইডার্স"}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => fetchCurrentLocation(true)}
+          disabled={isLocating}
+          title="আমার জিপিএস অবস্থান"
+          className="absolute bottom-3 right-3 z-20 w-11 h-11 bg-white/95 hover:bg-white text-emerald-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90"
+        >
+          {isLocating ? (
+            <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+          ) : (
+            <LocateFixed className="w-5 h-5 text-emerald-600" />
+          )}
+        </button>
+      </div>
+
+      {/* ------------------------------------------------------------- */}
+      {/* 4. SLIDING TOTO SELECTION & CONFIRM RIDE BOTTOM SHEET          */}
+      {/* ------------------------------------------------------------- */}
+      {dropInputValue && dropInputValue.trim() ? (
+        <div
+          className="p-4 rounded-3xl space-y-3 animate-in slide-in-from-bottom duration-300"
+          style={{
+            background: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,253,244,0.85) 100%)",
+            boxShadow: "0 10px 30px -5px rgba(16,185,129,0.12), 0 1px 0 rgba(255,255,255,1) inset",
+            border: "1.5px solid rgba(16,185,129,0.35)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+          }}
+        >
+          {/* Single Toto Option Card */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3.5">
+              <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-3xl shadow-md shadow-emerald-600/30 shrink-0">
+                🛺
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-black text-base text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
+                  <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                    ৪ আসন
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 font-semibold mt-0.5">
+                  {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিটে পিকআপ"} • দ্রুত ও নিরাপদ
+                </p>
+                <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>সরকারি ভেরিফায়েড চালক • সরাসরি নন-স্টপ</span>
+                </div>
               </div>
             </div>
+
+            <div className="text-right shrink-0">
+              <div className="text-2xl font-black text-emerald-700">
+                ₹{fares.standard}.00
+              </div>
+              <span className="text-[10px] font-semibold text-slate-500 block">
+                {distanceKm > 0 ? `${distanceKm} কিমি • ~${roadDurationMin} মি` : "ফিক্সড সঠিক ভাড়া"}
+              </span>
+            </div>
+          </div>
+
+          {/* Confirm Booking Button */}
+          {onConfirmBooking && (
+            <Button
+              size="lg"
+              onClick={onConfirmBooking}
+              className="w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30 cursor-pointer"
+            >
+              <span>🛺 টোটো রাইড কনফার্ম করুন (₹{fares.standard}.০০)</span>
+            </Button>
           )}
         </div>
-
-        {/* ----------------------------------------------------------- */}
-        {/* 3. Quick Destination Hub Pills (১-ট্যাপে জনপ্রিয় গন্তব্য)   */}
-        {/* ----------------------------------------------------------- */}
-        <div>
-          <div className="flex items-center justify-between pb-1.5 px-0.5">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              ⚡ দ্রুত ১-ট্যাপ গন্তব্য:
-            </span>
-            <span className="text-[10px] text-emerald-600 font-semibold">ম্যাপে লাল পিন যাবে</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-            {REGIONAL_HUBS.slice(0, 8).map((hub, idx) => {
-              const isSelected = dropInputValue.includes(hub.shortName) || dropInputValue === hub.name;
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectDropLocation(hub)}
-                  className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all flex items-center gap-1 ${
-                    isSelected
-                      ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                      : "bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <span>
-                    {hub.type === "রেল"
-                      ? "🚉"
-                      : hub.type === "ফেরি" || hub.type === "ঘাট"
-                      ? "⛴️"
-                      : hub.type === "হাসপাতাল"
-                      ? "🏥"
-                      : hub.type === "সৈকত"
-                      ? "🏖️"
-                      : hub.type === "বাস"
-                      ? "🚌"
-                      : "📍"}
-                  </span>
-                  <span>{hub.shortName}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ----------------------------------------------------------- */}
-      {/* 3.5. Live Road Route Indicator (Which Route Will Be Taken)  */}
-      {/* ----------------------------------------------------------- */}
-      {showMapPreview && (
-        <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 space-y-2 shadow-sm animate-in fade-in duration-200">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
-              <Compass className="w-3.5 h-3.5 animate-spin-slow" />
-              <span>গন্তব্যে যাওয়ার রুট (Drop Route via Road)</span>
-            </div>
-            <span className="text-[10px] text-slate-400 font-mono font-semibold">
-              {isLoadingRoadRoute ? "রুট খোঁজা হচ্ছে..." : `~${roadDurationMin} মিনিট • ${distanceKm} কিমি`}
-            </span>
-          </div>
-          <p className="text-xs font-black text-slate-100 leading-snug">
-            🛣️ {roadRouteSummary}
-          </p>
+      ) : (
+        <div className="text-center py-2.5 text-xs text-slate-500 font-semibold bg-white/70 rounded-2xl border border-slate-200/70 shadow-2xs backdrop-blur-md">
+          📍 ম্যাপে ক্লিক করুন অথবা ওপরে গন্তব্য লিখে টোটো কনফার্ম করুন
         </div>
       )}
-
-      {/* ----------------------------------------------------------- */}
-      {/* 4. Single Premium Toto Option (একমাত্র স্মার্ট টোটো বিকল্প)    */}
-      {/* ----------------------------------------------------------- */}
-      <div className="space-y-2 pt-1">
-        <div className="flex items-center justify-between px-0.5">
-          <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <span>🛺 অনুমোদিত স্মার্ট টোটো রাইড</span>
-          </span>
-          <span className="text-[11px] text-emerald-800 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-            {distanceKm > 0 ? `${distanceKm} কিমি • ~${roadDurationMin} মিনিট` : "গন্তব্য নির্বাচন করুন"}
-          </span>
-        </div>
-
-        {/* Single Only Toto Card */}
-        <div
-          className="p-4 rounded-3xl border-2 border-emerald-500/80 bg-gradient-to-br from-emerald-50/90 via-white to-teal-50/50 shadow-md shadow-emerald-600/10 flex items-center justify-between transition-all"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-3xl shadow-md shadow-emerald-600/30 shrink-0">
-              🛺
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-black text-base text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
-                <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full shadow-2xs">
-                  অন-ডিমান্ড
-                </span>
-                <span className="text-[10px] text-slate-500 font-bold flex items-center gap-0.5">
-                  <User className="w-3 h-3 text-slate-400" /> ৪ আসন
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 font-semibold mt-0.5">
-                {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিটে পিকআপ"} • দ্রুত ও নিরাপদ
-              </p>
-              <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span>যাচাইকৃত স্থানীয় চালক • সরাসরি নন-স্টপ যাত্রা</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right shrink-0">
-            <div className="text-xl font-black text-emerald-800">
-              ₹{fares.standard}.00
-            </div>
-            <span className="text-[10px] font-semibold text-slate-500 block">
-              {distanceKm === 0 ? "নূন্যতম ভাড়া" : "ফিক্সড সঠিক ভাড়া"}
-            </span>
-            {distanceKm > 0 && (
-              <span className="text-[10px] text-slate-400 line-through block">₹{fares.standard + 10}</span>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

@@ -142,6 +142,69 @@ function MobileAppPageContent() {
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
 
+  // Customer Past Rides History State
+  const [customerHistory, setCustomerHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const fetchCustomerHistory = useCallback(async () => {
+    const phone = session?.phone || phoneInput || "918348122122";
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/bookings?customer_phone=${phone}&history=true`);
+      const data = await res.json();
+      if (data?.bookings && Array.isArray(data.bookings)) {
+        setCustomerHistory(data.bookings);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch customer history:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [session?.phone, phoneInput]);
+
+  useEffect(() => {
+    if (bottomNavTab === "trips" && phase === "passenger_home") {
+      fetchCustomerHistory();
+    }
+  }, [bottomNavTab, phase, fetchCustomerHistory]);
+
+  const handleConfirmBooking = useCallback(async () => {
+    if (!dropText || !dropText.trim()) {
+      toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
+      return;
+    }
+    setPhase("passenger_searching");
+    setSearchStatus("searching");
+    setSearchCountdown(300);
+    playRideAlertSound();
+    toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
+
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: session?.passengerName || "যাত্রী",
+          customerPhone: session?.phone || "918348122122",
+          pickupLocation: pickupText,
+          dropLocation: dropText,
+          pickupCoords,
+          dropCoords,
+          estimatedFare: tripFare || 20,
+          tripDistance,
+          rideTier: "standard",
+          paymentMode: "cash",
+        }),
+      });
+      const data = await res.json();
+      if (data.booking && data.booking.id) {
+        setActiveBookingId(data.booking.id);
+      }
+    } catch (err) {
+      console.warn("[app] Failed to create live booking:", err);
+    }
+  }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, session?.passengerName, session?.phone]);
+
   // Memoized route handler to eliminate parent re-render loops
   const handleRouteSelected = useCallback((route: any) => {
     if (route.pickup) setPickupText(route.pickup);
@@ -1665,12 +1728,12 @@ function MobileAppPageContent() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="pt-2">
+                            {/* Action Buttons */}
+              <div className="pt-2 space-y-2">
                 <Button
                   variant="outline"
                   size="lg"
-                  className="w-full h-12 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs"
+                  className="w-full h-12 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer"
                   onClick={() => {
                     setPhase("passenger_home");
                     toast.info("অনুসন্ধান বাতিল করা হয়েছে");
@@ -1678,6 +1741,24 @@ function MobileAppPageContent() {
                 >
                   ❌ রিকোয়েস্ট বাতিল করুন
                 </Button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPassengerBooking({
+                      id: activeBookingId || "SR-9412",
+                      driverName: "রাজেশ মন্ডল",
+                      driverPhone: "9593177885",
+                      totoNumber: "WB-96-T-8421",
+                    });
+                    setPhase("passenger_home");
+                    playSuccessSound();
+                    toast.success("চালক রাজেশ মন্ডল রাইড গ্রহণ করেছেন!");
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span>⚡ ডেমো: চালক রাইড গ্রহণ করুন (Test Accept)</span>
+                </button>
               </div>
               <div className="h-24 w-full shrink-0" aria-hidden="true" />
             </div>
@@ -1864,7 +1945,7 @@ function MobileAppPageContent() {
             <div className="h-28 w-full" aria-hidden="true" />
           </div>
         ) : bottomNavTab === "trips" && !passengerBooking ? (
-          <div className="space-y-4 pb-32">
+          <div className="space-y-4 pb-24">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-extrabold text-lg text-slate-900">আমার রাইড হিস্ট্রি</h3>
@@ -1873,37 +1954,120 @@ function MobileAppPageContent() {
               <button
                 type="button"
                 onClick={() => setBottomNavTab("home")}
-                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs"
+                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs cursor-pointer"
               >
-                ← রাইড বুকিং
+                ← নতুন রাইড
               </button>
             </div>
-            {/* History Summary Card */}
-            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base">
-                    🛺
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">সুন্দরবন টোটো রাইড</h4>
-                    <span className="text-[10px] text-slate-400">আজকের ট্রিপ • সম্পূর্ণ</span>
-                  </div>
+
+            {isLoadingHistory ? (
+              <div className="p-8 text-center space-y-2">
+                <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
+                <p className="text-xs text-slate-500 font-semibold">হিস্ট্রি লোড হচ্ছে...</p>
+              </div>
+            ) : customerHistory.length === 0 ? (
+              <div className="bg-white/95 rounded-3xl p-6 border border-slate-200 text-center space-y-3 shadow-xs">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-xs">
+                  🛺
                 </div>
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl">
-                  সম্পূর্ণ ✓
-                </span>
+                <div>
+                  <h4 className="font-black text-slate-900 text-base">আপনার কোনো পূর্ববর্তী রাইড নেই</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    সুন্দরবন স্মার্ট টোটো দিয়ে আপনার প্রথম নিরাপদ যাত্রা শুরু করুন!
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setBottomNavTab("home")}
+                  className="h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+                >
+                  এখনই রাইড বুক করুন →
+                </Button>
               </div>
-              <div className="text-xs space-y-1.5 text-slate-600">
-                <p>📍 পিকআপ: <strong className="text-slate-800">{pickupText}</strong></p>
-                <p>🏁 গন্তব্য: <strong className="text-slate-800">{dropText}</strong></p>
+            ) : (
+              <div className="space-y-3">
+                {customerHistory.map((trip: any, idx: number) => {
+                  const isCompleted = trip.status === "completed";
+                  const isCancelled = trip.status === "cancelled";
+                  const dateStr = trip.created_at
+                    ? new Date(trip.created_at).toLocaleDateString("bn-BD", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "আজকের ট্রিপ";
+
+                  return (
+                    <div
+                      key={trip.id || idx}
+                      className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md"
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-sm">
+                            🛺
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-slate-900">
+                              #{trip.booking_number || trip.id?.slice(0, 8)}
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-medium">{dateStr}</span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                            isCompleted
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : isCancelled
+                              ? "bg-red-50 text-red-600 border-red-200"
+                              : "bg-blue-50 text-blue-700 border-blue-200"
+                          }`}
+                        >
+                          {isCompleted ? "সম্পূর্ণ ✓" : isCancelled ? "বাতিল ✕" : "চলমান 🟢"}
+                        </span>
+                      </div>
+
+                      <div className="text-xs space-y-1 text-slate-600">
+                        <div className="flex items-start gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1 shrink-0" />
+                          <p className="line-clamp-1">
+                            পিকআপ: <strong className="text-slate-800">{trip.pickup_location}</strong>
+                          </p>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500 mt-1 shrink-0" />
+                          <p className="line-clamp-1">
+                            গন্তব্য: <strong className="text-slate-800">{trip.drop_location}</strong>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                        <span className="font-black text-sm text-slate-900">
+                          ₹{trip.final_fare || trip.estimated_fare || 20}.০০
+                        </span>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setPickupText(trip.pickup_location);
+                            setDropText(trip.drop_location);
+                            setBottomNavTab("home");
+                            toast.success("ট্রিপের তথ্য লোড হয়েছে! এবার কনফার্ম করুন");
+                          }}
+                          className="h-8 text-[11px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl cursor-pointer"
+                        >
+                          🔄 পুনরায় বুক করুন
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                <span className="text-slate-500 font-medium">দূরত্ব: {tripDistance} কিমি</span>
-                <span className="font-black text-sm text-slate-900">₹{tripFare}.০০ (নগদ)</span>
-              </div>
-            </div>
-            <div className="h-28 w-full" aria-hidden="true" />
+            )}
+            <div className="h-16 w-full" aria-hidden="true" />
           </div>
         ) : (
           <>

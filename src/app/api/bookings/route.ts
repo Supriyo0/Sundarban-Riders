@@ -434,6 +434,20 @@ export async function GET(request: Request) {
 
     if (customerPhone) {
       const cleanPhone = customerPhone.replace(/[^0-9]/g, "");
+      const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
+
+      if (isHistory) {
+        const { data, error } = await admin
+          .from("bookings")
+          .select("*, drivers(*)")
+          .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${cleanPhone}`)
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ bookings: data || [] });
+      }
+
       const { data, error } = await admin
         .from("bookings")
         .select("*, drivers(*)")

@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     // Check if phone already registered in drivers
     const { data: existing } = await supabase
       .from("drivers")
-      .select("id, is_approved")
+      .select("id, is_active, current_location_name")
       .or(`phone.eq.${cleanPhone},phone.eq.${cleanPhone.replace(/^91/, "")}`)
       .maybeSingle();
 
@@ -66,7 +66,6 @@ export async function POST(req: Request) {
           name,
           toto_number: toto_number || "WB-96-T-XXXX",
           license_number: aadhar_number,
-          is_approved: false, // Re-trigger pending approval
           is_active: false,
           is_available: false,
           current_location_name: JSON.stringify(metadata),
@@ -89,7 +88,6 @@ export async function POST(req: Request) {
           license_number: aadhar_number,
           is_active: false,
           is_available: false,
-          is_approved: false, // Admin must approve
           rating: 5.0,
           total_trips: 0,
           current_location_name: JSON.stringify(metadata),
@@ -132,7 +130,12 @@ export async function POST(req: Request) {
       message: "আপনার আবেদন সফলভাবে জমা হয়েছে। অ্যাডমিন অনুমোদনের পর ডিউটি শুরু করতে পারবেন।",
     });
   } catch (error: unknown) {
-    const errorMsg = error instanceof Error ? error.message : "Internal Error";
+    const errorMsg =
+      error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null && "message" in error
+        ? String((error as any).message)
+        : JSON.stringify(error) || "Internal Error";
     console.error("Rider register error:", errorMsg);
     return NextResponse.json(
       { success: false, message: errorMsg },

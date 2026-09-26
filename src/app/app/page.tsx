@@ -20,6 +20,8 @@ import {
   Upload,
   FileText,
   CreditCard,
+  Camera,
+  Trash2,
   Sparkles,
   ExternalLink,
   ChevronRight,
@@ -87,6 +89,51 @@ interface MobileSession {
   passengerName?: string;
 }
 
+// Helper function to compress and encode document files client-side
+const processDocumentFile = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1200;
+        let width = img.width;
+        let height = img.height;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+          resolve(dataUrl);
+        } else {
+          resolve(e.target?.result as string);
+        }
+      };
+      img.onerror = () => resolve(e.target?.result as string);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 function MobileAppPageContent() {
   // App Phase: 'splash' | 'permissions' | 'select_role' | 'otp_login' | 'kyc_form' | 'kyc_pending' | 'rider_home' | 'passenger_home'
   const [phase, setPhase] = useState<string>("splash");
@@ -111,8 +158,46 @@ function MobileAppPageContent() {
   const [kycTotoNumber, setKycTotoNumber] = useState("");
   const [kycAadharNumber, setKycAadharNumber] = useState("");
   const [kycAadharDoc, setKycAadharDoc] = useState("");
+  const [kycAadharName, setKycAadharName] = useState("");
   const [kycSecondaryDoc, setKycSecondaryDoc] = useState("");
+  const [kycSecondaryName, setKycSecondaryName] = useState("");
   const [kycSecondaryType, setKycSecondaryType] = useState("driving_license");
+  const [uploadingAadhar, setUploadingAadhar] = useState(false);
+  const [uploadingSecondary, setUploadingSecondary] = useState(false);
+  const aadharFileInputRef = useRef<HTMLInputElement>(null);
+  const secondaryFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAadharFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingAadhar(true);
+      const dataUrl = await processDocumentFile(file);
+      setKycAadharDoc(dataUrl);
+      setKycAadharName(file.name);
+      toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
+    } catch {
+      toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
+    } finally {
+      setUploadingAadhar(false);
+    }
+  };
+
+  const handleSecondaryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingSecondary(true);
+      const dataUrl = await processDocumentFile(file);
+      setKycSecondaryDoc(dataUrl);
+      setKycSecondaryName(file.name);
+      toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+    } catch {
+      toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
+    } finally {
+      setUploadingSecondary(false);
+    }
+  };
 
   // Driver Active State
   const [isOnline, setIsOnline] = useState(true);
@@ -707,8 +792,21 @@ function MobileAppPageContent() {
   // Handle KYC Submission
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!kycName || !kycTotoNumber || !kycAadharNumber) {
-      toast.error("সকল বাধ্যতামূলক তথ্য প্রদান করুন");
+    const effectivePhone = phoneInput || session?.phone || "";
+    if (!effectivePhone) {
+      toast.error("মোবাইল নম্বর পাওয়া যায়নি। অনুগ্রহ করে পুনরায় লগইন করুন।");
+      return;
+    }
+    if (!kycName.trim() || !kycTotoNumber.trim() || !kycAadharNumber.trim()) {
+      toast.error("সকল বাধ্যতামূলক তথ্য (নাম, টোটো নম্বর ও আধার নম্বর) প্রদান করুন");
+      return;
+    }
+    if (kycAadharNumber.replace(/\D/g, "").length < 12) {
+      toast.error("আধার নম্বর অবশ্যই ১২ সংখ্যার হতে হবে");
+      return;
+    }
+    if (!kycAadharDoc) {
+      toast.error("অনুগ্রহ করে আপনার আধার কার্ডের ছবি আপলোড করুন");
       return;
     }
 
@@ -718,15 +816,15 @@ function MobileAppPageContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: kycName,
-          phone: phoneInput,
-          email: kycEmail,
+          name: kycName.trim(),
+          phone: effectivePhone,
+          email: kycEmail.trim(),
           district: kycDistrict,
           block: kycBlock,
-          toto_number: kycTotoNumber.toUpperCase(),
-          aadhar_number: kycAadharNumber,
-          aadhar_doc: kycAadharDoc || "https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop",
-          secondary_doc: kycSecondaryDoc || "https://images.unsplash.com/photo-1554415707-9e4c019feab4?w=600&auto=format&fit=crop",
+          toto_number: kycTotoNumber.trim().toUpperCase(),
+          aadhar_number: kycAadharNumber.replace(/\D/g, ""),
+          aadhar_doc: kycAadharDoc,
+          secondary_doc: kycSecondaryDoc || null,
           secondary_doc_type: kycSecondaryType,
         }),
       });
@@ -735,11 +833,11 @@ function MobileAppPageContent() {
       if (json.success) {
         playSuccessSound();
         const newSession: MobileSession = {
-          phone: phoneInput,
+          phone: effectivePhone,
           role: "rider",
           isApproved: false,
-          driverName: kycName,
-          totoNumber: kycTotoNumber.toUpperCase(),
+          driverName: kycName.trim(),
+          totoNumber: kycTotoNumber.trim().toUpperCase(),
         };
         setSession(newSession);
         localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
@@ -749,7 +847,7 @@ function MobileAppPageContent() {
         toast.error(json.message || "রেজিস্ট্রেশন ব্যর্থ হয়েছে");
       }
     } catch {
-      toast.error("সার্ভার ত্রুটি");
+      toast.error("সার্ভার ত্রুটি, অনুগ্রহ করে পুনরায় চেষ্টা করুন");
     } finally {
       setLoading(false);
     }
@@ -1087,7 +1185,7 @@ function MobileAppPageContent() {
             <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
               নতুন চালক নিবন্ধন
             </span>
-            <span className="text-xs text-slate-600 font-mono font-semibold">+91 {phoneInput}</span>
+            <span className="text-xs text-slate-600 font-mono font-semibold">+91 {phoneInput || session?.phone || ""}</span>
           </div>
 
           <div>
@@ -1161,52 +1259,175 @@ function MobileAppPageContent() {
               />
             </div>
 
-            {/* Document Upload Simulation */}
+            {/* Real Document Upload Section */}
             <div className="space-y-3 pt-2">
-              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-white shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <CreditCard className="w-5 h-5 text-amber-600" />
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900">আধার কার্ড ছবি *</h5>
-                    <p className="text-[10px] text-slate-500 font-medium">সামনে ও পেছনের স্পষ্ট ছবি</p>
+              <input
+                ref={aadharFileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                capture="environment"
+                className="hidden"
+                onChange={handleAadharFileChange}
+              />
+              <input
+                ref={secondaryFileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                capture="environment"
+                className="hidden"
+                onChange={handleSecondaryFileChange}
+              />
+
+              {/* Aadhar Card Upload Card */}
+              <div className={`p-4 rounded-2xl border transition-all ${kycAadharDoc ? 'border-emerald-300 bg-emerald-50/50 shadow-sm' : 'border-dashed border-slate-300 bg-white hover:border-emerald-500'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {kycAadharDoc ? (
+                      <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-emerald-300 bg-white shrink-0 shadow-xs flex items-center justify-center">
+                        {kycAadharDoc.startsWith("data:image") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={kycAadharDoc} alt="Aadhar Preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <CreditCard className="w-6 h-6 text-emerald-600" />
+                        )}
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
+                        <CreditCard className="w-5 h-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h5 className="text-xs font-bold text-slate-900">আধার কার্ড ছবি *</h5>
+                        {kycAadharDoc && (
+                          <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium truncate">
+                        {kycAadharName || "ক্যামেরা বা ফাইল থেকে সামনে ও পেছনের স্পষ্ট ছবি দিন"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      type="button"
+                      variant={kycAadharDoc ? "outline" : "default"}
+                      size="sm"
+                      className={`h-9 text-xs font-semibold rounded-xl gap-1.5 ${kycAadharDoc ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}`}
+                      disabled={uploadingAadhar}
+                      onClick={() => aadharFileInputRef.current?.click()}
+                    >
+                      {uploadingAadhar ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Camera className="w-3.5 h-3.5" />
+                      )}
+                      {kycAadharDoc ? "পরিবর্তন" : "ছবি তুলুন / আপলোড"}
+                    </Button>
+                    {kycAadharDoc && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 w-9 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                        onClick={() => {
+                          setKycAadharDoc("");
+                          setKycAadharName("");
+                          if (aadharFileInputRef.current) aadharFileInputRef.current.value = "";
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs border-slate-300 font-semibold"
-                  onClick={() => {
-                    setKycAadharDoc("https://images.unsplash.com/photo-1544717305-2782549b5136?w=600&auto=format&fit=crop");
-                    toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে");
-                  }}
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1" />
-                  {kycAadharDoc ? "যুক্ত হয়েছে ✓" : "আপলোড"}
-                </Button>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-white shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <h5 className="text-xs font-bold text-slate-900">২য় ডকুমেন্ট (লাইসেন্স/ভোটার) *</h5>
-                    <p className="text-[10px] text-slate-500 font-medium">ড্রাইভিং লাইসেন্স বা ভোটার আইডি</p>
+              {/* Secondary Document Upload Card */}
+              <div className={`p-4 rounded-2xl border transition-all ${kycSecondaryDoc ? 'border-purple-300 bg-purple-50/50 shadow-sm' : 'border-dashed border-slate-300 bg-white hover:border-purple-500'}`}>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-900">২য় ডকুমেন্টের ধরণ</Label>
+                    <select
+                      value={kycSecondaryType}
+                      onChange={(e) => setKycSecondaryType(e.target.value)}
+                      className="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-medium outline-hidden"
+                    >
+                      <option value="driving_license">ড্রাইভিং লাইসেন্স</option>
+                      <option value="voter_card">ভোটার আইডি কার্ড</option>
+                      <option value="pan_card">প্যান কার্ড</option>
+                      <option value="toto_permit">টোটো পারমিট / রসিদ</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {kycSecondaryDoc ? (
+                        <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-purple-300 bg-white shrink-0 shadow-xs flex items-center justify-center">
+                          {kycSecondaryDoc.startsWith("data:image") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={kycSecondaryDoc} alt="Secondary Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-6 h-6 text-purple-600" />
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center text-purple-600 shrink-0">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h5 className="text-xs font-bold text-slate-900">২য় ডকুমেন্ট ফাইল</h5>
+                          {kycSecondaryDoc && (
+                            <span className="text-[10px] text-purple-700 font-bold bg-purple-100 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-purple-600" /> যুক্ত হয়েছে
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-medium truncate">
+                          {kycSecondaryName || "লাইসেন্স, ভোটার বা পারমিটের ছবি যুক্ত করুন"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        type="button"
+                        variant={kycSecondaryDoc ? "outline" : "default"}
+                        size="sm"
+                        className={`h-9 text-xs font-semibold rounded-xl gap-1.5 ${kycSecondaryDoc ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                        disabled={uploadingSecondary}
+                        onClick={() => secondaryFileInputRef.current?.click()}
+                      >
+                        {uploadingSecondary ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Camera className="w-3.5 h-3.5" />
+                        )}
+                        {kycSecondaryDoc ? "পরিবর্তন" : "ছবি তুলুন / আপলোড"}
+                      </Button>
+                      {kycSecondaryDoc && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-9 w-9 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl"
+                          onClick={() => {
+                            setKycSecondaryDoc("");
+                            setKycSecondaryName("");
+                            if (secondaryFileInputRef.current) secondaryFileInputRef.current.value = "";
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs border-slate-300 font-semibold"
-                  onClick={() => {
-                    setKycSecondaryDoc("https://images.unsplash.com/photo-1554415707-9e4c019feab4?w=600&auto=format&fit=crop");
-                    toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে");
-                  }}
-                >
-                  <Upload className="w-3.5 h-3.5 mr-1" />
-                  {kycSecondaryDoc ? "যুক্ত হয়েছে ✓" : "আপলোড"}
-                </Button>
               </div>
             </div>
 

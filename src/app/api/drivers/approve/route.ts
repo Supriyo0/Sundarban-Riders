@@ -51,12 +51,21 @@ export async function POST(req: Request) {
     }
 
     // 2. Update driver status
+    let meta: Record<string, unknown> = {};
+    if (driver.current_location_name) {
+      try {
+        meta = JSON.parse(driver.current_location_name);
+      } catch {}
+    }
+    meta.status = approve ? "approved" : "rejected";
+    meta.approved_at = approve ? new Date().toISOString() : null;
+
     const { error: updateErr } = await supabase
       .from("drivers")
       .update({
-        is_approved: approve,
         is_active: approve,
         is_available: approve,
+        current_location_name: JSON.stringify(meta),
       })
       .eq("id", driver_id);
 

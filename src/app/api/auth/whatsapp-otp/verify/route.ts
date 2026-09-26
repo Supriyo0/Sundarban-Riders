@@ -57,12 +57,27 @@ export async function POST(req: Request) {
         });
       }
 
+      let isApproved = Boolean(driver.is_active);
+      if (driver.current_location_name) {
+        try {
+          const meta = JSON.parse(driver.current_location_name);
+          if (meta.status === "pending_approval") {
+            isApproved = false;
+          } else if (meta.status === "approved") {
+            isApproved = true;
+          }
+        } catch {}
+      }
+
       return NextResponse.json({
         success: true,
         role: "rider",
         is_registered: true,
-        is_approved: Boolean(driver.is_approved),
-        driver,
+        is_approved: isApproved,
+        driver: {
+          ...driver,
+          is_approved: isApproved,
+        },
         sessionToken,
         message: "লগইন সফল হয়েছে!",
       });

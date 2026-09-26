@@ -52,6 +52,18 @@ export async function GET() {
         longitude = 88.1920 + offset;
       }
 
+      let isApproved = Boolean(d.is_active);
+      if (d.current_location_name) {
+        try {
+          const meta = JSON.parse(d.current_location_name);
+          if (meta.status === "pending_approval") {
+            isApproved = false;
+          } else if (meta.status === "approved") {
+            isApproved = true;
+          }
+        } catch {}
+      }
+
       return {
         ...d,
         latitude,
@@ -63,7 +75,7 @@ export async function GET() {
         aadhar_card_url,
         secondary_doc_url,
         secondary_doc_type,
-        is_approved: d.is_approved !== false,
+        is_approved: isApproved,
       };
     });
 

@@ -97,6 +97,7 @@ function MobileAppPageContent() {
 
   // OTP Form State
   const [phoneInput, setPhoneInput] = useState("");
+  const [passengerNameInput, setPassengerNameInput] = useState("");
   const [otpInput, setOtpInput] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(60);
@@ -173,6 +174,12 @@ function MobileAppPageContent() {
       toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
       return;
     }
+    if (!session?.phone) {
+      toast.error("টোটো বুক করতে দয়া করে আপনার হোয়াটসঅ্যাপ নম্বর দিয়ে লগইন করুন");
+      setRole("passenger");
+      setPhase("otp_login");
+      return;
+    }
     setPhase("passenger_searching");
     setSearchStatus("searching");
     setSearchCountdown(300);
@@ -184,15 +191,15 @@ function MobileAppPageContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerName: session?.passengerName || "যাত্রী",
-          customerPhone: session?.phone || "918348122122",
+          customerName: session?.passengerName || passengerNameInput || "যাত্রী বন্ধু",
+          customerPhone: session.phone,
           pickupLocation: pickupText,
           dropLocation: dropText,
           pickupCoords,
           dropCoords,
           estimatedFare: tripFare || 20,
           tripDistance,
-          rideTier: "standard",
+          rideTier: selectedTier || "standard",
           paymentMode: "cash",
         }),
       });
@@ -203,7 +210,7 @@ function MobileAppPageContent() {
     } catch (err) {
       console.warn("[app] Failed to create live booking:", err);
     }
-  }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, session?.passengerName, session?.phone]);
+  }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, selectedTier, session, passengerNameInput]);
 
   // Memoized route handler to eliminate parent re-render loops
   const handleRouteSelected = useCallback((route: any) => {
@@ -547,7 +554,25 @@ function MobileAppPageContent() {
     if (role === "rider") {
       setPhase("otp_login");
     } else {
-      setPhase("passenger_home");
+      const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+      let hasPhone = false;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as MobileSession;
+          if (parsed.role === "passenger" && parsed.phone) {
+            setSession(parsed);
+            hasPhone = true;
+          }
+        } catch {}
+      }
+      if (hasPhone) {
+        setPhase("passenger_home");
+      } else {
+        setPhoneInput("");
+        setOtpInput("");
+        setOtpSent(false);
+        setPhase("otp_login");
+      }
     }
   };
 
@@ -632,16 +657,17 @@ function MobileAppPageContent() {
             toast.success("স্বাগতম চালক বন্ধু!");
           }
         } else {
-          // Passenger login
+          // Passenger login with WhatsApp number
+          const pName = passengerNameInput.trim() || json.customer?.name || "যাত্রী বন্ধু";
           const newSession: MobileSession = {
             phone: json.customer?.phone || phoneInput,
             role: "passenger",
-            passengerName: json.customer?.name || "সুন্দরবন যাত্রী",
+            passengerName: pName,
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
           setPhase("passenger_home");
-          toast.success("স্বাগতম যাত্রী বন্ধু!");
+          toast.success(`স্বাগতম ${pName}!`);
         }
       } else {
         toast.error(json.message || "ভুল OTP কোড");
@@ -744,7 +770,11 @@ function MobileAppPageContent() {
               if (parsed.role === "rider") {
                 setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
               } else {
-                setPhase("passenger_home");
+                if (parsed.phone) {
+                  setPhase("passenger_home");
+                } else {
+                  setPhase("select_role");
+                }
               }
               return;
             } catch {
@@ -778,11 +808,28 @@ function MobileAppPageContent() {
                   }
                 } catch {}
               }
+              setPhoneInput("");
+              setOtpInput("");
+              setOtpSent(false);
               setPhase("otp_login");
             } else {
               setRole("passenger");
-              // Directly launch customer cab booking flow seamlessly
-              setPhase("passenger_home");
+              const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+              if (saved) {
+                try {
+                  const parsed = JSON.parse(saved) as MobileSession;
+                  if (parsed.role === "passenger" && parsed.phone) {
+                    setSession(parsed);
+                    setPhase("passenger_home");
+                    return;
+                  }
+                } catch {}
+              }
+              // Passenger must login with WhatsApp number so rider can contact them
+              setPhoneInput("");
+              setOtpInput("");
+              setOtpSent(false);
+              setPhase("otp_login");
             }
           }}
           onOpenAdminLogin={() => {
@@ -894,19 +941,36 @@ function MobileAppPageContent() {
                     : "bg-sky-100 text-sky-800 border border-sky-200"
                 }`}
               >
-                {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন"}
+                {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন • টোটো বুকিং"}
               </span>
               <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-2">
-                WhatsApp OTP দিয়ে প্রবেশ
+                WhatsApp নম্বর দিয়ে প্রবেশ
               </h2>
-              <p className="text-slate-500 text-xs mt-1 font-medium">
-                আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।
+              <p className="text-slate-600 text-xs mt-1.5 font-medium leading-relaxed">
+                {role === "passenger"
+                  ? "🛺 টোটো বুক করার পর চালক দাদা যাতে সরাসরি আপনার সাথে ফোন অথবা হোয়াটসঅ্যাপে যোগাযোগ করে পিকআপ করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি দিন।"
+                  : "আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।"}
               </p>
             </div>
 
             <div className="space-y-4 pt-2">
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-700 font-semibold">হোয়াটসঅ্যাপ মোবাইল নম্বর</Label>
+              {role === "passenger" && !otpSent && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-700 font-semibold">আপনার নাম (ঐচ্ছিক)</Label>
+                  <Input
+                    type="text"
+                    placeholder="যেমন: সুপ্রিয় সেন"
+                    value={passengerNameInput}
+                    onChange={(e) => setPassengerNameInput(e.target.value)}
+                    className="h-12 bg-white border-slate-300 text-slate-900 rounded-2xl text-sm font-semibold shadow-2xs focus:border-emerald-500"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold">
+                  {role === "passenger" ? "আপনার হোয়াটসঅ্যাপ মোবাইল নম্বর" : "হোয়াটসঅ্যাপ মোবাইল নম্বর"}
+                </Label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
                     +91
@@ -1378,13 +1442,28 @@ function MobileAppPageContent() {
                     {activeRide.status === "heading_pickup" ? "যাত্রীর কাছে যাচ্ছেন" : "যাত্রা চলমান 🛺"}
                   </span>
                   <h4 className="font-bold text-lg text-slate-900 mt-0.5">{activeRide.passengerName}</h4>
+                  <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">
+                    📱 +91 {activeRide.passengerPhone?.replace(/\D/g, "").slice(-10)}
+                  </p>
                 </div>
-                <a
-                  href={`tel:${activeRide.passengerPhone}`}
-                  className="w-12 h-12 rounded-full bg-emerald-600 flex items-center justify-center text-white shadow-md active:scale-95"
-                >
-                  <Phone className="w-5 h-5 fill-white" />
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`tel:${activeRide.passengerPhone}`}
+                    className="w-11 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center text-white shadow-md active:scale-95 transition-all"
+                    title="যাত্রীকে ফোন করুন"
+                  >
+                    <Phone className="w-5 h-5 fill-white" />
+                  </a>
+                  <a
+                    href={`https://wa.me/91${activeRide.passengerPhone?.replace(/\D/g, "").slice(-10)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-11 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white shadow-md active:scale-95 transition-all"
+                    title="যাত্রীকে হোয়াটসঅ্যাপে মেসেজ করুন"
+                  >
+                    <MessageCircle className="w-5 h-5 fill-white" />
+                  </a>
+                </div>
               </div>
 
               {/* Destination Road Map with 2 Options: Inbuilt Map vs Google Map */}
@@ -2110,6 +2189,7 @@ function MobileAppPageContent() {
               initialPickup={pickupText}
               initialDrop={dropText}
               onRouteSelected={handleRouteSelected}
+              onConfirmBooking={handleConfirmBooking}
             />
 
             {/* Book Button - Sleek & Prominent */}
@@ -2122,42 +2202,7 @@ function MobileAppPageContent() {
                     ? "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
                     : "bg-slate-200 text-slate-500 border border-slate-300 shadow-none cursor-not-allowed"
                 }`}
-                onClick={async () => {
-                  if (!dropText || !dropText.trim()) {
-                    toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
-                    return;
-                  }
-                  setPhase("passenger_searching");
-                  setSearchStatus("searching");
-                  setSearchCountdown(300);
-                  playRideAlertSound();
-                  toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
-
-                  try {
-                    const res = await fetch("/api/bookings", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        customerName: session?.passengerName || "যাত্রী",
-                        customerPhone: session?.phone || "918348122122",
-                        pickupLocation: pickupText,
-                        dropLocation: dropText,
-                        pickupCoords,
-                        dropCoords,
-                        estimatedFare: tripFare,
-                        tripDistance,
-                        rideTier: selectedTier,
-                        paymentMode,
-                      }),
-                    });
-                    const data = await res.json();
-                    if (data.booking && data.booking.id) {
-                      setActiveBookingId(data.booking.id);
-                    }
-                  } catch (err) {
-                    console.warn("[app] Failed to create live booking:", err);
-                  }
-                }}
+                onClick={handleConfirmBooking}
               >
                 {dropText && dropText.trim() ? (
                   <span>🛺 টোটো রাইড কনফার্ম করুন (₹{tripFare}.০০)</span>

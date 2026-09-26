@@ -512,6 +512,23 @@ export function InteractiveBookingMap({
     }
   }, [fetchCurrentLocation]);
 
+  // Outside click detection to close suggestions dropdown
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent | TouchEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setActiveSearchField(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, []);
+
   // Live Real Place Search Query (Calling /api/geocode?q=...)
   const handleQueryPlaces = (query: string, field: "pickup" | "drop") => {
     if (field === "pickup") setPickupInputValue(query);
@@ -521,16 +538,11 @@ export function InteractiveBookingMap({
 
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
 
-    if (!query.trim() || query.trim().length < 2) {
-      setPlaceSuggestions([]);
-      setIsSearchingPlaces(false);
-      return;
-    }
-
     setIsSearchingPlaces(true);
     searchDebounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+        const clean = (query || "").trim();
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(clean)}`);
         const data = await res.json();
         if (data?.suggestions && Array.isArray(data.suggestions)) {
           setPlaceSuggestions(data.suggestions);
@@ -542,7 +554,7 @@ export function InteractiveBookingMap({
       } finally {
         setIsSearchingPlaces(false);
       }
-    }, 250);
+    }, 150);
   };
 
   // Select Place Suggestion
@@ -652,11 +664,12 @@ export function InteractiveBookingMap({
       {/* 2. PICKUP & DROP LOCATION SELECTION (ABOVE THE MAP)           */}
       {/* ------------------------------------------------------------- */}
       <div
-        className="p-3.5 rounded-3xl space-y-2 relative"
+        ref={searchContainerRef}
+        className="p-3.5 rounded-3xl space-y-2 relative z-40"
         style={{
-          background: "linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.92) 100%)",
-          boxShadow: "0 8px 30px -4px rgba(0,0,0,0.06), 0 1px 0 rgba(255,255,255,0.9) inset",
-          border: "1px solid rgba(226,232,240,0.85)",
+          background: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.95) 100%)",
+          boxShadow: "0 8px 30px -4px rgba(0,0,0,0.08), 0 1px 0 rgba(255,255,255,0.9) inset",
+          border: "1px solid rgba(226,232,240,0.9)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
         }}
@@ -672,9 +685,7 @@ export function InteractiveBookingMap({
               placeholder="পিকআপ অবস্থান লিখুন বা জিপিএস নিন..."
               value={pickupInputValue}
               onChange={(e) => handleQueryPlaces(e.target.value, "pickup")}
-              onFocus={() => {
-                if (pickupInputValue.length >= 2) handleQueryPlaces(pickupInputValue, "pickup");
-              }}
+              onFocus={() => handleQueryPlaces(pickupInputValue, "pickup")}
               className="h-11 pl-9 pr-20 bg-slate-50/80 border-slate-200 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -716,9 +727,7 @@ export function InteractiveBookingMap({
               placeholder="কোথায় যাবেন? গন্তব্য লিখুন (যেমন: লট ৮, নামখানা...)"
               value={dropInputValue}
               onChange={(e) => handleQueryPlaces(e.target.value, "drop")}
-              onFocus={() => {
-                if (dropInputValue.length >= 2) handleQueryPlaces(dropInputValue, "drop");
-              }}
+              onFocus={() => handleQueryPlaces(dropInputValue, "drop")}
               className="h-11 pl-9 pr-14 bg-slate-50/80 border-slate-200 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400"
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -750,27 +759,40 @@ export function InteractiveBookingMap({
         {/* Real Live Place Suggestions Dropdown */}
         {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
           <div
-            className="absolute left-3 right-3 top-full mt-1.5 z-50 rounded-2xl p-2 bg-white/95 border border-slate-200 shadow-xl backdrop-blur-xl max-h-56 overflow-y-auto space-y-1"
+            className="absolute left-2 right-2 top-full mt-2 z-50 rounded-2xl p-2 bg-white/98 border border-slate-200 shadow-2xl backdrop-blur-2xl max-h-64 overflow-y-auto space-y-1 divide-y divide-slate-100"
+            style={{ filter: "drop-shadow(0 20px 25px rgba(0, 0, 0, 0.15))" }}
           >
-            {isSearchingPlaces && (
-              <div className="p-3 text-center text-xs font-semibold text-slate-500 flex items-center justify-center gap-2">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                <span>ম্যাপে সঠিক স্থান খোঁজা হচ্ছে...</span>
-              </div>
-            )}
+            <div className="px-2 py-1.5 flex items-center justify-between text-[11px] font-bold text-slate-600">
+              <span className="flex items-center gap-1.5 text-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                {activeSearchField === "drop" ? "গন্তব্যের পরামর্শ (Google Maps / লাইভ অবস্থান)" : "পিকআপ পয়েন্টের পরামর্শ"}
+              </span>
+              {isSearchingPlaces && (
+                <span className="flex items-center gap-1 text-[10px] text-emerald-600">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>খোঁজা হচ্ছে...</span>
+                </span>
+              )}
+            </div>
+
             {placeSuggestions.map((place, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => handleSelectSuggestion(place)}
-                className="w-full p-2.5 rounded-xl hover:bg-emerald-50/80 text-left transition-colors flex items-center gap-2.5 cursor-pointer"
+                className="w-full p-2.5 pt-2 rounded-xl hover:bg-emerald-50/90 text-left transition-all flex items-center gap-3 cursor-pointer group active:scale-[0.99]"
               >
-                <div className="w-7 h-7 rounded-lg bg-emerald-100/70 text-emerald-700 flex items-center justify-center shrink-0">
-                  <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                <div className="w-8 h-8 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                  <MapPin className="w-4 h-4" />
                 </div>
-                <div className="overflow-hidden">
-                  <div className="text-xs font-bold text-slate-900 truncate">{place.name}</div>
-                  <div className="text-[10px] text-slate-500 truncate">{place.full_address}</div>
+                <div className="overflow-hidden flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs font-black text-slate-900 truncate">{place.name}</span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                      Google Maps
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 truncate mt-0.5">{place.full_address}</div>
                 </div>
               </button>
             ))}
@@ -781,7 +803,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 3. HERO INTERACTIVE MAP                                        */}
       {/* ------------------------------------------------------------- */}
-      <div className="relative w-full h-80 sm:h-96 rounded-3xl overflow-hidden border border-slate-200/90 shadow-md">
+      <div className="relative z-10 w-full h-80 sm:h-96 rounded-3xl overflow-hidden border border-slate-200/90 shadow-md">
         <div ref={mapContainerRef} className="w-full h-full" />
 
         {/* Floating Quick Action Overlay on Map: Real Drivers Count + GPS Button */}

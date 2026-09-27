@@ -1,5 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { saveFeedbackRecord } from "./feedback-store";
+import {
+  calculateTotoFare,
+  loadActivePricingConfig,
+  DEFAULT_TOTO_PRICING,
+} from "@/lib/pricing/fare-calculator";
 
 // Helper to get Supabase Admin client
 function getSupabaseAdmin() {
@@ -707,12 +712,21 @@ export async function processTotoMessage(
     const eLng = meta.end_coords?.[1] || (sLng + 0.02);
 
     const distKm = Math.max(0.5, Math.round(calculateDistanceKm(sLat, sLng, eLat, eLng) * 1.25 * 10) / 10);
-    const finalFare = Math.max(20, Math.ceil((20 + (Math.max(1, distKm) - 1) * 10) / 5) * 5);
+    
+    // Accurately calculate final fare matching app's pricing configuration
+    const pricingConfig = await loadActivePricingConfig(supabase);
+    const passengerCount = meta.passenger_count || 3;
+    const rideStartTime = meta.trip_start_time
+      ? new Date(meta.trip_start_time)
+      : (booking?.created_at ? new Date(booking.created_at) : new Date());
+    const fareResult = calculateTotoFare(distKm, passengerCount, pricingConfig, rideStartTime);
+    const finalFare = Number(booking?.final_fare) || Number(booking?.estimated_fare) || fareResult.totalFare;
 
     const updatedMeta = JSON.stringify({
       ...meta,
       actual_distance_km: distKm,
       calculated_fare: finalFare,
+      fare_breakdown: fareResult,
       trip_end_time: new Date().toISOString(),
     });
 
@@ -1271,16 +1285,6 @@ export async function processTotoMessage(
 
       const bookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      const { data: newBooking } = await supabase.from("bookings").insert({
-        booking_number: bookingNumber,
-        customer_phone: cleanPhone,
-        customer_name: ctx.senderName || "গ্রাহক",
-        pickup_location: pickupLocation,
-        drop_location: dropLocation,
-        estimated_fare: 50,
-        status: "pending",
-      }).select().maybeSingle();
-
       // Geocode pickup if coordinates were not provided by GPS
       let pLat = bookingState.pickupLat;
       let pLng = bookingState.pickupLng;
@@ -1289,6 +1293,44 @@ export async function processTotoMessage(
         pLat = pGeo.lat;
         pLng = pGeo.lng;
       }
+
+      // Geocode drop location
+      let dLatDrop = 0;
+      let dLngDrop = 0;
+      const dropGeo = await geocodeLocation(dropLocation);
+      dLatDrop = dropGeo.lat;
+      dLngDrop = dropGeo.lng;
+
+      // Calculate estimated road distance (Haversine * 1.25 road factor)
+      let estDistanceKm = 2.0;
+      if (pLat && pLng && dLatDrop && dLngDrop) {
+        const directKm = calculateDistanceKm(pLat, pLng, dLatDrop, dLngDrop);
+        estDistanceKm = Math.max(0.5, Math.round(directKm * 1.25 * 10) / 10);
+      }
+
+      // Calculate estimated fare using official Sundarban Riders Toto Fare Calculator
+      const pricingConfig = await loadActivePricingConfig(supabase);
+      const passengerCount = 3;
+      const fareResult = calculateTotoFare(estDistanceKm, passengerCount, pricingConfig, new Date());
+      const estimatedFare = fareResult.totalFare;
+
+      const { data: newBooking } = await supabase.from("bookings").insert({
+        booking_number: bookingNumber,
+        customer_phone: cleanPhone,
+        customer_name: ctx.senderName || "গ্রাহক",
+        pickup_location: pickupLocation,
+        drop_location: dropLocation,
+        estimated_fare: estimatedFare,
+        feedback: JSON.stringify({
+          start_coords: pLat && pLng ? [pLat, pLng] : undefined,
+          end_coords: dLatDrop && dLngDrop ? [dLatDrop, dLngDrop] : undefined,
+          passenger_count: passengerCount,
+          estimated_distance_km: estDistanceKm,
+          estimated_fare: estimatedFare,
+          fare_breakdown: fareResult,
+        }),
+        status: "pending",
+      }).select().maybeSingle();
 
       // Query online drivers and filter nearby within 5 km radar
       const { data: onlineDrivers } = await supabase
@@ -1344,7 +1386,7 @@ export async function processTotoMessage(
         return {
           toPhone: recipientPhone,
           type: "interactive_buttons" as const,
-          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [
             { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
             { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ প্রত্যাখ্যান" },
@@ -1355,7 +1397,7 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\n🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
+        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\n🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],

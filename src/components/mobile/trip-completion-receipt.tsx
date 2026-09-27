@@ -94,8 +94,8 @@ export function TripCompletionReceipt({
 ⏱️ *ট্রিপ স্থায়িত্ব:* ~১২ মিনিট
 
 💵 *ভাড়ার বিবরণ:*
-- বেস ফেয়ার: ₹২০.০০
-- দূরত্ব চার্জ: ₹${Math.max(0, fare - 20)}.00
+- বেস ফেয়ার: ₹৩০.০০
+- দূরত্ব চার্জ: ₹${Math.max(0, fare - 30)}.00
 ------------------------------
 💰 *মোট নগদ ভাড়া:* ₹${fare}.০০ (সংগৃহীত)
 ==============================
@@ -269,11 +269,11 @@ export function TripCompletionReceipt({
               <div className="space-y-1.5 pt-1 text-xs">
                 <div className="flex justify-between text-slate-500 font-medium">
                   <span>বেস ফেয়ার (Base Fare):</span>
-                  <span>₹২০.০০</span>
+                  <span>₹৩০.০০</span>
                 </div>
                 <div className="flex justify-between text-slate-500 font-medium">
                   <span>দূরত্ব চার্জ ({distanceKm} কিমি):</span>
-                  <span>₹{Math.max(0, fare - 20)}.০০</span>
+                  <span>₹{Math.max(0, fare - 30)}.০০</span>
                 </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
                   <span>মোট নগদ ভাড়া (Cash Paid):</span>

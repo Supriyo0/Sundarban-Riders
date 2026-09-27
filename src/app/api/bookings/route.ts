@@ -103,6 +103,7 @@ async function notifyOnlineDriversViaWhatsApp(
         pickup_location: booking.pickup_location,
         drop_location: booking.drop_location,
         distance_text: distText,
+        estimated_fare: booking.estimated_fare || 35,
       });
 
       await sendInteractiveButtons({

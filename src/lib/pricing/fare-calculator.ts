@@ -172,3 +172,28 @@ export function calculateTotoFare(
     breakdownBengali: parts.join(" + ") + ` = ₹${totalFare}`,
   };
 }
+
+/**
+ * Loads dynamic pricing configuration from Supabase system_settings with fallback to DEFAULT_TOTO_PRICING
+ */
+export async function loadActivePricingConfig(
+  supabaseClient?: any
+): Promise<TotoPricingConfig> {
+  try {
+    if (!supabaseClient) return DEFAULT_TOTO_PRICING;
+    const { data } = await supabaseClient
+      .from("system_settings")
+      .select("key, value")
+      .eq("key", "toto_pricing_config")
+      .maybeSingle();
+
+    if (data?.value) {
+      const parsed = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+      return { ...DEFAULT_TOTO_PRICING, ...parsed };
+    }
+  } catch (err) {
+    console.warn("[pricing] Failed to load config from system_settings:", err);
+  }
+  return DEFAULT_TOTO_PRICING;
+}
+

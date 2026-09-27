@@ -1122,11 +1122,11 @@ export function DriverRadarPanel({
             <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>বেস ফেয়ার (নিয়মিত):</span>
-                <span>₹২০.০০</span>
+                <span>₹৩০.০০</span>
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>দূরত্ব ভিত্তিক ভাড়া:</span>
-                <span>₹{(selectedTripDetail.final_fare || selectedTripDetail.estimated_fare || 50) - 20}.০০</span>
+                <span>₹{Math.max(0, (selectedTripDetail.final_fare || selectedTripDetail.estimated_fare || 50) - 30)}.০০</span>
               </div>
               <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
                 <span>মোট সংগৃহীত নগদ:</span>

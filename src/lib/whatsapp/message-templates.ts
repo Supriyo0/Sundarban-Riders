@@ -83,6 +83,7 @@ Help No :- {{helpline}} (WhatsApp)`,
       "{{pickup_location}}",
       "{{drop_location}}",
       "{{distance_text}}",
+      "{{estimated_fare}}",
     ],
     defaultText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺
 =======================
@@ -92,6 +93,7 @@ Help No :- {{helpline}} (WhatsApp)`,
 📞 ফোন: {{customer_phone}}
 📍 পিকআপ: {{pickup_location}}{{distance_text}}
 🏁 গন্তব্য: {{drop_location}}
+💵 আনুমানিক ভাড়া: ₹{{estimated_fare}}.০০
 =======================
 আপনি কি এই রাইডটি গ্রহণ করতে চান?`,
   },
@@ -112,12 +114,18 @@ Help No :- {{helpline}} (WhatsApp)`,
     nameBengali: "যাত্রী বুকিং তৈরি নিশ্চিতকরণ",
     category: "customer_ride",
     description: "যাত্রী রাইড রিকোয়েস্ট পাঠালে সাথে সাথে এই প্রতিক্রিয়াটি পায়।",
-    variables: ["{{booking_number}}", "{{pickup_location}}", "{{drop_location}}"],
+    variables: [
+      "{{booking_number}}",
+      "{{pickup_location}}",
+      "{{drop_location}}",
+      "{{estimated_fare}}",
+    ],
     defaultText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨
 =======================
 🆔 বুকিং নং: *#{{booking_number}}*
 📍 পিকআপ: {{pickup_location}}
 🏁 গন্তব্য: {{drop_location}}
+💵 আনুমানিক ভাড়া: ₹{{estimated_fare}}.০০
 =======================
 🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
   },

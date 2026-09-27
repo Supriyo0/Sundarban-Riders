@@ -471,10 +471,10 @@ function MobileAppPageContent() {
   };
 
   useEffect(() => {
-    if (bottomNavTab === "trips" && phase === "passenger_home") {
+    if (bottomNavTab === "trips" || (role === "passenger" && session?.phone)) {
       fetchCustomerHistory();
     }
-  }, [bottomNavTab, phase, fetchCustomerHistory]);
+  }, [bottomNavTab, role, session?.phone, fetchCustomerHistory]);
 
   const handleConfirmBooking = useCallback(async () => {
     if (isCustomerBlocked || customerStrikes >= 3) {
@@ -2460,21 +2460,6 @@ function MobileAppPageContent() {
                 }
               }}
             />
-
-            {/* Quick Metrics — from real driver trip history */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">আজকের ট্রিপ</span>
-                <div className="text-2xl font-black text-slate-900 mt-0.5">—</div>
-                <span className="text-[10px] text-slate-400 font-medium">হিস্ট্রি ট্যাবে দেখুন</span>
-              </div>
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm">
-                <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">রাইড স্ট্যাটাস</span>
-                <div className={`text-base font-black mt-0.5 ${isOnline ? "text-emerald-600" : "text-slate-400"}`}>
-                  {isOnline ? "🟢 অনলাইন" : "🔴 অফলাইন"}
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -3309,16 +3294,30 @@ function MobileAppPageContent() {
 
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-extrabold text-lg text-slate-900">আমার রাইড হিস্ট্রি</h3>
+                <h3 className="font-extrabold text-lg text-slate-900">
+                  আমার রাইড হিস্ট্রি {customerHistory.length > 0 && `(${customerHistory.length})`}
+                </h3>
                 <p className="text-xs text-slate-500">পূর্ববর্তী সম্পূর্ণ ট্রিপ ও ডিজিটাল রসিদ</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setBottomNavTab("home")}
-                className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs cursor-pointer"
-              >
-                ← {passengerBooking ? "চলমান ট্র্যাকিং" : "নতুন রাইড"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchCustomerHistory}
+                  disabled={isLoadingHistory}
+                  className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-white px-2.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                  title="হিস্ট্রি রিফ্রেশ করুন"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingHistory ? "animate-spin" : ""}`} />
+                  <span>রিফ্রেশ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBottomNavTab("home")}
+                  className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 shadow-xs cursor-pointer"
+                >
+                  ← {passengerBooking ? "চলমান ট্র্যাকিং" : "নতুন রাইড"}
+                </button>
+              </div>
             </div>
 
             {isLoadingHistory ? (
@@ -3393,13 +3392,13 @@ function MobileAppPageContent() {
                         <div className="flex items-start gap-2">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1 shrink-0" />
                           <p className="line-clamp-1">
-                            পিকআপ: <strong className="text-slate-800">{trip.pickup_location}</strong>
+                            পিকআপ: <strong className="text-slate-800">{trip.pickup_location || trip.pickup_name || "পিকআপ পয়েন্ট"}</strong>
                           </p>
                         </div>
                         <div className="flex items-start gap-2">
                           <span className="w-2 h-2 rounded-full bg-red-500 mt-1 shrink-0" />
                           <p className="line-clamp-1">
-                            গন্তব্য: <strong className="text-slate-800">{trip.drop_location}</strong>
+                            গন্তব্য: <strong className="text-slate-800">{trip.drop_location || trip.drop_name || "গন্তব্য পয়েন্ট"}</strong>
                           </p>
                         </div>
                       </div>

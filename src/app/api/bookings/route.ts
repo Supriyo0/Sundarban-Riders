@@ -612,8 +612,14 @@ export async function GET(request: Request) {
     }
 
     const driverPhone = searchParams.get("driver_phone") || searchParams.get("driverPhone");
+    const driverUniqueId = searchParams.get("unique_id") || searchParams.get("driver_unique_id");
 
-    if (driverId || driverPhone) {
+    const cleanDriverPhone = (driverPhone || "").replace(/\D/g, "");
+    const last10Driver = cleanDriverPhone.slice(-10);
+    const validDriverId = driverId && driverId.trim() !== "" && driverId !== "undefined" && driverId !== "null" ? driverId.trim() : null;
+    const validDriverUniqueId = driverUniqueId && driverUniqueId.trim() !== "" && driverUniqueId !== "undefined" ? driverUniqueId.trim() : null;
+
+    if (validDriverId || last10Driver.length >= 10 || validDriverUniqueId) {
       const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
       if (isHistory) {
         let query = admin
@@ -622,21 +628,32 @@ export async function GET(request: Request) {
           .order("created_at", { ascending: false })
           .limit(50);
 
-        if (driverId && driverPhone) {
-          const clean = driverPhone.replace(/[^0-9]/g, "");
-          query = query.or(`driver_id.eq.${driverId},driver_phone.eq.${driverPhone},driver_phone.eq.${clean}`);
-        } else if (driverId) {
-          query = query.eq("driver_id", driverId);
-        } else if (driverPhone) {
-          const clean = driverPhone.replace(/[^0-9]/g, "");
-          query = query.or(`driver_phone.eq.${driverPhone},driver_phone.eq.${clean}`);
+        const conditions: string[] = [];
+        if (validDriverId) {
+          conditions.push(`driver_id.eq.${validDriverId}`);
+        }
+        if (last10Driver.length >= 10) {
+          conditions.push(`driver_phone.eq.${last10Driver}`);
+          conditions.push(`driver_phone.eq.91${last10Driver}`);
+          conditions.push(`driver_phone.eq.+91${last10Driver}`);
+          conditions.push(`driver_phone.ilike.%${last10Driver}%`);
+        }
+        if (validDriverUniqueId) {
+          conditions.push(`toto_number.eq.${validDriverUniqueId}`);
+          conditions.push(`driver_unique_id.eq.${validDriverUniqueId}`);
+        }
+
+        if (conditions.length > 0) {
+          query = query.or(conditions.join(","));
         }
 
         const { data, error } = await query;
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) {
+          console.error("[api/bookings] driver history query error:", error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
 
-        const trips = data || [];
-
+        const trips = (data || []).map(enrichBookingCoords);
 
         const completedTrips = trips.filter((t) => t.status === "completed");
         const totalEarnings = completedTrips.reduce(
@@ -671,11 +688,23 @@ export async function GET(request: Request) {
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (driverId) {
-        activeQuery = activeQuery.eq("driver_id", driverId);
-      } else if (driverPhone) {
-        const clean = driverPhone.replace(/[^0-9]/g, "");
-        activeQuery = activeQuery.or(`driver_phone.eq.${driverPhone},driver_phone.eq.${clean}`);
+      const activeConditions: string[] = [];
+      if (validDriverId) {
+        activeConditions.push(`driver_id.eq.${validDriverId}`);
+      }
+      if (last10Driver.length >= 10) {
+        activeConditions.push(`driver_phone.eq.${last10Driver}`);
+        activeConditions.push(`driver_phone.eq.91${last10Driver}`);
+        activeConditions.push(`driver_phone.eq.+91${last10Driver}`);
+        activeConditions.push(`driver_phone.ilike.%${last10Driver}%`);
+      }
+      if (validDriverUniqueId) {
+        activeConditions.push(`toto_number.eq.${validDriverUniqueId}`);
+        activeConditions.push(`driver_unique_id.eq.${validDriverUniqueId}`);
+      }
+
+      if (activeConditions.length > 0) {
+        activeQuery = activeQuery.or(activeConditions.join(","));
       }
 
       const { data, error } = await activeQuery.maybeSingle();
@@ -686,27 +715,43 @@ export async function GET(request: Request) {
 
     if (customerPhone) {
       const cleanPhone = customerPhone.replace(/[^0-9]/g, "");
+      const last10Customer = cleanPhone.slice(-10);
       const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
       const isActiveOnly = searchParams.get("active") === "true";
+
+      const custConditions: string[] = [];
+      if (customerPhone.trim()) custConditions.push(`customer_phone.eq.${customerPhone.trim()}`);
+      if (cleanPhone && cleanPhone !== customerPhone.trim()) custConditions.push(`customer_phone.eq.${cleanPhone}`);
+      if (last10Customer.length >= 10) {
+        custConditions.push(`customer_phone.eq.${last10Customer}`);
+        custConditions.push(`customer_phone.eq.91${last10Customer}`);
+        custConditions.push(`customer_phone.eq.+91${last10Customer}`);
+        custConditions.push(`customer_phone.ilike.%${last10Customer}%`);
+      }
+      const custOrClause = Array.from(new Set(custConditions)).join(",");
 
       // Also retrieve customer cancellation strikes & blocked status
       const { data: customerRecord } = await admin
         .from("customers")
         .select("id, name, phone, cancellation_count, is_blocked")
-        .or(`phone.eq.${customerPhone},phone.eq.${cleanPhone}`)
+        .or(`phone.eq.${customerPhone},phone.eq.${cleanPhone}${last10Customer.length >= 10 ? `,phone.ilike.%${last10Customer}%` : ""}`)
         .maybeSingle();
 
       if (isHistory) {
         const { data, error } = await admin
           .from("bookings")
           .select("*, drivers(*)")
-          .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${cleanPhone}`)
+          .or(custOrClause)
           .order("created_at", { ascending: false })
-          .limit(30);
+          .limit(50);
 
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) {
+          console.error("[api/bookings] customer history query error:", error);
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        const enriched = (data || []).map(enrichBookingCoords);
         return NextResponse.json({
-          bookings: data || [],
+          bookings: enriched,
           customer: customerRecord || { cancellation_count: 0, is_blocked: false }
         });
       }
@@ -714,7 +759,7 @@ export async function GET(request: Request) {
       let activeQuery = admin
         .from("bookings")
         .select("*, drivers(*)")
-        .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${cleanPhone}`)
+        .or(custOrClause)
         .order("created_at", { ascending: false });
 
       if (isActiveOnly) {

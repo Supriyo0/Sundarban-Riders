@@ -58,6 +58,7 @@ interface DriverRadarPanelProps {
     driverName?: string;
     driverPhone?: string;
     totoNumber?: string;
+    uniqueId?: string;
   } | null;
   isOnline: boolean;
   onAcceptRide: (booking: any) => void;
@@ -243,7 +244,10 @@ export function DriverRadarPanel({
       setLoadingTrips(true);
       const dId = driverSession?.driverId || "";
       const dPhone = driverSession?.driverPhone || driverSession?.phone || "";
-      const res = await fetch(`/api/bookings?driver_id=${encodeURIComponent(dId)}&driver_phone=${encodeURIComponent(dPhone)}&history=true`);
+      const dUniqueId = driverSession?.uniqueId || driverSession?.totoNumber || "";
+      const res = await fetch(
+        `/api/bookings?driver_id=${encodeURIComponent(dId)}&driver_phone=${encodeURIComponent(dPhone)}&unique_id=${encodeURIComponent(dUniqueId)}&history=true`
+      );
       const data = await res.json();
       if (data.trips && Array.isArray(data.trips)) {
         setDriverTrips(data.trips);
@@ -256,7 +260,11 @@ export function DriverRadarPanel({
     } finally {
       setLoadingTrips(false);
     }
-  }, [driverSession?.driverId, driverSession?.driverPhone, driverSession?.phone]);
+  }, [driverSession?.driverId, driverSession?.driverPhone, driverSession?.phone, driverSession?.uniqueId, driverSession?.totoNumber]);
+
+  useEffect(() => {
+    fetchDriverTrips();
+  }, [fetchDriverTrips]);
 
   useEffect(() => {
     if (activeTab === "trips") {
@@ -457,7 +465,7 @@ export function DriverRadarPanel({
   });
 
   return (
-    <div className="space-y-4 pb-36">
+    <div className="space-y-4 pb-4">
       {/* ------------------------------------------------------------- */}
       {/* 0. DRIVER PANEL TOP TAB SWITCHER                              */}
       {/* ------------------------------------------------------------- */}
@@ -1151,8 +1159,6 @@ export function DriverRadarPanel({
         </div>
       )}
 
-      {/* Safe Area Clearance so cards are never obscured by bottom navbar */}
-      <div className="h-32 w-full shrink-0" aria-hidden="true" />
     </div>
   );
 }

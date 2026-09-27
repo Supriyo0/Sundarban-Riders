@@ -579,6 +579,11 @@ function MobileAppPageContent() {
           const data = await res.json();
           if (data.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress")) {
             const b = data.booking;
+            if (b.pickup_location) setPickupText(b.pickup_location);
+            if (b.drop_location) setDropText(b.drop_location);
+            if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
+            if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+            if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
             setPassengerBooking({
               id: b.booking_number || b.id.slice(0, 8),
               bookingNumber: b.booking_number,
@@ -615,6 +620,12 @@ function MobileAppPageContent() {
         const data = await res.json();
         const b = data.booking;
         if (!b || !isMounted) return;
+
+        // Keep locations and coordinates synchronized
+        if (b.pickup_location) setPickupText(b.pickup_location);
+        if (b.drop_location) setDropText(b.drop_location);
+        if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
+        if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
 
         // Keep startOtp up to date if returned
         if (b.start_otp) {
@@ -1049,8 +1060,8 @@ function MobileAppPageContent() {
                 pickupDistance: "",
                 drop: b.drop_location || "গন্তব্য",
                 tripDistance: b.trip_distance_km ? `${b.trip_distance_km} কিমি ট্রিপ` : "",
-                pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : [21.8760, 88.1920],
-                dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : [21.8680, 88.1630],
+                pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.start_coords || [21.8760, 88.1920]),
+                dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.end_coords || [21.8680, 88.1630]),
               });
             }
           }
@@ -2715,8 +2726,17 @@ function MobileAppPageContent() {
                         return;
                       }
 
+                      const currentBooking = data?.booking || incomingRide;
                       setActiveRide({
                         ...incomingRide,
+                        pickup: currentBooking.pickup_location || incomingRide.pickup,
+                        drop: currentBooking.drop_location || incomingRide.drop,
+                        pickupCoords: currentBooking.pickup_lat && currentBooking.pickup_lng
+                          ? [Number(currentBooking.pickup_lat), Number(currentBooking.pickup_lng)]
+                          : incomingRide.pickupCoords,
+                        dropCoords: currentBooking.drop_lat && currentBooking.drop_lng
+                          ? [Number(currentBooking.drop_lat), Number(currentBooking.drop_lng)]
+                          : incomingRide.dropCoords,
                         status: "heading_pickup",
                       });
                       setIncomingRide(null);

@@ -430,18 +430,41 @@ function calculateAccurateFare(distanceKm: number, passengerCount: number = 3, c
   return calculateTotoFare(distanceKm, passengerCount, config).totalFare;
 }
 
+function cleanLocationName(loc: string | null | undefined): string {
+  if (!loc) return "";
+  return loc.replace(/\s*\(GPS:[^)]*\)/i, "").trim();
+}
+
 function enrichBookingCoords(booking: any) {
   if (!booking) return booking;
+  const meta = getBookingMeta(booking);
+
   let lat: number | null = null;
   let lng: number | null = null;
 
-  const loc = booking.pickup_location || "";
-  const gpsMatch = loc.match(/(?:GPS:\s*)?([0-9]{2}\.[0-9]+)\s*,\s*([0-9]{2}\.[0-9]+)/i);
-  if (gpsMatch) {
-    lat = parseFloat(gpsMatch[1]);
-    lng = parseFloat(gpsMatch[2]);
-  } else {
-    const lower = loc.toLowerCase();
+  // 1. Highest accuracy: meta.start_coords from map pin
+  if (meta.start_coords && Array.isArray(meta.start_coords) && meta.start_coords.length === 2) {
+    const p0 = Number(meta.start_coords[0]);
+    const p1 = Number(meta.start_coords[1]);
+    if (!isNaN(p0) && !isNaN(p1) && p0 !== 0 && p1 !== 0) {
+      lat = p0;
+      lng = p1;
+    }
+  }
+
+  // 2. Parse GPS from pickup_location
+  if (!lat || !lng) {
+    const loc = booking.pickup_location || "";
+    const gpsMatch = loc.match(/(?:GPS:\s*)?([0-9]{2}\.[0-9]+)\s*,\s*([0-9]{2}\.[0-9]+)/i);
+    if (gpsMatch) {
+      lat = parseFloat(gpsMatch[1]);
+      lng = parseFloat(gpsMatch[2]);
+    }
+  }
+
+  // 3. Regional landmarks
+  if (!lat || !lng) {
+    const lower = (booking.pickup_location || "").toLowerCase();
     for (const [key, coords] of Object.entries(REGIONAL_COORDS)) {
       if (lower.includes(key)) {
         lat = coords[0];
@@ -451,23 +474,38 @@ function enrichBookingCoords(booking: any) {
     }
   }
 
+  // 4. Default fallback
   if (!lat || !lng) {
-    const seed = booking.booking_number || booking.id || "SR-5555";
-    const offsetLat = ((seed.charCodeAt(seed.length - 2) || 5) % 10 - 5) * 0.002;
-    const offsetLng = ((seed.charCodeAt(seed.length - 1) || 7) % 10 - 5) * 0.002;
-    lat = 21.8760 + offsetLat;
-    lng = 88.1920 + offsetLng;
+    lat = 21.8760;
+    lng = 88.1920;
   }
 
   let dropLat: number | null = null;
   let dropLng: number | null = null;
-  const dropLoc = booking.drop_location || "";
-  const dropGpsMatch = dropLoc.match(/(?:GPS:\s*)?([0-9]{2}\.[0-9]+)\s*,\s*([0-9]{2}\.[0-9]+)/i);
-  if (dropGpsMatch) {
-    dropLat = parseFloat(dropGpsMatch[1]);
-    dropLng = parseFloat(dropGpsMatch[2]);
-  } else {
-    const lower = dropLoc.toLowerCase();
+
+  // 1. Highest accuracy: meta.end_coords from map pin
+  if (meta.end_coords && Array.isArray(meta.end_coords) && meta.end_coords.length === 2) {
+    const d0 = Number(meta.end_coords[0]);
+    const d1 = Number(meta.end_coords[1]);
+    if (!isNaN(d0) && !isNaN(d1) && d0 !== 0 && d1 !== 0) {
+      dropLat = d0;
+      dropLng = d1;
+    }
+  }
+
+  // 2. Parse GPS from drop_location
+  if (!dropLat || !dropLng) {
+    const dropLoc = booking.drop_location || "";
+    const dropGpsMatch = dropLoc.match(/(?:GPS:\s*)?([0-9]{2}\.[0-9]+)\s*,\s*([0-9]{2}\.[0-9]+)/i);
+    if (dropGpsMatch) {
+      dropLat = parseFloat(dropGpsMatch[1]);
+      dropLng = parseFloat(dropGpsMatch[2]);
+    }
+  }
+
+  // 3. Regional landmarks
+  if (!dropLat || !dropLng) {
+    const lower = (booking.drop_location || "").toLowerCase();
     for (const [key, coords] of Object.entries(REGIONAL_COORDS)) {
       if (lower.includes(key)) {
         dropLat = coords[0];
@@ -477,22 +515,33 @@ function enrichBookingCoords(booking: any) {
     }
   }
 
-  const meta = getBookingMeta(booking);
+  // 4. Default fallback relative to pickup
+  if (!dropLat || !dropLng) {
+    dropLat = lat + 0.015;
+    dropLng = lng + 0.015;
+  }
+
+  const cleanPickup = meta.pickup_name || cleanLocationName(booking.pickup_location) || "পিকআপ লোকেশন";
+  const cleanDrop = meta.drop_name || cleanLocationName(booking.drop_location) || "গন্তব্য";
+
   const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
   const fallbackOtp = seedNum.length >= 4 ? seedNum.slice(-4) : "5821";
   const startOtp = meta.start_otp || fallbackOtp;
 
   return {
     ...booking,
+    pickup_location: cleanPickup,
+    drop_location: cleanDrop,
     pickup_lat: lat,
     pickup_lng: lng,
     drop_lat: dropLat,
     drop_lng: dropLng,
+    start_coords: [lat, lng],
+    end_coords: [dropLat, dropLng],
     start_otp: startOtp,
     passenger_count: meta.passenger_count || 3,
     actual_distance_km: meta.actual_distance_km || booking.actual_distance_km || null,
     trip_start_time: meta.trip_start_time || null,
-    start_coords: meta.start_coords || (lat && lng ? [lat, lng] : null),
   };
 }
 
@@ -805,6 +854,10 @@ export async function POST(request: Request) {
 
     const initialMeta = JSON.stringify({
       start_otp: startOtp,
+      start_coords: pickupCoords && Array.isArray(pickupCoords) && pickupCoords.length === 2 ? pickupCoords : undefined,
+      end_coords: dropCoords && Array.isArray(dropCoords) && dropCoords.length === 2 ? dropCoords : undefined,
+      pickup_name: pickupLocation || null,
+      drop_name: dropLocation || null,
       passenger_count: validPassengerCount,
       estimated_distance_km: tripDistance || null,
       pricing_snapshot: {
@@ -819,6 +872,10 @@ export async function POST(request: Request) {
       ? `${pickupLocation} (GPS: ${pickupCoords[0].toFixed(5)},${pickupCoords[1].toFixed(5)})`
       : pickupLocation;
 
+    const dropLocString = dropCoords && Array.isArray(dropCoords) && dropCoords.length === 2
+      ? `${dropLocation} (GPS: ${dropCoords[0].toFixed(5)},${dropCoords[1].toFixed(5)})`
+      : dropLocation;
+
     const { data: booking, error: insertErr } = await admin
       .from("bookings")
       .insert({
@@ -826,7 +883,7 @@ export async function POST(request: Request) {
         customer_name: customerName || "যাত্রী",
         customer_phone: cleanPhone,
         pickup_location: pickupLocString,
-        drop_location: dropLocation,
+        drop_location: dropLocString,
         estimated_fare: finalEstimatedFare,
         feedback: initialMeta,
         status: "pending",
@@ -841,11 +898,12 @@ export async function POST(request: Request) {
     }
 
     // Proactively dispatch WhatsApp interactive alerts to all nearby online drivers
-    void notifyOnlineDriversViaWhatsApp(admin, booking, pickupCoords);
+    const enrichedBooking = enrichBookingCoords(booking);
+    void notifyOnlineDriversViaWhatsApp(admin, enrichedBooking, pickupCoords);
 
     return NextResponse.json({
       success: true,
-      booking: enrichBookingCoords(booking),
+      booking: enrichedBooking,
       message: "বুকিং সফলভাবে তৈরি হয়েছে এবং চালকদের নোটিফিকেশন পাঠানো হয়েছে",
     });
   } catch (err: unknown) {

@@ -28,6 +28,11 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+function cleanLocation(text?: string | null): string {
+  if (!text) return "নির্দিষ্ট করা হয়নি";
+  return text.replace(/\s*\(GPS:[^)]*\)/i, "").trim();
+}
 import { toast } from "sonner";
 import "leaflet/dist/leaflet.css";
 
@@ -654,8 +659,8 @@ export function DriverRadarPanel({
                         </span>
                       </div>
                       <div className="text-xs text-slate-600">
-                        <p>📍 পিকআপ: <span className="font-bold text-slate-800">{selectedEntity.data.pickup_location}</span></p>
-                        <p>🏁 গন্তব্য: <span className="font-bold text-slate-800">{selectedEntity.data.drop_location}</span></p>
+                        <p>📍 পিকআপ: <span className="font-bold text-slate-800">{cleanLocation(selectedEntity.data.pickup_location)}</span></p>
+                        <p>🏁 গন্তব্য: <span className="font-bold text-slate-800">{cleanLocation(selectedEntity.data.drop_location)}</span></p>
                         <p className="text-emerald-700 font-bold text-[11px] mt-1">
                           🚀 আপনার থেকে {selectedEntity.distance} কিমি দূরে
                         </p>
@@ -763,11 +768,11 @@ export function DriverRadarPanel({
                       <div className="text-xs space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                         <p className="text-slate-800 line-clamp-1 font-medium">
                           <span className="text-emerald-700 font-bold mr-1">পিকআপ:</span>
-                          {b.pickup_location}
+                          {cleanLocation(b.pickup_location)}
                         </p>
                         <p className="text-slate-800 line-clamp-1 font-medium">
                           <span className="text-red-600 font-bold mr-1">গন্তব্য:</span>
-                          {b.drop_location}
+                          {cleanLocation(b.drop_location)}
                         </p>
                       </div>
 
@@ -989,13 +994,13 @@ export function DriverRadarPanel({
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
                         <span className="text-slate-800 font-semibold line-clamp-1">
-                          {t.pickup_location}
+                          {cleanLocation(t.pickup_location)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                         <span className="text-slate-800 font-semibold line-clamp-1">
-                          {t.drop_location}
+                          {cleanLocation(t.drop_location)}
                         </span>
                       </div>
                     </div>
@@ -1105,7 +1110,7 @@ export function DriverRadarPanel({
                 <span className="w-3 h-3 rounded-full bg-emerald-500 mt-0.5 shrink-0" />
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase block">পিকআপ পয়েন্ট</span>
-                  <span className="font-bold text-slate-800">{selectedTripDetail.pickup_location}</span>
+                  <span className="font-bold text-slate-800">{cleanLocation(selectedTripDetail.pickup_location)}</span>
                 </div>
               </div>
 
@@ -1113,7 +1118,7 @@ export function DriverRadarPanel({
                 <span className="w-3 h-3 rounded-full bg-red-500 mt-0.5 shrink-0" />
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase block">গন্তব্য</span>
-                  <span className="font-bold text-slate-800">{selectedTripDetail.drop_location}</span>
+                  <span className="font-bold text-slate-800">{cleanLocation(selectedTripDetail.drop_location)}</span>
                 </div>
               </div>
             </div>

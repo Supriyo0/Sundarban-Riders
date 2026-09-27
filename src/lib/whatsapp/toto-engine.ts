@@ -592,10 +592,13 @@ export async function processTotoMessage(
       }
     } catch {}
 
+    const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
+    const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
+
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${booking.pickup_location}\n🏁 গন্তব্য: ${booking.drop_location}\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য নিচের গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রী গাড়িতে উঠলে তাঁর ৪ সংখ্যার ওটিপি সংগ্রহ করে নিচের বোতামে চাপ দিন)`,
+      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য নিচের গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রী গাড়িতে উঠলে তাঁর ৪ সংখ্যার ওটিপি সংগ্রহ করে নিচের বোতামে চাপ দিন)`,
       buttons: [
         { id: `driver_start_${booking.id}`, title: "🚀 যাত্রা শুরু" },
       ],

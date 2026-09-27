@@ -24,7 +24,7 @@ export const DEFAULT_TOTO_PRICING: TotoPricingConfig = {
   maxServiceKm: 25,
   defaultPassengerCount: 3,
   minPassengers: 3,
-  maxPassengers: 5,
+  maxPassengers: 6,
   includedPassengers: 3,
   extraPassengerRatePerKm: 2,
   nightCharge0to10: 50,
@@ -107,7 +107,7 @@ export function calculateTotoFare(
   const d = Math.max(0.5, Math.round(distanceKm * 10) / 10);
   const p = Math.max(
     config.minPassengers || 3,
-    Math.min(config.maxPassengers || 5, Math.round(passengerCount || 3))
+    Math.min(config.maxPassengers || 6, Math.round(passengerCount || 3))
   );
 
   // 1. Base Fare

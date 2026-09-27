@@ -788,7 +788,7 @@ export async function POST(request: Request) {
     const pricingConfig = await loadActivePricingConfig(admin);
     const validPassengerCount = Math.max(
       pricingConfig.minPassengers || 3,
-      Math.min(pricingConfig.maxPassengers || 5, Number(passengerCount) || 3)
+      Math.min(pricingConfig.maxPassengers || 6, Number(passengerCount) || 3)
     );
 
     let finalEstimatedFare = Number(estimatedFare);

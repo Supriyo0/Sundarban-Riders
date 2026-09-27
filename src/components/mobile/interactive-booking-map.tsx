@@ -927,40 +927,62 @@ export function InteractiveBookingMap({
             </div>
           </div>
 
-          {/* PASSENGER COUNT SELECTOR (Min 3, Max 5, default 3) */}
-          <div className="p-3 rounded-2xl bg-white border border-emerald-200/70 shadow-xs space-y-2">
+          {/* PASSENGER COUNT SELECTOR (Min 3, Max 6, default 3) */}
+          <div className="p-3.5 rounded-2xl bg-white border border-emerald-200/80 shadow-xs space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
                 <Users className="w-4 h-4 text-emerald-600" />
                 <span>যাত্রী সংখ্যা (Passenger Count):</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                {[3, 4, 5].map((cnt) => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    onClick={() => setPassengerCount(cnt)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                      passengerCount === cnt
-                        ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    }`}
-                  >
-                    {cnt} যাত্রী
-                  </button>
-                ))}
-              </div>
+              <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                ৩ জনের জন্য বেস ভাড়া
+              </span>
             </div>
 
-            <div className="text-[10.5px] font-medium text-slate-600 flex items-center justify-between pt-0.5">
+            {/* Nicely designed 3 (৩ জনের জন্য), 4, 5, 6 selection buttons */}
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { cnt: 3, label: "৩ জন", tag: "(৩ জনের জন্য)" },
+                { cnt: 4, label: "৪ জন", tag: "+১ অতিরিক্ত" },
+                { cnt: 5, label: "৫ জন", tag: "+২ অতিরিক্ত" },
+                { cnt: 6, label: "৬ জন", tag: "+৩ অতিরিক্ত" },
+              ].map((item) => {
+                const isSelected = passengerCount === item.cnt;
+                return (
+                  <button
+                    key={item.cnt}
+                    type="button"
+                    onClick={() => setPassengerCount(item.cnt)}
+                    className={`py-2 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
+                        : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/70"
+                    }`}
+                  >
+                    <span className="text-xs font-black leading-tight">{item.label}</span>
+                    <span
+                      className={`text-[9.5px] font-semibold leading-tight mt-0.5 ${
+                        isSelected ? "text-emerald-100" : "text-slate-500"
+                      }`}
+                    >
+                      {item.tag}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="text-[10.5px] font-medium text-slate-600 flex items-center justify-between pt-0.5 border-t border-slate-100">
               <span>
                 {passengerCount === 3
-                  ? "✓ ৩ জন যাত্রী অন্তর্ভুক্ত (অতিরিক্ত চার্জ নেই)"
+                  ? "✓ বেস ভাড়া ৩ জনের জন্য প্রযোজ্য (কোনো অতিরিক্ত চার্জ নেই)"
                   : passengerCount === 4
                   ? `+১ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm}/কিমি)`
-                  : `+২ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm * 2}/কিমি)`}
+                  : passengerCount === 5
+                  ? `+২ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm * 2}/কিমি)`
+                  : `+৩ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm * 3}/কিমি)`}
               </span>
-              <span className="text-[10px] font-bold text-slate-400">সর্বোচ্চ ৫ জন</span>
+              <span className="text-[10px] font-bold text-slate-400">সর্বোচ্চ ৬ জন</span>
             </div>
           </div>
 

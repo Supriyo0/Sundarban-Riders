@@ -281,11 +281,11 @@ export default function PricingPage() {
                       max="10"
                       value={config.maxPassengers}
                       onChange={(e) =>
-                        setConfig({ ...config, maxPassengers: parseInt(e.target.value) || 5 })
+                        setConfig({ ...config, maxPassengers: parseInt(e.target.value) || 6 })
                       }
                       className="font-bold bg-background"
                     />
-                    <p className="text-[11px] text-muted-foreground">গ্রাহক বাড়াতে পারবেন (ডিফল্ট: ৫)</p>
+                    <p className="text-[11px] text-muted-foreground">গ্রাহক বাড়াতে পারবেন (ডিফল্ট: ৬)</p>
                   </div>
                 </div>
 

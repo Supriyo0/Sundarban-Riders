@@ -40,8 +40,8 @@ export function MobileAppHeader({
             </span>
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[10px] font-bold text-slate-500 leading-none">
-              সুন্দরবন রাইডার্স
+            <span className="text-[10px] font-bold text-amber-600 leading-none">
+              অনলাইন স্মার্ট টোটো বুকিং
             </span>
             <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200/60 leading-none">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

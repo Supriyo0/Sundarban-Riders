@@ -25,6 +25,7 @@ interface TrackBooking {
   driver_name?: string;
   driver_phone?: string;
   toto_number?: string;
+  driver_unique_id?: string;
   pickup_location?: string;
   drop_location?: string;
   distance_km?: number;
@@ -147,7 +148,7 @@ export default function TrackRidePage() {
                         {booking.driver_name || "চালক খোঁজা হচ্ছে..."}
                       </h2>
                       <p className="text-xs font-mono text-emerald-400 font-semibold">
-                        টোটো নং: {booking.toto_number || "অ্যাসাইন অপেক্ষমাণ"}
+                        🆔 চালক আইডি: {booking.driver_unique_id || booking.toto_number || "অ্যাসাইন অপেক্ষমাণ"}
                       </p>
                     </div>
                   </div>

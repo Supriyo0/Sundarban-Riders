@@ -673,7 +673,7 @@ export function DriverRadarPanel({
                   ) : (
                     <div className="mt-2 space-y-1 text-xs">
                       <h4 className="font-extrabold text-sm text-slate-900">
-                        🛺 {selectedEntity.data.name || "চালক"} ({selectedEntity.data.toto_number})
+                        🛺 {selectedEntity.data.name || "চালক"} ({selectedEntity.data.unique_id || selectedEntity.data.toto_number})
                       </h4>
                       <p className="text-slate-600">
                         ফোন: {selectedEntity.data.phone || "অনলাইনে আছেন"}
@@ -824,8 +824,8 @@ export function DriverRadarPanel({
                           </div>
                           <div>
                             <div className="font-bold text-slate-900 line-clamp-1">{od.name}</div>
-                            <div className="text-[10px] text-slate-500 font-mono font-semibold">
-                              {od.toto_number}
+                            <div className="text-[10px] text-emerald-700 font-mono font-bold">
+                              🆔 {od.unique_id || od.toto_number}
                             </div>
                           </div>
                         </div>

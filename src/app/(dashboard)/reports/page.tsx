@@ -27,6 +27,7 @@ interface AuditBooking {
   customer_phone: string;
   driver_name?: string;
   toto_number?: string;
+  driver_unique_id?: string;
   pickup_location?: string;
   drop_location?: string;
   distance_km?: number;
@@ -337,7 +338,7 @@ export default function ReportsAuditPage() {
                         {b.driver_name ? (
                           <div>
                             <span className="font-medium text-foreground">{b.driver_name}</span>
-                            <p className="text-xs text-muted-foreground font-mono">{b.toto_number}</p>
+                            <p className="text-xs text-muted-foreground font-mono">🆔 {b.driver_unique_id || b.toto_number}</p>
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground italic">অ্যাসাইন করা হয়নি</span>

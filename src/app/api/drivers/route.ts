@@ -37,6 +37,7 @@ export async function GET(request: Request) {
       let aadhar_card_url = "";
       let secondary_doc_url = "";
       let secondary_doc_type = "";
+      let unique_id = d.unique_id || "";
       let latitude = typeof d.latitude === "number" ? d.latitude : (d.latitude ? parseFloat(d.latitude) : null);
       let longitude = typeof d.longitude === "number" ? d.longitude : (d.longitude ? parseFloat(d.longitude) : null);
 
@@ -45,15 +46,18 @@ export async function GET(request: Request) {
           const meta = JSON.parse(d.current_location_name);
           district = district || meta.district || "";
           block = block || meta.block || "";
-          aadhar_no = aadhar_no || meta.aadhar_no || "";
+          aadhar_no = aadhar_no || meta.aadhar_no || meta.license_no || "";
           email = email || meta.email || "";
-          aadhar_card_url = meta.aadhar_card_url || "";
-          secondary_doc_url = meta.secondary_doc_url || "";
-          secondary_doc_type = meta.secondary_doc_type || "";
+          aadhar_card_url = meta.aadhar_card_url || meta.license_doc_url || "";
+          secondary_doc_url = meta.secondary_doc_url || meta.toto_receipt_doc_url || "";
+          secondary_doc_type = meta.secondary_doc_type || "driving_license";
+          unique_id = unique_id || meta.unique_id || "";
           if ((latitude === null || isNaN(latitude)) && meta.lat) latitude = parseFloat(meta.lat);
           if ((longitude === null || isNaN(longitude)) && meta.lng) longitude = parseFloat(meta.lng);
         } catch {}
       }
+
+      unique_id = unique_id || d.toto_number || "";
 
       // Strict: Do not generate fake/mock GPS coordinates. Only use real driver coordinates if available.
 
@@ -80,6 +84,9 @@ export async function GET(request: Request) {
         aadhar_card_url,
         secondary_doc_url,
         secondary_doc_type,
+        license_doc_url: aadhar_card_url,
+        toto_receipt_doc_url: secondary_doc_url,
+        unique_id,
         is_approved: isApproved,
       };
     });
@@ -222,7 +229,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Driver ID or Phone is required" }, { status: 400 });
     }
 
-    const { id, phone, is_active, is_available, latitude, longitude, current_location_name } = body;
+    const { id, phone, is_active, is_available, latitude, longitude, current_location_name, unique_id, name, toto_number } = body;
     const admin = supabaseAdmin();
 
     const updates: Record<string, unknown> = {
@@ -230,6 +237,8 @@ export async function PATCH(request: Request) {
     };
     if (typeof is_active === "boolean") updates.is_active = is_active;
     if (typeof is_available === "boolean") updates.is_available = is_available;
+    if (name && typeof name === "string") updates.name = name.trim();
+    if (toto_number && typeof toto_number === "string") updates.toto_number = toto_number.trim().toUpperCase();
     if (typeof latitude === "number" || (typeof latitude === "string" && !isNaN(Number(latitude)))) {
       updates.latitude = Number(latitude);
     }
@@ -238,6 +247,30 @@ export async function PATCH(request: Request) {
     }
     if (current_location_name) {
       updates.current_location_name = current_location_name;
+    }
+
+    // Handle unique_id update
+    if (unique_id && typeof unique_id === "string") {
+      const cleanUid = unique_id.trim().toUpperCase();
+      updates.unique_id = cleanUid;
+
+      // Also ensure meta has unique_id
+      try {
+        let meta: Record<string, unknown> = {};
+        if (current_location_name) {
+          meta = JSON.parse(current_location_name);
+        } else {
+          // Fetch existing to preserve meta
+          let findQ = admin.from("drivers").select("current_location_name");
+          if (id) findQ = findQ.eq("id", id);
+          const { data: ex } = await findQ.maybeSingle();
+          if (ex?.current_location_name) {
+            meta = JSON.parse(ex.current_location_name);
+          }
+        }
+        meta.unique_id = cleanUid;
+        updates.current_location_name = JSON.stringify(meta);
+      } catch {}
     }
 
     let updateQuery = admin.from("drivers").update(updates);
@@ -249,7 +282,23 @@ export async function PATCH(request: Request) {
       updateQuery = updateQuery.or(`phone.eq.${phone},phone.eq.${clean},phone.eq.+${clean},phone.eq.${last10},phone.ilike.%${last10}`);
     }
 
-    const { data, error } = await updateQuery.select().maybeSingle();
+    let { data, error } = await updateQuery.select().maybeSingle();
+
+    if (error && error.message?.includes("unique_id")) {
+      // Fallback if unique_id column does not exist yet
+      delete updates.unique_id;
+      let fallbackQuery = admin.from("drivers").update(updates);
+      if (id) {
+        fallbackQuery = fallbackQuery.eq("id", id);
+      } else if (phone) {
+        const clean = phone.replace(/\D/g, "");
+        const last10 = clean.slice(-10);
+        fallbackQuery = fallbackQuery.or(`phone.eq.${phone},phone.eq.${clean},phone.eq.+${clean},phone.eq.${last10},phone.ilike.%${last10}`);
+      }
+      const fallbackRes = await fallbackQuery.select().maybeSingle();
+      data = fallbackRes.data;
+      error = fallbackRes.error;
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -286,3 +335,96 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    let id = url.searchParams.get("id");
+    let phone = url.searchParams.get("phone");
+
+    // Also check body if available
+    if (!id && !phone) {
+      try {
+        const body = await request.json();
+        id = body?.id || null;
+        phone = body?.phone || null;
+      } catch {}
+    }
+
+    if (!id && !phone) {
+      return NextResponse.json({ error: "Driver ID or Phone is required" }, { status: 400 });
+    }
+
+    const admin = supabaseAdmin();
+
+    // 1. Locate the driver first
+    let findQuery = admin.from("drivers").select("*");
+    if (id) {
+      findQuery = findQuery.eq("id", id);
+    } else if (phone) {
+      const clean = phone.replace(/\D/g, "");
+      const last10 = clean.slice(-10);
+      findQuery = findQuery.or(`phone.eq.${phone},phone.eq.${clean},phone.eq.+${clean},phone.eq.${last10},phone.ilike.%${last10}`);
+    }
+
+    const { data: driver, error: findError } = await findQuery.maybeSingle();
+
+    if (findError) {
+      return NextResponse.json({ error: findError.message }, { status: 500 });
+    }
+
+    if (!driver) {
+      // Driver already deleted or not found
+      return NextResponse.json({ success: true, message: "চালক প্রোফাইল পাওয়া যায়নি বা আগেই মুছে ফেলা হয়েছে।" });
+    }
+
+    const targetId = driver.id;
+    const targetPhone = (driver.phone || phone || "").replace(/\D/g, "");
+
+    // 2. Unlink any references in bookings so foreign key constraint isn't violated
+    try {
+      await admin
+        .from("bookings")
+        .update({ driver_id: null })
+        .eq("driver_id", targetId);
+    } catch (bookingErr) {
+      console.warn("[DELETE /api/drivers] Unlink bookings warning:", bookingErr);
+    }
+
+    // 3. Delete from drivers table
+    const { error: deleteError } = await admin
+      .from("drivers")
+      .delete()
+      .eq("id", targetId);
+
+    if (deleteError) {
+      console.error("[DELETE /api/drivers] Delete driver error:", deleteError);
+      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    }
+
+    // 4. Delete from toto_riders table in WhatsApp CRM so the phone is completely free
+    if (targetPhone) {
+      const last10 = targetPhone.slice(-10);
+      try {
+        await admin
+          .from("toto_riders")
+          .delete()
+          .or(`phone_number.eq.${targetPhone},phone_number.ilike.%${last10}`);
+      } catch (totoErr) {
+        console.warn("[DELETE /api/drivers] Delete toto_riders warning:", totoErr);
+      }
+
+      // Remove from active location state in WhatsApp engine
+      driverLocationStates.delete(targetPhone);
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "চালক প্রোফাইল সফলভাবে মুছে ফেলা হয়েছে। এখন এই নম্বরে পুনরায় নতুনভাবে রেজিস্ট্রেশন করা যাবে।",
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal Server Error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+

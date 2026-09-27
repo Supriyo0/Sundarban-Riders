@@ -13,11 +13,18 @@ import {
   Compass,
   CheckCircle2,
   AlertCircle,
+  Users,
+  Moon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import "leaflet/dist/leaflet.css";
+import {
+  DEFAULT_TOTO_PRICING,
+  TotoPricingConfig,
+  calculateTotoFare,
+} from "@/lib/pricing/fare-calculator";
 
 // Safely resolve Leaflet ES module default export in Next.js
 async function getLeaflet() {
@@ -41,14 +48,6 @@ function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
 
 export type RideTier = "standard" | "shared" | "reserved";
 
-function calculateTierFares(distanceKm: number) {
-  const base = 20;
-  const perKm = 10;
-  const raw = base + distanceKm * perKm;
-  const standard = Math.max(20, Math.ceil(raw / 5) * 5);
-  return { standard };
-}
-
 interface PlaceSuggestion {
   name: string;
   full_address: string;
@@ -68,8 +67,10 @@ interface InteractiveBookingMapProps {
     pickupCoords?: [number, number];
     dropCoords?: [number, number];
     paymentMode?: "cash" | "upi";
+    passengerCount?: number;
   }) => void;
   onConfirmBooking?: () => void;
+  isBlocked?: boolean;
 }
 
 export function InteractiveBookingMap({
@@ -77,6 +78,7 @@ export function InteractiveBookingMap({
   initialDrop = "",
   onRouteSelected,
   onConfirmBooking,
+  isBlocked = false,
 }: InteractiveBookingMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -113,11 +115,30 @@ export function InteractiveBookingMap({
   const [roadDurationMin, setRoadDurationMin] = useState(2);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
 
-  // Dynamic Fares calculation (Single Toto Option)
-  const fares = useMemo(() => {
-    if (distanceKm === 0) return { standard: 20 };
-    return calculateTierFares(distanceKm);
-  }, [distanceKm]);
+  // Passenger count: min 3, max 5, default 3
+  const [passengerCount, setPassengerCount] = useState<number>(3);
+  const [pricingConfig, setPricingConfig] = useState<TotoPricingConfig>(DEFAULT_TOTO_PRICING);
+
+  // Fetch live pricing configuration
+  useEffect(() => {
+    fetch("/api/pricing")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.config) {
+          setPricingConfig(data.config);
+          if (data.config.defaultPassengerCount) {
+            setPassengerCount(data.config.defaultPassengerCount);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Dynamic Fares calculation using official Sundarban Riders slabs & night rules
+  const fareResult = useMemo(() => {
+    const d = distanceKm > 0 ? distanceKm : 1.0;
+    return calculateTotoFare(d, passengerCount, pricingConfig);
+  }, [distanceKm, passengerCount, pricingConfig]);
 
   // Nearest Driver Proximity
   const nearestDriverInfo = useMemo(() => {
@@ -156,6 +177,23 @@ export function InteractiveBookingMap({
     return `লোকেশন (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
   };
 
+  // Sync passenger count changes with parent
+  useEffect(() => {
+    if (dropInputValue && distanceKm > 0) {
+      onRouteSelectedRef.current?.({
+        pickup: pickupInputValue,
+        drop: dropInputValue,
+        distanceKm,
+        estimatedFare: fareResult.totalFare,
+        rideTier: "standard",
+        pickupCoords,
+        dropCoords,
+        paymentMode: "cash",
+        passengerCount,
+      });
+    }
+  }, [passengerCount, fareResult.totalFare, distanceKm, dropInputValue, pickupInputValue, pickupCoords, dropCoords]);
+
   // Update Route Polyline & notify parent
   const updateRoute = useCallback(
     async (
@@ -171,11 +209,12 @@ export function InteractiveBookingMap({
           pickup: pText,
           drop: "",
           distanceKm: 0,
-          estimatedFare: 20,
+          estimatedFare: pricingConfig.baseFare || 30,
           rideTier: "standard",
           pickupCoords: pCoords,
           dropCoords: dCoords,
           paymentMode: "cash",
+          passengerCount,
         });
         return;
       }
@@ -200,20 +239,21 @@ export function InteractiveBookingMap({
       }
 
       setDistanceKm(safeDist);
-      const tierFares = calculateTierFares(safeDist);
+      const computed = calculateTotoFare(safeDist, passengerCount, pricingConfig);
 
       onRouteSelectedRef.current?.({
         pickup: pText,
         drop: dText,
         distanceKm: safeDist,
-        estimatedFare: tierFares.standard,
+        estimatedFare: computed.totalFare,
         rideTier: "standard",
         pickupCoords: pCoords,
         dropCoords: dCoords,
         paymentMode: "cash",
+        passengerCount,
       });
     },
-    []
+    [passengerCount, pricingConfig]
   );
 
   // Load registered active drivers from database
@@ -860,9 +900,12 @@ export function InteractiveBookingMap({
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className="font-black text-base text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
-                  <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                    ৪ আসন
-                  </span>
+                  {fareResult.isNight && (
+                    <span className="text-[9px] font-black bg-purple-700 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Moon className="w-2.5 h-2.5" />
+                      <span>নাইট চার্জ (+₹{fareResult.nightCharge})</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-600 font-semibold mt-0.5">
                   {nearestDriverInfo ? `~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "২-৩ মিনিটে পিকআপ"} • দ্রুত ও নিরাপদ
@@ -875,23 +918,77 @@ export function InteractiveBookingMap({
             </div>
 
             <div className="text-right shrink-0">
-              <div className="text-2xl font-black text-emerald-700">
-                ₹{fares.standard}.00
+              <div className="text-2xl font-black text-emerald-700 font-mono">
+                ₹{fareResult.totalFare}.00
               </div>
               <span className="text-[10px] font-semibold text-slate-500 block">
-                {distanceKm > 0 ? `${distanceKm} কিমি • ~${roadDurationMin} মি` : "ফিক্সড সঠিক ভাড়া"}
+                {distanceKm > 0 ? `${distanceKm} কিমি • ~${roadDurationMin} মি` : "বেস ভাড়া: ₹৩০"}
               </span>
             </div>
+          </div>
+
+          {/* PASSENGER COUNT SELECTOR (Min 3, Max 5, default 3) */}
+          <div className="p-3 rounded-2xl bg-white border border-emerald-200/70 shadow-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-black text-slate-900">
+                <Users className="w-4 h-4 text-emerald-600" />
+                <span>যাত্রী সংখ্যা (Passenger Count):</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {[3, 4, 5].map((cnt) => (
+                  <button
+                    key={cnt}
+                    type="button"
+                    onClick={() => setPassengerCount(cnt)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      passengerCount === cnt
+                        ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {cnt} যাত্রী
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-[10.5px] font-medium text-slate-600 flex items-center justify-between pt-0.5">
+              <span>
+                {passengerCount === 3
+                  ? "✓ ৩ জন যাত্রী অন্তর্ভুক্ত (অতিরিক্ত চার্জ নেই)"
+                  : passengerCount === 4
+                  ? `+১ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm}/কিমি)`
+                  : `+২ জন অতিরিক্ত যাত্রী (+₹${pricingConfig.extraPassengerRatePerKm * 2}/কিমি)`}
+              </span>
+              <span className="text-[10px] font-bold text-slate-400">সর্বোচ্চ ৫ জন</span>
+            </div>
+          </div>
+
+          {/* PROMINENT APPROX FARE NOTICE (User Explicit Requirement) */}
+          <div className="p-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2 text-[11px] text-amber-950">
+            <span className="shrink-0 text-sm mt-0.5">ℹ️</span>
+            <p className="leading-snug">
+              <strong>আনুমানিক ভাড়া:</strong> পিকআপ ও ড্রপের সঠিক অবস্থান এবং রোডের বাস্তব দূরত্বের উপর ভিত্তি করে চূড়ান্ত ভাড়া সামান্য কম বা বেশি হতে পারে।
+            </p>
           </div>
 
           {/* Confirm Booking Button */}
           {onConfirmBooking && (
             <Button
               size="lg"
+              disabled={isBlocked}
               onClick={onConfirmBooking}
-              className="w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30 cursor-pointer"
+              className={`w-full h-14 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                isBlocked
+                  ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none hover:bg-slate-200"
+                  : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
+              }`}
             >
-              <span>🛺 টোটো রাইড কনফার্ম করুন (₹{fares.standard}.০০)</span>
+              <span>
+                {isBlocked
+                  ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত (৩ বার বাতিল)"
+                  : `🛺 টোটো রাইড কনফার্ম করুন (₹${fareResult.totalFare}.০০)`}
+              </span>
             </Button>
           )}
         </div>

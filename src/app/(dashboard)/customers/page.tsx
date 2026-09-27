@@ -184,7 +184,7 @@ export default function CustomersPage() {
         <Card className="border-border bg-card">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-amber-500">সতর্কতাপ্রাপ্ত (১-২ বাতিল)</span>
+              <span className="text-sm font-medium text-amber-500">সতর্কতাপ্রাপ্ত (1-2 বাতিল)</span>
               <AlertTriangle className="h-4 w-4 text-amber-500" />
             </div>
             <div className="mt-2 text-2xl font-bold text-amber-600 dark:text-amber-400">
@@ -197,7 +197,7 @@ export default function CustomersPage() {
         <Card className="border-border bg-card">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-red-500">স্বয়ংক্রিয় ব্লক্ড (৩+ বাতিল)</span>
+              <span className="text-sm font-medium text-red-500">স্বয়ংক্রিয় ব্লক্ড (3+ বাতিল)</span>
               <Ban className="h-4 w-4 text-red-500" />
             </div>
             <div className="mt-2 text-2xl font-bold text-red-600 dark:text-red-400">
@@ -309,34 +309,23 @@ export default function CustomersPage() {
                         {isBlocked
                           ? "স্থগিত (Blocked)"
                           : cancels > 0
-                          ? `${cancels}/৩ বাতিল`
+                          ? `${cancels}/3 বাতিল`
                           : "ক্লিন রেকর্ড 🟢"}
                       </span>
                     </div>
 
-                    {/* Strikes Progress Bar */}
-                    <div className="mt-4 space-y-1.5">
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>বাতিল স্ট্রাইক কাউন্টার:</span>
-                        <span className="font-bold text-foreground">{cancels} / ৩</span>
-                      </div>
-                      <div className="flex h-2 gap-1 rounded-full overflow-hidden bg-muted p-0.5">
-                        <div
-                          className={`h-full flex-1 rounded-full ${
-                            cancels >= 1 ? "bg-amber-500" : "bg-muted-foreground/20"
-                          }`}
-                        />
-                        <div
-                          className={`h-full flex-1 rounded-full ${
-                            cancels >= 2 ? "bg-amber-600" : "bg-muted-foreground/20"
-                          }`}
-                        />
-                        <div
-                          className={`h-full flex-1 rounded-full ${
-                            cancels >= 3 ? "bg-red-600" : "bg-muted-foreground/20"
-                          }`}
-                        />
-                      </div>
+                    {/* Simple Cancellation Strike Display */}
+                    <div className="mt-3.5 flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-muted/50 border border-border/40">
+                      <span className="text-muted-foreground">বাতিল স্ট্রাইক:</span>
+                      <span className={`font-mono font-bold text-xs ${
+                        cancels >= 3
+                          ? "text-red-500"
+                          : cancels > 0
+                          ? "text-amber-500"
+                          : "text-emerald-500"
+                      }`}>
+                        {cancels}/3
+                      </span>
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">

@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  AlertTriangle,
   Bell,
   Volume2,
   LogOut,
@@ -33,6 +34,7 @@ import {
   X,
   ShieldAlert,
   Compass,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,6 +93,7 @@ interface MobileSession {
   driverId?: string;
   driverName?: string;
   totoNumber?: string;
+  uniqueId?: string;
   isApproved?: boolean;
   passengerName?: string;
 }
@@ -159,7 +162,6 @@ function MobileAppPageContent() {
 
   // OTP Form State
   const [phoneInput, setPhoneInput] = useState("");
-  const [passengerNameInput, setPassengerNameInput] = useState("");
   const [otpInput, setOtpInput] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(60);
@@ -289,7 +291,15 @@ function MobileAppPageContent() {
   // Driver Active State
   const [isOnline, setIsOnline] = useState(true);
   const [incomingRide, setIncomingRide] = useState<any | null>(null);
-  const [activeRide, setActiveRide] = useState<any | null>(null);
+  const [activeRide, setActiveRide] = useState<any | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_active_ride");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
   const [alertCountdown, setAlertCountdown] = useState(30);
 
   // Passenger State
@@ -299,18 +309,39 @@ function MobileAppPageContent() {
   const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
   const [tripDistance, setTripDistance] = useState(0);
   const [tripFare, setTripFare] = useState(0);
+  const [passengerCount, setPassengerCount] = useState(3);
   const [selectedTier, setSelectedTier] = useState<"standard" | "shared" | "reserved">("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [showSosModal, setShowSosModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [rideStep, setRideStep] = useState<"assigned" | "arriving" | "in_trip" | "arrived">("assigned");
   const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
-  const [searchCountdown, setSearchCountdown] = useState(300); // 5 minutes search duration
-  const [passengerBooking, setPassengerBooking] = useState<any | null>(null);
-  const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
+  const [searchCountdown, setSearchCountdown] = useState(180); // 3 minutes search duration
+  const [passengerBooking, setPassengerBooking] = useState<any | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_passenger_booking");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
+  const [activeBookingId, setActiveBookingId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        return localStorage.getItem("sr_active_booking_id");
+      } catch {}
+    }
+    return null;
+  });
+  const [customerStrikes, setCustomerStrikes] = useState<number>(0);
+  const [isCustomerBlocked, setIsCustomerBlocked] = useState<boolean>(false);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number]>([21.8760, 88.1920]);
+  const [showStartOtpModal, setShowStartOtpModal] = useState(false);
+  const [startOtpInput, setStartOtpInput] = useState("");
+  const [isVerifyingStartOtp, setIsVerifyingStartOtp] = useState(false);
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -339,6 +370,44 @@ function MobileAppPageContent() {
     }
   }, [session?.phone, phoneInput]);
 
+  const handleVerifyAndStartJourney = async () => {
+    if (!activeRide) return;
+    const cleanOtp = startOtpInput.trim();
+    if (!cleanOtp || cleanOtp.length < 4) {
+      toast.error("অনুগ্রহ করে ৪ ডিজিটের সঠিক ওটিপি দিন");
+      return;
+    }
+    setIsVerifyingStartOtp(true);
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start",
+          bookingId: activeRide.id,
+          driverId: session?.driverId,
+          otp: cleanOtp,
+          startCoords: driverLiveCoords || (activeRide.pickupCoords || null),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.message || data.error || "ভুল ওটিপি! অনুগ্রহ করে যাত্রীর থেকে সঠিক ওটিপি জেনে লিখুন।");
+        setIsVerifyingStartOtp(false);
+        return;
+      }
+      setActiveRide((prev: any) => (prev ? { ...prev, status: "on_trip" } : null));
+      setShowStartOtpModal(false);
+      setStartOtpInput("");
+      playSuccessSound();
+      toast.success("ওটিপি যাচাই সফল! যাত্রা শুরু হয়েছে। সাবধানে ড্রাইভ করুন।");
+    } catch {
+      toast.error("সার্ভার সংযোগ সমস্যা। আবার চেষ্টা করুন।");
+    } finally {
+      setIsVerifyingStartOtp(false);
+    }
+  };
+
   useEffect(() => {
     if (bottomNavTab === "trips" && phase === "passenger_home") {
       fetchCustomerHistory();
@@ -346,6 +415,10 @@ function MobileAppPageContent() {
   }, [bottomNavTab, phase, fetchCustomerHistory]);
 
   const handleConfirmBooking = useCallback(async () => {
+    if (isCustomerBlocked || customerStrikes >= 3) {
+      toast.error("⚠️ ৩ বার বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সচল করতে হেল্পলাইনে (9593177885) যোগাযোগ করুন।");
+      return;
+    }
     if (!dropText || !dropText.trim()) {
       toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
       return;
@@ -358,7 +431,7 @@ function MobileAppPageContent() {
     }
     setPhase("passenger_searching");
     setSearchStatus("searching");
-    setSearchCountdown(300);
+    setSearchCountdown(180);
     playRideAlertSound();
     toast.info("কাছাকাছি ৫ কিমির মধ্যে চালকদের অ্যালার্ট পাঠানো হচ্ছে...");
 
@@ -367,7 +440,7 @@ function MobileAppPageContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customerName: session?.passengerName || passengerNameInput || "যাত্রী বন্ধু",
+          customerName: session?.passengerName || "যাত্রী বন্ধু",
           customerPhone: session.phone,
           pickupLocation: pickupText,
           dropLocation: dropText,
@@ -375,18 +448,26 @@ function MobileAppPageContent() {
           dropCoords,
           estimatedFare: tripFare || 20,
           tripDistance,
+          passengerCount: passengerCount || 3,
           rideTier: selectedTier || "standard",
           paymentMode: "cash",
         }),
       });
       const data = await res.json();
+      if (!res.ok && data.error === "customer_blocked") {
+        setIsCustomerBlocked(true);
+        setCustomerStrikes(data.cancellation_count || 3);
+        setPhase("passenger_home");
+        toast.error(data.message || "৩ বার বাতিল করায় আপনার অ্যাকাউন্ট স্থগিত করা হয়েছে।", { duration: 6000 });
+        return;
+      }
       if (data.booking && data.booking.id) {
         setActiveBookingId(data.booking.id);
       }
     } catch (err) {
       console.warn("[app] Failed to create live booking:", err);
     }
-  }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, selectedTier, session, passengerNameInput]);
+  }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, passengerCount, selectedTier, session, isCustomerBlocked, customerStrikes]);
 
   // Memoized route handler to eliminate parent re-render loops
   const handleRouteSelected = useCallback((route: any) => {
@@ -396,6 +477,7 @@ function MobileAppPageContent() {
     if (route.dropCoords) setDropCoords(route.dropCoords);
     if (route.distanceKm !== undefined) setTripDistance(route.distanceKm);
     if (route.estimatedFare !== undefined) setTripFare(route.estimatedFare);
+    if (route.passengerCount !== undefined) setPassengerCount(route.passengerCount);
     if (route.rideTier) setSelectedTier(route.rideTier);
     if (route.paymentMode) setPaymentMode(route.paymentMode);
   }, []);
@@ -416,9 +498,9 @@ function MobileAppPageContent() {
           setSearchCountdown((prev) => prev - 1);
         }, 1000);
       } else {
-        // 5-minute timeout reached without acceptance!
+        // 3-minute timeout reached without acceptance!
         setSearchStatus("unaccepted");
-        toast.error("দুঃখিত! বিগত ৫ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি।");
+        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি।");
       }
     }
     return () => clearTimeout(timer);
@@ -437,9 +519,12 @@ function MobileAppPageContent() {
             const b = data.booking;
             setPassengerBooking({
               id: b.booking_number || b.id.slice(0, 8),
+              bookingNumber: b.booking_number,
               driverName: b.driver_name || "টোটো চালক",
               driverPhone: b.driver_phone || "",
-              totoNumber: b.toto_number || "",
+              totoNumber: b.driver_unique_id || b.toto_number || "",
+              uniqueId: b.driver_unique_id || b.toto_number || "",
+              startOtp: b.start_otp,
             });
             setPhase("passenger_home");
             playSuccessSound();
@@ -454,6 +539,54 @@ function MobileAppPageContent() {
 
     return () => clearInterval(pollInterval);
   }, [phase, searchStatus, activeBookingId]);
+
+  // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
+  useEffect(() => {
+    if (!passengerBooking && !activeBookingId) return;
+    const bId = activeBookingId || passengerBooking?.id || passengerBooking?.bookingNumber;
+    if (!bId) return;
+
+    let isMounted = true;
+    const pollRideStatus = async () => {
+      try {
+        const res = await fetch(`/api/bookings?id=${bId}`);
+        const data = await res.json();
+        const b = data.booking;
+        if (!b || !isMounted) return;
+
+        // Keep startOtp up to date if returned
+        if (b.start_otp) {
+          setPassengerBooking((prev: any) => (prev ? { ...prev, startOtp: b.start_otp } : prev));
+        }
+
+        // When driver starts the trip:
+        if (b.status === "in_progress") {
+          setRideStep((prev) => {
+            if (prev !== "in_trip") {
+              playSuccessSound();
+              toast.success("🛺 আপনার যাত্রা শুরু হয়েছে! শুভ ও নিরাপদ যাত্রা।");
+            }
+            return "in_trip";
+          });
+        } else if (b.status === "completed") {
+          setRideStep("arrived");
+          setPhase("passenger_trip_completed");
+          playSuccessSound();
+          toast.success("আপনার ট্রিপ সফলভাবে সম্পন্ন হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+        } else if (b.status === "cancelled") {
+          setPassengerBooking(null);
+          toast.error("রাইডটি বাতিল করা হয়েছে।");
+        }
+      } catch {}
+    };
+
+    pollRideStatus();
+    const interval = setInterval(pollRideStatus, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [passengerBooking, activeBookingId]);
 
   // Auto-poll driver approval status when in kyc_pending
   const [checkingApproval, setCheckingApproval] = useState(false);
@@ -475,6 +608,7 @@ function MobileAppPageContent() {
           driverId: driver.id,
           driverName: driver.name,
           totoNumber: driver.toto_number,
+          uniqueId: driver.unique_id || driver.toto_number,
         };
         setSession(approvedSession);
         localStorage.setItem("sr_mobile_session", JSON.stringify(approvedSession));
@@ -529,6 +663,168 @@ function MobileAppPageContent() {
       }
     }
   }, []);
+
+  // -------------------------------------------------------------
+  // PERSIST ACTIVE RIDES & BOOKINGS IN LOCALSTORAGE
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeRide) {
+      localStorage.setItem("sr_active_ride", JSON.stringify(activeRide));
+    } else {
+      localStorage.removeItem("sr_active_ride");
+    }
+  }, [activeRide]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (passengerBooking) {
+      localStorage.setItem("sr_passenger_booking", JSON.stringify(passengerBooking));
+    } else {
+      localStorage.removeItem("sr_passenger_booking");
+    }
+  }, [passengerBooking]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeBookingId) {
+      localStorage.setItem("sr_active_booking_id", activeBookingId);
+    } else {
+      localStorage.removeItem("sr_active_booking_id");
+    }
+  }, [activeBookingId]);
+
+  // -------------------------------------------------------------
+  // RESTORE ACTIVE RIDE STATE ON REFRESH / MOUNT (Rider & Passenger)
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!session?.phone && !session?.driverId) return;
+
+    let isMounted = true;
+
+    // 1. For Driver (Rider): Check for active ride (assigned or in_progress)
+    if (session.role === "rider") {
+      const restoreDriverActiveRide = async () => {
+        try {
+          const query = session.driverId
+            ? `driver_id=${session.driverId}&active=true`
+            : `driver_phone=${session.phone}&active=true`;
+          const res = await fetch(`/api/bookings?${query}`);
+          const data = await res.json();
+          if (!isMounted) return;
+
+          if (data?.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress")) {
+            const b = data.booking;
+            const restoredRide = {
+              id: b.id,
+              bookingNumber: b.booking_number,
+              fare: b.estimated_fare || b.final_fare || 50,
+              passengerName: b.customer_name || "যাত্রী",
+              passengerPhone: b.customer_phone || "",
+              pickup: b.pickup_location || "পিকআপ পয়েন্ট",
+              drop: b.drop_location || "গন্তব্য",
+              pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : [21.8760, 88.1920],
+              dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : [21.8680, 88.1630],
+              status: b.status === "in_progress" ? "on_trip" : "heading_pickup",
+            };
+            setActiveRide(restoredRide);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("sr_active_ride", JSON.stringify(restoredRide));
+            }
+            setIsOnline(true);
+            setPhase("rider_home");
+          } else if (data?.booking === null) {
+            setActiveRide(null);
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("sr_active_ride");
+            }
+          }
+        } catch (err) {
+          console.warn("[app] Failed to restore driver active ride:", err);
+        }
+      };
+
+      restoreDriverActiveRide();
+    }
+
+    // 2. For Passenger: Check for active booking & cancellation strikes
+    if (session.role === "passenger" && session.phone) {
+      const restorePassengerActiveBooking = async () => {
+        try {
+          const res = await fetch(`/api/bookings?customer_phone=${session.phone}&active=true`);
+          const data = await res.json();
+          if (!isMounted) return;
+
+          // Sync cancellation strikes and blocked status
+          if (data?.customer) {
+            const strikes = data.customer.cancellation_count || 0;
+            const blocked = Boolean(data.customer.is_blocked || strikes >= 3);
+            setCustomerStrikes(strikes);
+            setIsCustomerBlocked(blocked);
+          }
+
+          if (data?.booking) {
+            const b = data.booking;
+            if (b.status === "pending") {
+              setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
+              setDropText(b.drop_location || "");
+              if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
+              if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+              if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
+              setActiveBookingId(b.id);
+              setSearchStatus("searching");
+              setSearchCountdown(180);
+              setPhase("passenger_searching");
+              if (typeof window !== "undefined") {
+                localStorage.setItem("sr_active_booking_id", b.id);
+                localStorage.setItem("sr_search_status", "searching");
+              }
+            } else if (b.status === "assigned" || b.status === "in_progress") {
+              setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
+              setDropText(b.drop_location || "");
+              if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
+              if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+              if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
+              const restoredPassenger = {
+                id: b.booking_number || b.id.slice(0, 8),
+                bookingNumber: b.booking_number,
+                driverName: b.driver_name || "টোটো চালক",
+                driverPhone: b.driver_phone || "",
+                totoNumber: b.unique_id || b.toto_number || "SR-DRV",
+                uniqueId: b.unique_id || b.toto_number || "SR-DRV",
+                startOtp: b.start_otp,
+              };
+              setPassengerBooking(restoredPassenger);
+              setActiveBookingId(b.id);
+              setRideStep(b.status === "in_progress" ? "in_trip" : "assigned");
+              setPhase("passenger_home");
+              if (typeof window !== "undefined") {
+                localStorage.setItem("sr_passenger_booking", JSON.stringify(restoredPassenger));
+                localStorage.setItem("sr_active_booking_id", b.id);
+                localStorage.removeItem("sr_search_status");
+              }
+            }
+          } else if (data?.booking === null) {
+            setPassengerBooking(null);
+            setActiveBookingId(null);
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("sr_passenger_booking");
+              localStorage.removeItem("sr_active_booking_id");
+              localStorage.removeItem("sr_search_status");
+            }
+          }
+        } catch (err) {
+          console.warn("[app] Failed to restore passenger active booking:", err);
+        }
+      };
+
+      restorePassengerActiveBooking();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.phone, session?.role, session?.driverId]);
 
   // Strict Guard: Passenger must be logged in with a valid 10-digit WhatsApp phone
   useEffect(() => {
@@ -888,6 +1184,7 @@ function MobileAppPageContent() {
             driverId: json.driver?.id,
             driverName: json.driver?.name,
             totoNumber: json.driver?.toto_number,
+            uniqueId: json.driver?.unique_id || json.driver?.toto_number,
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
@@ -914,7 +1211,7 @@ function MobileAppPageContent() {
           }
         } else {
           // Passenger login with WhatsApp number
-          const pName = passengerNameInput.trim() || json.customer?.name || "যাত্রী বন্ধু";
+          const pName = json.customer?.name || "যাত্রী বন্ধু";
           const newSession: MobileSession = {
             phone: cleanPhone,
             role: "passenger",
@@ -948,7 +1245,7 @@ function MobileAppPageContent() {
     }
   };
 
-  // Handle KYC Submission
+  // Handle KYC Submission (Only Licence & Toto Receipt)
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const effectivePhone = phoneInput || session?.phone || "";
@@ -957,15 +1254,15 @@ function MobileAppPageContent() {
       return;
     }
     if (!kycName.trim() || !kycTotoNumber.trim() || !kycAadharNumber.trim()) {
-      toast.error("সকল বাধ্যতামূলক তথ্য (নাম, টোটো নম্বর ও আধার নম্বর) প্রদান করুন");
-      return;
-    }
-    if (kycAadharNumber.replace(/\D/g, "").length < 12) {
-      toast.error("আধার নম্বর অবশ্যই ১২ সংখ্যার হতে হবে");
+      toast.error("চালকের নাম, টোটো নম্বর ও ড্রাইভিং লাইসেন্স নম্বর প্রদান করুন");
       return;
     }
     if (!kycAadharDoc) {
-      toast.error("অনুগ্রহ করে আপনার আধার কার্ডের ছবি আপলোড করুন");
+      toast.error("অনুগ্রহ করে আপনার ড্রাইভিং লাইসেন্সের ছবি আপলোড করুন");
+      return;
+    }
+    if (!kycSecondaryDoc) {
+      toast.error("অনুগ্রহ করে আপনার টোটো রসিদের ছবি আপলোড করুন");
       return;
     }
 
@@ -981,10 +1278,13 @@ function MobileAppPageContent() {
           district: kycDistrict,
           block: kycBlock,
           toto_number: kycTotoNumber.trim().toUpperCase(),
-          aadhar_number: kycAadharNumber.replace(/\D/g, ""),
+          license_number: kycAadharNumber.trim(),
+          aadhar_number: kycAadharNumber.trim(),
+          license_doc: kycAadharDoc,
           aadhar_doc: kycAadharDoc,
-          secondary_doc: kycSecondaryDoc || null,
-          secondary_doc_type: kycSecondaryType,
+          toto_receipt_doc: kycSecondaryDoc,
+          secondary_doc: kycSecondaryDoc,
+          secondary_doc_type: "toto_receipt",
         }),
       });
 
@@ -997,11 +1297,12 @@ function MobileAppPageContent() {
           isApproved: false,
           driverName: kycName.trim(),
           totoNumber: kycTotoNumber.trim().toUpperCase(),
+          uniqueId: `SR-${effectivePhone.replace(/\D/g, "").slice(-4)}`,
         };
         setSession(newSession);
         localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
         setPhase("kyc_pending");
-        toast.success("ডকুমেন্টস সফলভাবে জমা হয়েছে!");
+        toast.success("লাইসেন্স ও টোটো রসিদ সফলভাবে জমা হয়েছে!");
       } else {
         toast.error(json.message || "রেজিস্ট্রেশন ব্যর্থ হয়েছে");
       }
@@ -1021,6 +1322,52 @@ function MobileAppPageContent() {
     setPassengerBooking(null);
     setPhase("select_role");
     toast.info("লগআউট সম্পন্ন হয়েছে। মোড নির্বাচন করুন।");
+  };
+
+  // Delete Driver Profile & Re-register
+  const handleDeleteDriverAccount = async () => {
+    const dPhone = session?.phone || phoneInput;
+    const dId = session?.driverId;
+    if (!dPhone && !dId) {
+      toast.error("চালকের তথ্য পাওয়া যায়নি");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "আপনি কি নিশ্চিত যে আপনার চালক অ্যাকাউন্টটি মুছে ফেলতে চান?\n\nমুছে ফেললে আপনার পূর্বের সমস্ত চালক তথ্য রিসেট হয়ে যাবে এবং আপনি সম্পূর্ণ নতুনভাবে আধার ও টোটো নম্বর দিয়ে রেজিস্ট্রেশন করতে পারবেন।"
+    );
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      const res = await fetch("/api/drivers", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: dId, phone: dPhone }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        playSuccessSound();
+        toast.success("চালক প্রোফাইল মুছে ফেলা হয়েছে! এখন নতুনভাবে তথ্য পূরণ করে রেজিস্ট্রেশন করুন।");
+        localStorage.removeItem("sr_mobile_session");
+        setSession(null);
+        setRole("rider");
+        setKycName("");
+        setKycEmail("");
+        setKycTotoNumber("");
+        setKycAadharNumber("");
+        setKycAadharDoc("");
+        setKycSecondaryDoc("");
+        setPhase("kyc_form");
+      } else {
+        toast.error(data.error || "অ্যাকাউন্ট মুছে ফেলা ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("সার্ভার ত্রুটি");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Switch to opposite role directly
@@ -1053,7 +1400,14 @@ function MobileAppPageContent() {
                 setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
               } else {
                 if (parsed.phone) {
-                  setPhase("passenger_home");
+                  const savedSearch = localStorage.getItem("sr_search_status");
+                  const savedBookingId = localStorage.getItem("sr_active_booking_id");
+                  const savedPassengerBooking = localStorage.getItem("sr_passenger_booking");
+                  if (savedSearch === "searching" && savedBookingId && !savedPassengerBooking) {
+                    setPhase("passenger_searching");
+                  } else {
+                    setPhase("passenger_home");
+                  }
                 } else {
                   setPhase("select_role");
                 }
@@ -1246,19 +1600,6 @@ function MobileAppPageContent() {
             </div>
 
             <div className="space-y-4 pt-2">
-              {role === "passenger" && !otpSent && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-slate-700 font-semibold">আপনার নাম (ঐচ্ছিক)</Label>
-                  <Input
-                    type="text"
-                    placeholder="যেমন: সুপ্রিয় সেন"
-                    value={passengerNameInput}
-                    onChange={(e) => setPassengerNameInput(e.target.value)}
-                    className="h-12 bg-white border-slate-300 text-slate-900 rounded-2xl text-sm font-semibold shadow-2xs focus:border-emerald-500"
-                  />
-                </div>
-              )}
-
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-700 font-semibold">
                   {role === "passenger" ? "আপনার হোয়াটসঅ্যাপ মোবাইল নম্বর" : "হোয়াটসঅ্যাপ মোবাইল নম্বর"}
@@ -1380,7 +1721,7 @@ function MobileAppPageContent() {
               চালক তথ্য ও ডকুমেন্ট সাবমিট
             </h2>
             <p className="text-slate-500 text-xs mt-1 font-medium">
-              যাচাইকরণের জন্য সঠিক তথ্য ও আধার কার্ডের পরিষ্কার ছবি সংযুক্ত করুন।
+              যাচাইকরণের জন্য সঠিক তথ্য, ড্রাইভিং লাইসেন্স ও টোটো রসিদের পরিষ্কার ছবি সংযুক্ত করুন।
             </p>
           </div>
 
@@ -1436,17 +1777,16 @@ function MobileAppPageContent() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">আধার কার্ড নম্বর (১২ সংখ্যা) *</Label>
+              <Label className="text-xs text-slate-700 font-semibold">ড্রাইভিং লাইসেন্স নম্বর *</Label>
               <Input
-                placeholder="XXXX XXXX XXXX"
-                maxLength={12}
+                placeholder="যেমন: WB-01-2020-0012345"
                 value={kycAadharNumber}
-                onChange={(e) => setKycAadharNumber(e.target.value.replace(/\D/g, ""))}
-                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm"
+                onChange={(e) => setKycAadharNumber(e.target.value)}
+                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm uppercase"
               />
             </div>
 
-            {/* Real Document Upload Section */}
+            {/* Document Upload Section: Only Licence and Toto Receipt */}
             <div className="space-y-4 pt-2">
               <input
                 ref={aadharFileInputRef}
@@ -1463,17 +1803,17 @@ function MobileAppPageContent() {
                 onChange={handleSecondaryFileChange}
               />
 
-              {/* Aadhar Card Upload Card */}
+              {/* 1. Driving Licence Upload Card */}
               <div className="space-y-2">
                 <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>আধার কার্ড ছবি *</span>
+                  <span>১. ড্রাইভিং লাইসেন্স ছবি (Driving Licence) *</span>
                   {kycAadharDoc ? (
                     <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
                     </span>
                   ) : (
                     <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
-                      প্রয়োজনীয়
+                      বাধ্যতামূলক
                     </span>
                   )}
                 </Label>
@@ -1485,17 +1825,17 @@ function MobileAppPageContent() {
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-emerald-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
                         {kycAadharDoc.startsWith("data:image") || kycAadharDoc.startsWith("http") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycAadharDoc} alt="Aadhar Preview" className="w-full h-full object-cover" />
+                          <img src={kycAadharDoc} alt="Licence Preview" className="w-full h-full object-cover" />
                         ) : (
                           <FileText className="w-8 h-8 text-emerald-600" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycAadharName || "আধার কার্ড (সংযুক্ত)"}
+                          {kycAadharName || "ড্রাইভিং লাইসেন্স (সংযুক্ত)"}
                         </p>
                         <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
-                          ✓ ডকুমেন্টের প্রিভিউ প্রস্তুত
+                          ✓ লাইসেন্সের প্রিভিউ প্রস্তুত
                         </p>
                       </div>
                     </div>
@@ -1529,7 +1869,7 @@ function MobileAppPageContent() {
                     </div>
                   </div>
                 ) : (
-                  /* Empty Upload State (Clicking opens storage/gallery) */
+                  /* Empty Upload State */
                   <div
                     onClick={() => aadharFileInputRef.current?.click()}
                     className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
@@ -1538,8 +1878,8 @@ function MobileAppPageContent() {
                       <Upload className="w-6 h-6" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-slate-900">আধার কার্ডের ছবি নির্বাচন করুন</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">গ্যালারি, মেমরি বা ক্যামেরা থেকে পরিষ্কার ছবি সিলেক্ট করুন</p>
+                      <h5 className="text-xs font-bold text-slate-900">ড্রাইভিং লাইসেন্সের ছবি নির্বাচন করুন</h5>
+                      <p className="text-[11px] text-slate-500 mt-0.5">গ্যালারি বা ক্যামেরা থেকে পরিষ্কার ছবি সিলেক্ট করুন</p>
                     </div>
                     <Button
                       type="button"
@@ -1548,27 +1888,26 @@ function MobileAppPageContent() {
                       className="h-9 px-4 text-xs font-bold rounded-xl border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 gap-1.5 shadow-xs pointer-events-none"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      ফাইল / গ্যালারি থেকে সিলেক্ট করুন
+                      লাইসেন্স ছবি সিলেক্ট করুন
                     </Button>
                   </div>
                 )}
               </div>
 
-              {/* Secondary Document Upload Card */}
+              {/* 2. Toto Receipt Upload Card */}
               <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-700 font-semibold">২য় ডকুমেন্ট (লাইসেন্স/ভোটার/প্যান)</Label>
-                  <select
-                    value={kycSecondaryType}
-                    onChange={(e) => setKycSecondaryType(e.target.value)}
-                    className="text-[11px] bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-slate-800 font-medium outline-hidden"
-                  >
-                    <option value="driving_license">ড্রাইভিং লাইসেন্স</option>
-                    <option value="voter_card">ভোটার আইডি কার্ড</option>
-                    <option value="pan_card">প্যান কার্ড</option>
-                    <option value="toto_permit">টোটো পারমিট / রসিদ</option>
-                  </select>
-                </div>
+                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                  <span>২. টোটো রসিদ / রেজিস্ট্রেশন ডকুমেন্ট (Toto Receipt) *</span>
+                  {kycSecondaryDoc ? (
+                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
+                      বাধ্যতামূলক
+                    </span>
+                  )}
+                </Label>
 
                 {kycSecondaryDoc ? (
                   /* Uploaded Preview State */
@@ -1577,17 +1916,17 @@ function MobileAppPageContent() {
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-purple-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
                         {kycSecondaryDoc.startsWith("data:image") || kycSecondaryDoc.startsWith("http") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycSecondaryDoc} alt="Secondary Preview" className="w-full h-full object-cover" />
+                          <img src={kycSecondaryDoc} alt="Toto Receipt Preview" className="w-full h-full object-cover" />
                         ) : (
                           <FileText className="w-8 h-8 text-purple-600" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycSecondaryName || "২য় ডকুমেন্ট (সংযুক্ত)"}
+                          {kycSecondaryName || "টোটো রসিদ (সংযুক্ত)"}
                         </p>
                         <p className="text-[11px] text-purple-600 font-semibold mt-0.5">
-                          ✓ ডকুমেন্টের প্রিভিউ প্রস্তুত
+                          ✓ রসিদের প্রিভিউ প্রস্তুত
                         </p>
                       </div>
                     </div>
@@ -1630,8 +1969,8 @@ function MobileAppPageContent() {
                       <Upload className="w-6 h-6" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-slate-900">২য় ডকুমেন্টের ছবি নির্বাচন করুন</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">ড্রাইভিং লাইসেন্স, ভোটার বা পারমিট ছবি সিলেক্ট করুন</p>
+                      <h5 className="text-xs font-bold text-slate-900">টোটো রসিদের ছবি নির্বাচন করুন</h5>
+                      <p className="text-[11px] text-slate-500 mt-0.5">টোটোর রসিদ বা রেজিস্ট্রেশন পেপারের ছবি সিলেক্ট করুন</p>
                     </div>
                     <Button
                       type="button"
@@ -1640,7 +1979,7 @@ function MobileAppPageContent() {
                       className="h-9 px-4 text-xs font-bold rounded-xl border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 gap-1.5 shadow-xs pointer-events-none"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      ফাইল / গ্যালারি থেকে সিলেক্ট করুন
+                      টোটো রসিদ সিলেক্ট করুন
                     </Button>
                   </div>
                 )}
@@ -1682,14 +2021,14 @@ function MobileAppPageContent() {
               আবেদন অনুমোদনের অপেক্ষায়
             </h2>
             <p className="text-slate-600 text-sm mt-2 max-w-xs mx-auto font-medium">
-              নমস্কার {session?.driverName || "চালক বন্ধু"}! আপনার চালক আবেদন ও আধার ডকুমেন্টস সফলভাবে জমা হয়েছে।
+              নমস্কার {session?.driverName || "চালক বন্ধু"}! আপনার চালক আবেদন ও ডকুমেন্টস সফলভাবে জমা হয়েছে।
             </p>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 text-left space-y-2 max-w-xs mx-auto text-xs shadow-sm">
             <div className="flex justify-between">
-              <span className="text-slate-500">টোটো নম্বর:</span>
-              <span className="font-mono font-bold text-slate-900">{session?.totoNumber || "WB-96-T-XXXX"}</span>
+              <span className="text-slate-500">ইউনিক আইডি / টোটো:</span>
+              <span className="font-mono font-bold text-slate-900">{session?.uniqueId || session?.totoNumber || "SR-XXXX"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">স্ট্যাটাস:</span>
@@ -1731,6 +2070,16 @@ function MobileAppPageContent() {
           </a>
 
           <div className="pt-2 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full h-11 rounded-xl border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 font-bold bg-white text-xs cursor-pointer flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+              onClick={handleDeleteDriverAccount}
+              disabled={loading}
+            >
+              <Trash2 className="w-4 h-4 text-red-600" />
+              <span>আবেদন বাতিল ও চালক ডিলিট (পুনরায় রেজিস্ট্রেশন)</span>
+            </Button>
+
             <Button
               variant="outline"
               className="w-full h-11 rounded-xl border-slate-300 text-slate-700 font-semibold bg-white text-xs cursor-pointer"
@@ -1799,48 +2148,63 @@ function MobileAppPageContent() {
                   ★ 5.0
                 </span>
               </div>
-              <span className="text-[10px] font-mono font-bold text-slate-500">{session?.totoNumber || "রেজিস্ট্রেশন নম্বর নান পাওয়ায়"}</span>
+              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                🆔 {session?.uniqueId || session?.totoNumber || "SR-DRV"}
+              </span>
             </div>
           </div>
 
-          {/* Online / Offline Toggle */}
-          <button
-            type="button"
-            onClick={async () => {
-              const nextOnline = !isOnline;
-              setIsOnline(nextOnline);
-              if (!isSoundMuted) playSuccessSound();
-              toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+          <div className="flex items-center gap-1.5">
+            {/* Delete Rider Account & Re-register Option */}
+            <button
+              type="button"
+              onClick={handleDeleteDriverAccount}
+              title="চালক প্রোফাইল ডিলিট ও পুনরায় রেজিস্ট্রেশন করুন"
+              className="px-2 py-1.5 rounded-xl text-xs font-bold bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span className="text-[10px]">ডিলিট/নতুন রেজিস্ট্রেশন</span>
+            </button>
 
-              // Sync online/offline status with server and WhatsApp
-              const driverId = session?.driverId;
-              const phone = session?.phone;
-              if (driverId || phone) {
-                try {
-                  await fetch("/api/drivers", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      id: driverId,
-                      phone: phone,
-                      is_active: nextOnline,
-                      is_available: nextOnline,
-                    }),
-                  });
-                } catch (err) {
-                  console.error("Failed to sync driver online status:", err);
+            {/* Online / Offline Toggle */}
+            <button
+              type="button"
+              onClick={async () => {
+                const nextOnline = !isOnline;
+                setIsOnline(nextOnline);
+                if (!isSoundMuted) playSuccessSound();
+                toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+
+                // Sync online/offline status with server and WhatsApp
+                const driverId = session?.driverId;
+                const phone = session?.phone;
+                if (driverId || phone) {
+                  try {
+                    await fetch("/api/drivers", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        id: driverId,
+                        phone: phone,
+                        is_active: nextOnline,
+                        is_available: nextOnline,
+                      }),
+                    });
+                  } catch (err) {
+                    console.error("Failed to sync driver online status:", err);
+                  }
                 }
-              }
-            }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
-              isOnline
-                ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
-                : "bg-red-50 text-red-600 border border-red-200"
-            }`}
-          >
-            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
-            <span>{isOnline ? "অনলাইন (ডিউটি)" : "অফলাইন"}</span>
-          </button>
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+                isOnline
+                  ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
+                  : "bg-red-50 text-red-600 border border-red-200"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
+              <span>{isOnline ? "অনলাইন" : "অফলাইন"}</span>
+            </button>
+          </div>
         </div>
 
         {/* Radar & Status Area (When Idle) */}
@@ -1989,50 +2353,83 @@ function MobileAppPageContent() {
             {/* Swipe actions based on ride progress */}
             <div className="space-y-3 pb-4">
               {activeRide.status === "heading_pickup" ? (
-                <SwipeToConfirm
-                  label="➡️ স্লাইড করে যাত্রা শুরু করুন"
-                  confirmedLabel="যাত্রা শুরু হয়েছে 🛺"
-                  colorScheme="blue"
-                  onConfirm={async () => {
-                    try {
-                      await fetch("/api/bookings", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          action: "start",
-                          bookingId: activeRide.id,
-                          driverId: session?.driverId,
-                        }),
-                      });
-                    } catch {}
-                    setActiveRide({ ...activeRide, status: "on_trip" });
-                    playSuccessSound();
-                    toast.success("যাত্রা শুরু হয়েছে! সাবধানে ড্রাইভ করুন।");
-                  }}
-                />
+                <div className="space-y-2.5">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-amber-900 flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>যাত্রী গাড়িতে উঠলে ৪ সংখ্যার ওটিপি নিন</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-amber-700 bg-white px-2 py-0.5 rounded-full border border-amber-200">
+                      ওটিপি বাধ্যতামূলক
+                    </span>
+                  </div>
+
+                  <SwipeToConfirm
+                    key="slider_start_journey"
+                    label="➡️ স্লাইড করে ওটিপি দিন ও যাত্রা শুরু করুন"
+                    confirmedLabel="ওটিপি লিখুন..."
+                    colorScheme="blue"
+                    onConfirm={async () => {
+                      setStartOtpInput("");
+                      setShowStartOtpModal(true);
+                    }}
+                  />
+
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setStartOtpInput("");
+                      setShowStartOtpModal(true);
+                    }}
+                    variant="outline"
+                    className="w-full h-11 rounded-2xl border-blue-200 text-blue-700 hover:bg-blue-50 font-bold text-xs flex items-center justify-center gap-2"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                    <span>🔐 সরাসরি ওটিপি (OTP) দিন</span>
+                  </Button>
+                </div>
               ) : (
-                <SwipeToConfirm
-                  label="➡️ স্লাইড করে ট্রিপ সমাপ্ত করুন"
-                  confirmedLabel="ট্রিপ সমাপ্ত হয়েছে ✓"
-                  colorScheme="emerald"
-                  onConfirm={async () => {
-                    const fare = activeRide.fare || 50;
-                    try {
-                      await fetch("/api/bookings", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          action: "complete",
-                          bookingId: activeRide.id,
-                          driverId: session?.driverId,
-                        }),
-                      });
-                    } catch {}
-                    playSuccessSound();
-                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${fare}.00 সংগ্রহ করুন।`);
-                    setActiveRide(null);
-                  }}
-                />
+                <div className="space-y-3">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-emerald-800 flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
+                      যাত্রা শুরু হয়েছে ও চলমান 🛺
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
+                      গন্তব্যে যাচ্ছেন
+                    </span>
+                  </div>
+
+                  <SwipeToConfirm
+                    key="slider_complete_journey"
+                    label="➡️ স্লাইড করে ট্রিপ সমাপ্ত করুন"
+                    confirmedLabel="ট্রিপ সমাপ্ত হয়েছে ✓"
+                    colorScheme="emerald"
+                    onConfirm={async () => {
+                      try {
+                        const res = await fetch("/api/bookings", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "complete",
+                            bookingId: activeRide.id,
+                            driverId: session?.driverId,
+                            endCoords: driverLiveCoords || null,
+                          }),
+                        });
+                        const data = await res.json();
+                        const finalFare = data.booking?.final_fare || activeRide.fare || 50;
+                        const distText = data.booking?.actual_distance_km ? ` (দূরত্ব: ${data.booking.actual_distance_km} কিমি)` : "";
+                        playSuccessSound();
+                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত!${distText} নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+                      } catch {
+                        playSuccessSound();
+                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত!`);
+                      }
+                      setActiveRide(null);
+                    }}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -2265,6 +2662,85 @@ function MobileAppPageContent() {
           defaultRole="rider"
         />
 
+        {/* DRIVER START JOURNEY OTP MODAL */}
+        {showStartOtpModal && activeRide && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+            style={{ background: "rgba(15,23,42,0.65)", backdropFilter: "blur(8px)" }}
+          >
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center text-amber-700">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-slate-900">রাইড শুরুর ওটিপি (OTP)</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">যাত্রীর থেকে ৪ সংখ্যার কোডটি নিন</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowStartOtpModal(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span>🔒 ওটিপি ছাড়া যাত্রা শুরু করা অসম্ভব</span>
+                  </p>
+                  <p className="text-[11px] text-amber-800 font-normal">
+                    যাত্রী টোটোতে ওঠার পর তাঁর মোবাইল অ্যাপ বা হোয়াটসঅ্যাপে দেখানো ৪ সংখ্যার ওটিপিটি এখানে লিখুন।
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    ৪ ডিজিটের ওটিপি লিখুন:
+                  </label>
+                  <input
+                    type="tel"
+                    maxLength={4}
+                    autoFocus
+                    value={startOtpInput}
+                    onChange={(e) => setStartOtpInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="• • • •"
+                    className="w-full h-14 text-center text-2xl font-black font-mono tracking-widest rounded-2xl border-2 border-slate-200 focus:border-amber-500 focus:outline-none bg-slate-50 text-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowStartOtpModal(false)}
+                  className="flex-1 h-12 rounded-2xl font-bold text-xs border-slate-200 text-slate-700"
+                >
+                  বাতিল
+                </Button>
+                <Button
+                  type="button"
+                  disabled={startOtpInput.length < 4 || isVerifyingStartOtp}
+                  onClick={handleVerifyAndStartJourney}
+                  className="flex-1 h-12 rounded-2xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isVerifyingStartOtp ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  <span>যাচাই ও শুরু করুন</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         </div>
       </MobileAppShell>
     );
@@ -2339,16 +2815,16 @@ function MobileAppPageContent() {
                     কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
                   </h4>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    আশেপাশের অনলাইন টোটো চালকদের কাছে আপনার অনুরোধ পাঠানো হচ্ছে (৫ মিনিট অপেক্ষা)।
+                    আশেপাশের অনলাইন টোটো চালকদের কাছে আপনার অনুরোধ পাঠানো হচ্ছে (৩ মিনিট অপেক্ষা)।
                   </p>
                 </div>
               </div>
 
-              {/* Progress Countdown Bar (5 min / 300s) */}
+              {/* Progress Countdown Bar (3 min / 180s) */}
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                 <div
                   className="bg-emerald-500 h-full transition-all duration-1000 rounded-full"
-                  style={{ width: `${(searchCountdown / 300) * 100}%` }}
+                  style={{ width: `${(searchCountdown / 180) * 100}%` }}
                 />
               </div>
 
@@ -2359,6 +2835,9 @@ function MobileAppPageContent() {
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
                       {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড ইকোনমি" : selectedTier === "reserved" ? "🛺✨ স্পেশাল রিজার্ভ" : "🛺 স্ট্যান্ডার্ড টোটো"}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-800">
+                      👥 {passengerCount} যাত্রী
                     </span>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">
                       {paymentMode === "upi" ? "📱 UPI" : "💵 নগদ"}
@@ -2383,9 +2862,14 @@ function MobileAppPageContent() {
                     <span className="font-bold text-slate-800 ml-1">{dropText}</span>
                   </div>
                 </div>
-                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between font-medium">
-                  <span className="text-slate-500">দূরত্ব: {tripDistance} কিমি</span>
-                  <span className="text-sm font-black text-emerald-700">₹{tripFare}.০০ ভাড়া</span>
+                <div className="pt-2 border-t border-slate-200/80 flex flex-col gap-1 font-medium">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">দূরত্ব: {tripDistance} কিমি</span>
+                    <span className="text-sm font-black text-emerald-700">₹{tripFare}.০০ (আনুমানিক)</span>
+                  </div>
+                  <p className="text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded-lg border border-amber-200 leading-relaxed">
+                    ⚠️ এটি আনুমানিক ভাড়া। পিকআপ ও ড্রপের সঠিক অবস্থান এবং রোডের দূরত্বের উপর ভিত্তি করে চূড়ান্ত ভাড়া সামান্য কম বা বেশি হতে পারে।
+                  </p>
                 </div>
               </div>
 
@@ -2396,8 +2880,7 @@ function MobileAppPageContent() {
                   size="lg"
                   className="w-full h-12 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer"
                   onClick={() => {
-                    setPhase("passenger_home");
-                    toast.info("অনুসন্ধান বাতিল করা হয়েছে");
+                    setShowCancelModal(true);
                   }}
                 >
                   ❌ রিকোয়েস্ট বাতিল করুন
@@ -2456,9 +2939,9 @@ function MobileAppPageContent() {
                   className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
                   onClick={async () => {
                     setSearchStatus("searching");
-                    setSearchCountdown(300);
+                    setSearchCountdown(180);
                     playRideAlertSound();
-                    toast.info("পুনরায় ৫ মিনিটের জন্য চালক খোঁজা হচ্ছে...");
+                    toast.info("পুনরায় ৩ মিনিটের জন্য চালক খোঁজা হচ্ছে...");
 
                     try {
                       const res = await fetch("/api/bookings", {
@@ -2488,11 +2971,9 @@ function MobileAppPageContent() {
 
                 <Button
                   variant="outline"
-                  className="w-full h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white"
+                  className="w-full h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white cursor-pointer"
                   onClick={() => {
-                    setPhase("passenger_home");
-                    setSearchStatus("searching");
-                    toast.info("বুকিং উইন্ডোতে ফিরে গেছেন");
+                    setShowCancelModal(true);
                   }}
                 >
                   ❌ বুকিং বাতিল করুন
@@ -2750,22 +3231,63 @@ function MobileAppPageContent() {
         ) : (
           <>
             {!passengerBooking && (
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
-                <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                  পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
-                </p>
+              <div className="space-y-3">
+                {isCustomerBlocked || customerStrikes >= 3 ? (
+                  <div className="p-4 rounded-2xl bg-red-50 border-2 border-red-300 shadow-sm space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                        <span className="text-base">🚫</span>
+                        <span>অ্যাকাউন্ট সাময়িকভাবে স্থগিত (Blocked)</span>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold bg-red-200 text-red-900 px-2 py-0.5 rounded-md">
+                        ৩/৩ বাতিল
+                      </span>
+                    </div>
+                    <p className="text-xs text-red-700 font-medium leading-relaxed">
+                      ৩ বার বুকিং বাতিল করায় আপনার নম্বরটি সাময়িকভাবে স্থগিত করা হয়েছে। নতুন কোনো রাইড বুক করা যাবে না।
+                    </p>
+                    <div className="pt-1 flex items-center justify-between">
+                      <a
+                        href="tel:9593177885"
+                        className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                      >
+                        <Phone className="w-3.5 h-3.5 fill-white" />
+                        <span>📞 হেল্পলাইনে কল করুন (9593177885)</span>
+                      </a>
+                    </div>
+                  </div>
+                ) : customerStrikes > 0 ? (
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span className="font-semibold">
+                        বাতিলকরণ সতর্কতা: ৩ বার বাতিল করলে অ্যাকাউন্ট ব্লক হবে
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded-md shrink-0">
+                      {customerStrikes}/3
+                    </span>
+                  </div>
+                ) : null}
+
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
+                  <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                    পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
+                  </p>
+                </div>
               </div>
             )}
 
             {passengerBooking ? (
               <LiveRideTrackingMap
-            booking={{
-              id: passengerBooking.id,
-              driverName: passengerBooking.driverName || "টোটো চালক",
-              driverPhone: passengerBooking.driverPhone || "",
-              totoNumber: passengerBooking.totoNumber || "",
-            }}
+                booking={{
+                  id: passengerBooking.id,
+                  driverName: passengerBooking.driverName || "টোটো চালক",
+                  driverPhone: passengerBooking.driverPhone || "",
+                  totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || "",
+                  startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || passengerBooking.id || "").replace(/\D/g, "").slice(-4) || "5821"),
+                }}
             pickupCoords={pickupCoords}
             dropCoords={dropCoords}
             pickupText={pickupText}
@@ -2791,6 +3313,7 @@ function MobileAppPageContent() {
               initialDrop={dropText}
               onRouteSelected={handleRouteSelected}
               onConfirmBooking={handleConfirmBooking}
+              isBlocked={isCustomerBlocked || customerStrikes >= 3}
             />
           </div>
         )}
@@ -2897,10 +3420,43 @@ function MobileAppPageContent() {
               <button
                 type="button"
                 onClick={() => setShowCancelModal(false)}
-                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
+                className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* 3-Strike Cancellation Policy Warning Card */}
+            <div
+              className={`p-3.5 rounded-2xl border space-y-1.5 ${
+                customerStrikes >= 2
+                  ? "bg-red-50 border-red-200 text-red-900"
+                  : "bg-amber-50 border-amber-200 text-amber-900"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  ৩-বার বাতিলকরণ নীতি (3-Strike Rule)
+                </span>
+                <span
+                  className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md ${
+                    customerStrikes >= 2
+                      ? "bg-red-200 text-red-800 border border-red-300"
+                      : "bg-amber-200 text-amber-900 border border-amber-300"
+                  }`}
+                >
+                  {customerStrikes}/3 বাতিল
+                </span>
+              </div>
+              <p className="text-[11px] leading-relaxed opacity-90 font-medium">
+                পর পর ৩ বার বুকিং বাতিল করলে সুন্দরবন রাইডার্সে আপনার নম্বর সাময়িকভাবে স্থগিত (Blocked) করা হবে।
+              </p>
+              {customerStrikes === 2 && (
+                <div className="text-[10px] font-bold text-red-700 bg-red-100/90 p-1.5 rounded-lg border border-red-200">
+                  🚨 চূড়ান্ত সতর্কতা: এটি আপনার শেষ সুযোগ! এবার বাতিল করলে অ্যাকাউন্ট স্থগিত হবে।
+                </div>
+              )}
             </div>
 
             <p className="text-xs text-slate-500 font-medium">
@@ -2918,24 +3474,50 @@ function MobileAppPageContent() {
                   key={idx}
                   type="button"
                   onClick={async () => {
-                    if (activeBookingId || passengerBooking?.id) {
+                    const bId = activeBookingId || passengerBooking?.id;
+                    let newCancels = customerStrikes + 1;
+                    let isBlocked = newCancels >= 3;
+
+                    if (bId) {
                       try {
                         const apiUrl = "/api/bookings";
-                        await fetch(apiUrl, {
+                        const res = await fetch(apiUrl, {
                           method: "PATCH",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
                             action: "cancel",
-                            bookingId: activeBookingId || passengerBooking?.id,
+                            bookingId: bId,
                             cancelReason: reason,
                           }),
                         });
+                        const resData = await res.json();
+                        if (resData.cancellation_count !== undefined) {
+                          newCancels = resData.cancellation_count;
+                        }
+                        if (resData.is_blocked !== undefined) {
+                          isBlocked = Boolean(resData.is_blocked || newCancels >= 3);
+                        }
                       } catch {}
                     }
+
+                    setCustomerStrikes(newCancels);
+                    setIsCustomerBlocked(isBlocked);
                     setPassengerBooking(null);
                     setActiveBookingId(null);
                     setShowCancelModal(false);
-                    toast.info(`রাইড বাতিল করা হয়েছে: ${reason}`);
+                    setPhase("passenger_home");
+
+                    if (isBlocked) {
+                      toast.error(
+                        `🚫 সতর্কবার্তা: ৩ বার বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে! (বাতিল: ${newCancels}/3)`,
+                        { duration: 6000 }
+                      );
+                    } else {
+                      toast.warning(
+                        `⚠️ রাইড বাতিল করা হয়েছে (${reason})। বর্তমান স্ট্রাইক: ${newCancels}/3 (৩ বার বাতিল হলে অ্যাকাউন্ট স্থগিত হবে)।`,
+                        { duration: 5000 }
+                      );
+                    }
                   }}
                   className="w-full p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50 text-left text-xs font-semibold text-slate-800 transition-colors"
                 >
@@ -2947,7 +3529,7 @@ function MobileAppPageContent() {
             <Button
               onClick={() => setShowCancelModal(false)}
               variant="ghost"
-              className="w-full text-xs text-slate-500 h-9 font-medium"
+              className="w-full text-xs text-slate-500 h-9 font-medium hover:bg-slate-100"
             >
               বাতিল করবেন না, রাইড চালিয়ে যান
             </Button>

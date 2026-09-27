@@ -63,7 +63,7 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
     expect(action?.media?.url).toBe(RIDER_DISCLAIMER_PDF_URL);
     expect(action?.media?.filename).toContain("Rider_Disclaimer");
     expect(action?.buttons).toEqual([
-      { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+      { id: "driver_agree_terms", title: "সম্মত" },
     ]);
   });
 

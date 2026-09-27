@@ -3,6 +3,12 @@ import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { sendInteractiveButtons, sendTextMessage } from "@/lib/whatsapp/meta-api";
 import { calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
+import {
+  calculateTotoFare,
+  DEFAULT_TOTO_PRICING,
+  TotoPricingConfig,
+} from "@/lib/pricing/fare-calculator";
+import { getCustomWhatsAppMessage } from "@/lib/whatsapp/message-templates";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -87,11 +93,23 @@ async function notifyOnlineDriversViaWhatsApp(
         }
       }
 
+      const bMeta = getBookingMeta(booking);
+      const pCount = bMeta.passenger_count || 3;
+      const bodyText = await getCustomWhatsAppMessage(admin, "driver_new_booking_alert", {
+        booking_number: booking.booking_number,
+        customer_name: booking.customer_name,
+        customer_phone: booking.customer_phone,
+        passenger_count: pCount,
+        pickup_location: booking.pickup_location,
+        drop_location: booking.drop_location,
+        distance_text: distText,
+      });
+
       await sendInteractiveButtons({
         phoneNumberId,
         accessToken,
         to: recipientPhone,
-        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${booking.booking_number}\n👤 যাত্রী: ${booking.customer_name}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${booking.pickup_location}${distText}\n🏁 গন্তব্য: ${booking.drop_location}\n💵 আনুমানিক ভাড়া: ₹${booking.estimated_fare}.00\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+        bodyText,
         buttons: [
           { id: `driver_accept_${booking.id}`, title: "✅ রাইড গ্রহণ" },
           { id: `driver_decline_${booking.id}`, title: "❌ প্রত্যাখ্যান" },
@@ -118,14 +136,32 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
     const accessToken = decrypt(config.access_token);
     const phoneNumberId = config.phone_number_id;
 
-    // 1. Notify Passenger on WhatsApp
+    // 1. Notify Passenger on WhatsApp with Start OTP
     if (booking.customer_phone) {
       const custPhone = formatWhatsAppPhone(booking.customer_phone);
+      let driverUid = driver.unique_id || "";
+      if (!driverUid && driver.current_location_name) {
+        try {
+          const m = JSON.parse(driver.current_location_name);
+          if (m.unique_id) driverUid = m.unique_id;
+        } catch {}
+      }
+      const driverBadge = driverUid || driver.toto_number || "SR-DRV";
+      const startOtp = booking.start_otp || ((booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4) || "5821");
+
+      const bodyText = await getCustomWhatsAppMessage(admin, "passenger_ride_assigned", {
+        booking_number: booking.booking_number,
+        driver_name: driver.name || "সুন্দরবন চালক",
+        driver_phone: driver.phone || "9593177885",
+        driver_id: driverBadge,
+        start_otp: startOtp,
+      });
+
       await sendInteractiveButtons({
         phoneNumberId,
         accessToken,
         to: custPhone,
-        bodyText: "✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: " + (driver.name || "সুন্দরবন চালক") + "\n📞 ফোন: " + (driver.phone || "9593177885") + "\n🚘 টোটো নম্বর: " + (driver.toto_number || "WB-96-T-8421") + "\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।",
+        bodyText,
         buttons: [{ id: "cancel_ride", title: "❌ বুকিং বাতিল" }],
       }).catch((e) => console.warn("[notifyRideAccepted] Passenger WhatsApp send error:", e));
     }
@@ -166,11 +202,16 @@ async function notifyTripStarted(admin: SupabaseClient, booking: any) {
     const phoneNumberId = config.phone_number_id;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
+    const text = await getCustomWhatsAppMessage(admin, "passenger_trip_started", {
+      booking_number: booking.booking_number,
+      driver_name: booking.driver_name || "সুন্দরবন চালক",
+    });
+
     await sendTextMessage({
       phoneNumberId,
       accessToken,
       to: custPhone,
-      text: "🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।",
+      text,
     }).catch(() => {});
   } catch (err) {
     console.error("[notifyTripStarted] Error:", err);
@@ -186,11 +227,20 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
     const phoneNumberId = config.phone_number_id;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
+    const distText = booking.actual_distance_km ? `\n📍 মোট অতিক্রান্ত দূরত্ব: ${booking.actual_distance_km} কিমি` : "";
+
+    const bodyText = await getCustomWhatsAppMessage(admin, "passenger_trip_completed", {
+      booking_number: booking.booking_number,
+      distance_km: booking.actual_distance_km || "1.0",
+      final_fare: booking.final_fare || 50,
+      driver_name: booking.driver_name || "সুন্দরবন চালক",
+    });
+
     await sendInteractiveButtons({
       phoneNumberId,
       accessToken,
       to: custPhone,
-      bodyText: "🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! \"সুন্দরবন রাইডার\"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। \"সুন্দরবন রাইডার\" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n\n💵 সংগৃহীত ভাড়া: ₹" + (booking.final_fare || booking.estimated_fare || 50) + ".00\n\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :",
+      bodyText,
       buttons: [
         { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
         { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
@@ -211,11 +261,16 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
 
     if (cancelledBy === "driver" && booking.customer_phone) {
       const custPhone = formatWhatsAppPhone(booking.customer_phone);
+      const text = await getCustomWhatsAppMessage(admin, "ride_cancelled_to_passenger", {
+        booking_number: booking.booking_number,
+        driver_name: booking.driver_name || "চালক",
+        reason: reasonText,
+      });
       await sendTextMessage({
         phoneNumberId,
         accessToken,
         to: custPhone,
-        text: "⚠️ দুঃখিত! চালক আপনার রাইড বাতিল করেছেন" + reasonText + "। বুকিং #" + booking.booking_number + " বাতিল হয়েছে।",
+        text,
       }).catch(() => {});
     }
 
@@ -224,11 +279,15 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
         const { data: driver } = await admin.from("drivers").select("phone").eq("id", booking.driver_id).maybeSingle();
         if (driver?.phone) {
           const dPhone = formatWhatsAppPhone(driver.phone);
+          const text = await getCustomWhatsAppMessage(admin, "ride_cancelled_to_driver", {
+            booking_number: booking.booking_number,
+            reason: reasonText,
+          });
           await sendTextMessage({
             phoneNumberId,
             accessToken,
             to: dPhone,
-            text: "⚠️ যাত্রী রাইড বাতিল করেছেন" + reasonText + "। বুকিং #" + booking.booking_number + " বাতিল হয়েছে। আপনি পরবর্তী রাইডের জন্য প্রস্তুত।",
+            text,
           }).catch(() => {});
         }
       } else {
@@ -236,11 +295,15 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
         if (drivers) {
           for (const d of drivers) {
             if (!d.phone) continue;
+            const text = await getCustomWhatsAppMessage(admin, "ride_cancelled_to_driver", {
+              booking_number: booking.booking_number,
+              reason: reasonText,
+            });
             await sendTextMessage({
               phoneNumberId,
               accessToken,
               to: formatWhatsAppPhone(d.phone),
-              text: "ℹ️ বুকিং বাতিল: যাত্রী #" + booking.booking_number + " রাইড বাতিল করেছেন" + reasonText + "। পরবর্তী রাইডের জন্য অপেক্ষা করুন।",
+              text,
             }).catch(() => {});
           }
         }
@@ -272,6 +335,78 @@ const REGIONAL_COORDS: Record<string, [number, number]> = {
   "kulpi": [22.0830, 88.2430],
 };
 
+function getBookingMeta(booking: any): Record<string, any> {
+  if (!booking?.feedback) return {};
+  try {
+    const parsed = JSON.parse(booking.feedback);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function updateBookingMeta(existingFeedback: string | null | undefined, newFields: Record<string, any>): string {
+  let current: Record<string, any> = {};
+  if (existingFeedback) {
+    try {
+      const p = JSON.parse(existingFeedback);
+      if (typeof p === "object" && p !== null) current = p;
+    } catch {}
+  }
+  return JSON.stringify({ ...current, ...newFields });
+}
+
+/**
+ * Calculates exact road distance using OSRM routing engine with Haversine 1.25x road curvature fallback
+ */
+async function calculateAccurateRoadDistance(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number
+): Promise<number> {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`;
+    const res = await fetch(url, { headers: { "User-Agent": "SundarbanRiders/1.0" }, signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.routes && data.routes[0]?.distance) {
+        const meters = data.routes[0].distance;
+        return Math.max(0.5, Math.round((meters / 1000) * 10) / 10);
+      }
+    }
+  } catch (err) {
+    console.warn("[calculateAccurateRoadDistance] OSRM fetch failed, falling back to Haversine * 1.25:", err);
+  }
+  const directKm = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
+  return Math.max(0.5, Math.round(directKm * 1.25 * 10) / 10);
+}
+
+async function loadActivePricingConfig(admin: SupabaseClient): Promise<TotoPricingConfig> {
+  try {
+    const { data } = await admin
+      .from("system_settings")
+      .select("key, value")
+      .eq("key", "toto_pricing_config")
+      .maybeSingle();
+
+    if (data?.value) {
+      const parsed = JSON.parse(data.value);
+      return { ...DEFAULT_TOTO_PRICING, ...parsed };
+    }
+  } catch (err) {
+    console.warn("[pricing] Failed to load config from system_settings:", err);
+  }
+  return DEFAULT_TOTO_PRICING;
+}
+
+/**
+ * Calculates Toto fare based on dynamic admin configuration
+ */
+function calculateAccurateFare(distanceKm: number, passengerCount: number = 3, config: TotoPricingConfig = DEFAULT_TOTO_PRICING): number {
+  return calculateTotoFare(distanceKm, passengerCount, config).totalFare;
+}
+
 function enrichBookingCoords(booking: any) {
   if (!booking) return booking;
   let lat: number | null = null;
@@ -301,10 +436,40 @@ function enrichBookingCoords(booking: any) {
     lng = 88.1920 + offsetLng;
   }
 
+  let dropLat: number | null = null;
+  let dropLng: number | null = null;
+  const dropLoc = booking.drop_location || "";
+  const dropGpsMatch = dropLoc.match(/(?:GPS:\s*)?([0-9]{2}\.[0-9]+)\s*,\s*([0-9]{2}\.[0-9]+)/i);
+  if (dropGpsMatch) {
+    dropLat = parseFloat(dropGpsMatch[1]);
+    dropLng = parseFloat(dropGpsMatch[2]);
+  } else {
+    const lower = dropLoc.toLowerCase();
+    for (const [key, coords] of Object.entries(REGIONAL_COORDS)) {
+      if (lower.includes(key)) {
+        dropLat = coords[0];
+        dropLng = coords[1];
+        break;
+      }
+    }
+  }
+
+  const meta = getBookingMeta(booking);
+  const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
+  const fallbackOtp = seedNum.length >= 4 ? seedNum.slice(-4) : "5821";
+  const startOtp = meta.start_otp || fallbackOtp;
+
   return {
     ...booking,
     pickup_lat: lat,
     pickup_lng: lng,
+    drop_lat: dropLat,
+    drop_lng: dropLng,
+    start_otp: startOtp,
+    passenger_count: meta.passenger_count || 3,
+    actual_distance_km: meta.actual_distance_km || booking.actual_distance_km || null,
+    trip_start_time: meta.trip_start_time || null,
+    start_coords: meta.start_coords || (lat && lng ? [lat, lng] : null),
   };
 }
 
@@ -414,7 +579,7 @@ export async function GET(request: Request) {
 
       let activeQuery = admin
         .from("bookings")
-        .select("*")
+        .select("*, drivers(*)")
         .in("status", ["assigned", "in_progress"])
         .order("created_at", { ascending: false })
         .limit(1);
@@ -429,12 +594,20 @@ export async function GET(request: Request) {
       const { data, error } = await activeQuery.maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ booking: data });
+      return NextResponse.json({ booking: data ? enrichBookingCoords(data) : null });
     }
 
     if (customerPhone) {
       const cleanPhone = customerPhone.replace(/[^0-9]/g, "");
       const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
+      const isActiveOnly = searchParams.get("active") === "true";
+
+      // Also retrieve customer cancellation strikes & blocked status
+      const { data: customerRecord } = await admin
+        .from("customers")
+        .select("id, name, phone, cancellation_count, is_blocked")
+        .or(`phone.eq.${customerPhone},phone.eq.${cleanPhone}`)
+        .maybeSingle();
 
       if (isHistory) {
         const { data, error } = await admin
@@ -445,19 +618,49 @@ export async function GET(request: Request) {
           .limit(30);
 
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-        return NextResponse.json({ bookings: data || [] });
+        return NextResponse.json({
+          bookings: data || [],
+          customer: customerRecord || { cancellation_count: 0, is_blocked: false }
+        });
       }
 
-      const { data, error } = await admin
+      let activeQuery = admin
         .from("bookings")
         .select("*, drivers(*)")
         .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${cleanPhone}`)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
+
+      if (isActiveOnly) {
+        activeQuery = activeQuery.in("status", ["pending", "assigned", "in_progress"]);
+      }
+
+      const { data, error } = await activeQuery.limit(1).maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      return NextResponse.json({ booking: data });
+      const enriched = data ? enrichBookingCoords(data) : null;
+      let finalBooking = null;
+      if (enriched) {
+        const d = enriched.drivers;
+        let driverUid = d?.unique_id || "";
+        if (!driverUid && d?.current_location_name) {
+          try {
+            const m = JSON.parse(d.current_location_name);
+            if (m.unique_id) driverUid = m.unique_id;
+          } catch {}
+        }
+        finalBooking = {
+          ...enriched,
+          driver_name: d?.name || (enriched as any).driver_name || "সুন্দরবন চালক",
+          driver_phone: d?.phone || (enriched as any).driver_phone || null,
+          toto_number: driverUid || d?.toto_number || (enriched as any).toto_number || "WB-96-T-8421",
+          unique_id: driverUid || d?.toto_number || (enriched as any).toto_number || "SR-DRV",
+        };
+      }
+
+      return NextResponse.json({
+        booking: finalBooking,
+        customer: customerRecord || { cancellation_count: 0, is_blocked: false }
+      });
     }
 
     // Default: return recent pending bookings
@@ -490,6 +693,8 @@ export async function POST(request: Request) {
       pickupCoords,
       dropCoords,
       estimatedFare,
+      passengerCount = 3,
+      tripDistance,
     } = body;
 
     if (!pickupLocation || !dropLocation) {
@@ -500,12 +705,33 @@ export async function POST(request: Request) {
     const cleanPhone = (customerPhone || "918348122122").replace(/[^0-9]/g, "");
     const bookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    // 0. Check if customer is blocked due to 3-strike cancellation policy
+    const { data: existingCustomer } = await admin
+      .from("customers")
+      .select("id, cancellation_count, is_blocked")
+      .eq("phone", cleanPhone)
+      .maybeSingle();
+
+    if (existingCustomer && ((existingCustomer.cancellation_count || 0) >= 3 || existingCustomer.is_blocked)) {
+      return NextResponse.json(
+        {
+          error: "customer_blocked",
+          message: "⚠️ ৩ বারের বেশি বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সক্রিয় করতে অ্যাডমিনের হেল্পলাইনে (9593177885) যোগাযোগ করুন।",
+          cancellation_count: existingCustomer.cancellation_count || 3,
+          is_blocked: true,
+        },
+        { status: 403 }
+      );
+    }
+
     // 1. Ensure customer exists in customers table (CRITICAL: satisfies bookings_customer_phone_fkey constraint)
     try {
       await admin.from("customers").upsert(
         {
           phone: cleanPhone,
           name: customerName || "যাত্রী",
+          cancellation_count: existingCustomer?.cancellation_count || 0,
+          is_blocked: false,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "phone" }
@@ -513,6 +739,32 @@ export async function POST(request: Request) {
     } catch (cErr) {
       console.warn("[bookings] Customer upsert warning:", cErr);
     }
+
+    const pricingConfig = await loadActivePricingConfig(admin);
+    const validPassengerCount = Math.max(
+      pricingConfig.minPassengers || 3,
+      Math.min(pricingConfig.maxPassengers || 5, Number(passengerCount) || 3)
+    );
+
+    let finalEstimatedFare = Number(estimatedFare);
+    if (!finalEstimatedFare || finalEstimatedFare <= 0) {
+      let dist = Number(tripDistance) || 0;
+      if (dist <= 0 && pickupCoords && dropCoords) {
+        dist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
+      }
+      finalEstimatedFare = calculateTotoFare(dist || 2, validPassengerCount, pricingConfig).totalFare;
+    }
+
+    const initialMeta = JSON.stringify({
+      passenger_count: validPassengerCount,
+      estimated_distance_km: tripDistance || null,
+      pricing_snapshot: {
+        baseFare: pricingConfig.baseFare,
+        ratePerKm0to10: pricingConfig.ratePerKm0to10,
+        ratePerKm10to20: pricingConfig.ratePerKm10to20,
+        ratePerKm20to25: pricingConfig.ratePerKm20to25,
+      },
+    });
 
     const pickupLocString = pickupCoords && Array.isArray(pickupCoords) && pickupCoords.length === 2
       ? `${pickupLocation} (GPS: ${pickupCoords[0].toFixed(5)},${pickupCoords[1].toFixed(5)})`
@@ -526,7 +778,8 @@ export async function POST(request: Request) {
         customer_phone: cleanPhone,
         pickup_location: pickupLocString,
         drop_location: dropLocation,
-        estimated_fare: estimatedFare || 50,
+        estimated_fare: finalEstimatedFare,
+        feedback: initialMeta,
         status: "pending",
         created_at: new Date().toISOString(),
       })
@@ -613,9 +866,14 @@ export async function PATCH(request: Request) {
         }
       }
 
+      // Generate 4-digit start OTP and commit to feedback JSON
+      const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      const updatedFeedback = updateBookingMeta(booking.feedback, { start_otp: startOtp });
+
       // Assign ride atomically - ONLY updating columns that exist in bookings schema
       const updateData: Record<string, any> = {
         status: "assigned",
+        feedback: updatedFeedback,
         updated_at: new Date().toISOString(),
       };
       // Only set driver_id if confirmed to exist in drivers table; otherwise leave null (driver_id is nullable)
@@ -674,110 +932,114 @@ export async function PATCH(request: Request) {
       });
     }
 
-async function notifyTripStarted(admin: SupabaseClient, booking: any) {
-  try {
-    if (!booking.customer_phone) return;
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
-    const custPhone = booking.customer_phone.replace(/[^0-9]/g, "");
-
-    await sendTextMessage({
-      phoneNumberId,
-      accessToken,
-      to: custPhone,
-      text: `🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।`,
-    }).catch(() => {});
-  } catch (err) {
-    console.error("[notifyTripStarted] Error:", err);
-  }
-}
-
-async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
-  try {
-    if (!booking.customer_phone) return;
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
-    const custPhone = booking.customer_phone.replace(/[^0-9]/g, "");
-
-    await sendInteractiveButtons({
-      phoneNumberId,
-      accessToken,
-      to: custPhone,
-      bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n\n💵 সংগৃহীত ভাড়া: ₹${booking.final_fare || booking.estimated_fare || 50}.00\n\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :`,
-      buttons: [
-        { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
-        { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
-      ],
-    }).catch(() => {});
-  } catch (err) {
-    console.error("[notifyTripCompleted] Error:", err);
-  }
-}
-
-
-async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelledBy: string, reason?: string) {
-  try {
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
-    const reasonText = reason ? ` - ${reason}` : "";
-    if (cancelledBy === "driver" && booking.customer_phone) {
-      const custPhone = booking.customer_phone.replace(/[^0-9]/g, "");
-      await sendTextMessage({ phoneNumberId, accessToken, to: custPhone,
-        text: `⚠️ দুঃখিত! চালক আপনার রাইড বাতিল করেছেন${reasonText}. বুকিং #${booking.booking_number} বাতিল হয়েছে।`,
-      }).catch(() => {});
-    }
-    if (cancelledBy === "customer" && booking.driver_id) {
-      const { data: driver } = await admin.from("drivers").select("phone").eq("id", booking.driver_id).maybeSingle();
-      if (driver?.phone) {
-        const dPhone = driver.phone.replace(/[^0-9]/g, "");
-        await sendTextMessage({ phoneNumberId, accessToken, to: dPhone,
-          text: `⚠️ যাত্রী রাইড বাতিল করেছেন${reasonText}. বুকিং #${booking.booking_number} বাতিল হয়েছে। আপনি পরবর্তী রাইডের জন্য প্রস্তুত।`,
-        }).catch(() => {});
-      }
-    }
-  } catch (err) {
-    console.error("[notifyTripCancelled] Error:", err);
-  }
-}
-
     // -------------------------------------------------------------
-    // ACTION: START TRIP
+    // ACTION: START TRIP (OTP Required - Passenger must provide OTP)
     // -------------------------------------------------------------
     if (action === "start") {
-      const { data: updated } = await admin
-        .from("bookings")
-        .update({ status: "in_progress", updated_at: new Date().toISOString() })
-        .eq("id", booking.id)
-        .select()
-        .single();
+      const meta = getBookingMeta(booking);
+      const expectedOtp = (meta.start_otp || (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4) || "5821").toString();
+      const providedOtp = (body.otp || "").toString().trim();
 
-      if (updated) {
-        void notifyTripStarted(admin, updated);
+      if (!providedOtp) {
+        return NextResponse.json(
+          {
+            error: "otp_required",
+            message: "যাত্রা শুরু করতে যাত্রীর কাছ থেকে ৪ ডিজিটের ওটিপি (OTP) আবশ্যক।",
+          },
+          { status: 400 }
+        );
       }
 
-      return NextResponse.json({ success: true, booking: updated });
-    }
+      if (providedOtp !== expectedOtp) {
+        return NextResponse.json(
+          {
+            error: "invalid_otp",
+            message: "ভুল ওটিপি! অনুগ্রহ করে যাত্রীর অ্যাপ বা হোয়াটসঅ্যাপে দেখানো সঠিক ৪ ডিজিটের ওটিপি দিন।",
+          },
+          { status: 400 }
+        );
+      }
 
-    // -------------------------------------------------------------
-    // ACTION: COMPLETE TRIP
-    // -------------------------------------------------------------
-    if (action === "complete") {
-      const { data: updated } = await admin
+      const enriched = enrichBookingCoords(booking);
+      const startCoords = body.startCoords && Array.isArray(body.startCoords) && body.startCoords.length === 2
+        ? body.startCoords
+        : (enriched.pickup_lat && enriched.pickup_lng ? [enriched.pickup_lat, enriched.pickup_lng] : null);
+
+      const updatedMeta = updateBookingMeta(booking.feedback, {
+        trip_start_time: new Date().toISOString(),
+        start_coords: startCoords,
+        otp_verified: true,
+      });
+
+      const { data: updated, error: startErr } = await admin
         .from("bookings")
         .update({
-          status: "completed",
-          final_fare: booking.estimated_fare,
+          status: "in_progress",
+          feedback: updatedMeta,
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
         .select()
         .single();
+
+      if (startErr) {
+        return NextResponse.json({ error: startErr.message }, { status: 500 });
+      }
+
+      if (updated) {
+        void notifyTripStarted(admin, updated);
+      }
+
+      return NextResponse.json({ success: true, booking: enrichBookingCoords(updated) });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION: COMPLETE TRIP (Accurate distance & dynamic fare)
+    // -------------------------------------------------------------
+    if (action === "complete") {
+      const enriched = enrichBookingCoords(booking);
+      const meta = getBookingMeta(booking);
+
+      const sCoords = meta.start_coords || [enriched.pickup_lat, enriched.pickup_lng];
+      const eCoords = (body.endCoords && Array.isArray(body.endCoords) && body.endCoords.length === 2)
+        ? body.endCoords
+        : (enriched.drop_lat && enriched.drop_lng ? [enriched.drop_lat, enriched.drop_lng] : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
+
+      let distanceKm = 1.0;
+      if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
+        distanceKm = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
+      }
+
+      const pricingConfig = await loadActivePricingConfig(admin);
+      const passengerCount = meta.passenger_count || 3;
+      const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
+      const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
+      const calculatedFare = fareResult.totalFare;
+
+      const updatedMeta = updateBookingMeta(booking.feedback, {
+        actual_distance_km: distanceKm,
+        calculated_fare: calculatedFare,
+        fare_breakdown: fareResult,
+        passenger_count: passengerCount,
+        end_coords: eCoords,
+        trip_end_time: new Date().toISOString(),
+      });
+
+      const { data: updated, error: compErr } = await admin
+        .from("bookings")
+        .update({
+          status: "completed",
+          final_fare: calculatedFare,
+          feedback: updatedMeta,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", booking.id)
+        .select()
+        .single();
+
+      if (compErr) {
+        return NextResponse.json({ error: compErr.message }, { status: 500 });
+      }
 
       // Free driver back to available
       if (driverId || booking.driver_id) {
@@ -790,27 +1052,68 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
       }
 
       if (updated) {
-        void notifyTripCompleted(admin, updated);
+        const enrichedUpdated = enrichBookingCoords(updated);
+        void notifyTripCompleted(admin, enrichedUpdated);
+        return NextResponse.json({ success: true, booking: enrichedUpdated });
       }
 
-      return NextResponse.json({ success: true, booking: updated });
+      return NextResponse.json({ success: true });
     }
 
     // -------------------------------------------------------------
     // ACTION: CANCEL
     // -------------------------------------------------------------
     if (action === "cancel") {
-      const { data: updated } = await admin
+      const isCancelledByDriver = Boolean(driverId);
+      const cancelledBy = isCancelledByDriver ? "driver" : "customer";
+
+      const { data: updated, error: updateErr } = await admin
         .from("bookings")
         .update({
           status: "cancelled",
-          cancelled_by: driverId ? "driver" : "customer",
+          cancelled_by: cancelledBy,
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
         .select()
         .single();
 
+      if (updateErr) {
+        return NextResponse.json({ error: updateErr.message }, { status: 500 });
+      }
+
+      // If customer cancelled: increment customer cancellation_count in customers table
+      let newCancels = 0;
+      let isBlocked = false;
+
+      if (!isCancelledByDriver && booking.customer_phone) {
+        const cleanCustPhone = booking.customer_phone.replace(/[^0-9]/g, "");
+        if (cleanCustPhone) {
+          const { data: cust } = await admin
+            .from("customers")
+            .select("id, cancellation_count, is_blocked")
+            .eq("phone", cleanCustPhone)
+            .maybeSingle();
+
+          newCancels = (cust?.cancellation_count || 0) + 1;
+          isBlocked = newCancels >= 3;
+
+          await admin
+            .from("customers")
+            .upsert(
+              {
+                phone: cleanCustPhone,
+                name: booking.customer_name || "যাত্রী",
+                cancellation_count: newCancels,
+                is_blocked: isBlocked,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "phone" }
+            );
+        }
+      }
+
+      // Free driver back to available
       if (booking.driver_id) {
         void Promise.resolve(
           admin
@@ -821,10 +1124,18 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
       }
 
       if (updated) {
-        void notifyTripCancelled(admin, updated, driverId ? "driver" : "customer", body.cancelReason);
+        void notifyTripCancelled(admin, updated, cancelledBy, body.cancelReason);
       }
 
-      return NextResponse.json({ success: true, booking: updated });
+      return NextResponse.json({
+        success: true,
+        booking: updated,
+        cancellation_count: newCancels,
+        is_blocked: isBlocked,
+        message: isBlocked
+          ? "৩ বার বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে।"
+          : `রাইড বাতিল সফল হয়েছে। (বাতিল: ${newCancels}/3)`,
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -390,6 +390,7 @@ interface DriverRecord {
   agreed_terms?: boolean;
   agreed_at?: string;
   toto_number?: string;
+  unique_id?: string;
   vehicle_number?: string;
   latitude?: number;
   longitude?: number;
@@ -542,11 +543,24 @@ export async function processTotoMessage(
       ? `https://www.google.com/maps/dir/?api=1&destination=${pickupLoc.replace(/\s+/g, '')}`
       : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pickupLoc)}`;
 
+    let driverUid = driver?.unique_id || "";
+    if (!driverUid && driver?.current_location_name) {
+      try {
+        const m = JSON.parse(driver.current_location_name);
+        if (m.unique_id) driverUid = m.unique_id;
+      } catch {}
+    }
+    const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "SR-DRV";
+    const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
+    let bookingMeta: any = {};
+    try { bookingMeta = JSON.parse(booking.feedback || "{}"); } catch {}
+    const startOtp = bookingMeta.start_otp || booking.start_otp || (seedNum.length >= 4 ? seedNum.slice(-4) : "5821");
+
     const extraNotifications: NonNullable<OutboundWhatsAppAction["extraNotifications"]> = [
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🚘 টোটো নম্বর: ${driver?.toto_number || driver?.vehicle_number || "WB-96-T-XXXX"}\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🆔 চালক আইডি: ${driverBadge}\n=======================\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ওটিপিটি চালককে দিন)\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],
@@ -576,7 +590,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${booking.pickup_location}\n🏁 গন্তব্য: ${booking.drop_location}\n💵 ভাড়া: ₹${booking.estimated_fare}.00\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য নিচের গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রী গাড়িতে উঠলে নিচের 'যাত্রা শুরু' বোতামে চাপ দিন)`,
+      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${booking.pickup_location}\n🏁 গন্তব্য: ${booking.drop_location}\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য নিচের গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রী গাড়িতে উঠলে তাঁর ৪ সংখ্যার ওটিপি সংগ্রহ করে নিচের বোতামে চাপ দিন)`,
       buttons: [
         { id: `driver_start_${booking.id}`, title: "🚀 যাত্রা শুরু" },
       ],
@@ -603,27 +617,75 @@ export async function processTotoMessage(
       .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`)
       .maybeSingle();
 
-    if (booking) {
-      await supabase.from("bookings").update({ status: "in_progress" }).eq("id", booking.id);
+    if (!booking) {
+      return {
+        toPhone: rawPhone,
+        type: "text",
+        bodyText: "বুকিং পাওয়া যায়নি।",
+      };
     }
-
-    const extraNotifications = booking?.customer_phone ? [
-      {
-        toPhone: booking.customer_phone,
-        type: "text" as const,
-        bodyText: `🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।`,
-      },
-    ] : [];
 
     return {
       toPhone: rawPhone,
-      type: "interactive_buttons",
-      bodyText: `🟢 যাত্রা শুরু হয়েছে! সাবধানে ড্রাইভ করুন।\n\n🏁 গন্তব্যে পৌঁছে ট্রিপ সমাপ্ত করতে নিচের বোতামে চাপ দিন:`,
-      buttons: [
-        { id: `driver_complete_${booking?.id || bookingId}`, title: "🏁 ট্রিপ সমাপ্ত" },
-      ],
-      extraNotifications,
+      type: "text",
+      bodyText: `🔐 যাত্রা শুরু করতে যাত্রীর ৪-সংখ্যার ওটিপি (OTP) আবশ্যক!\n\nঅনুগ্রহ করে যাত্রীর কাছ থেকে ওটিপি নিয়ে তা লিখে এই নম্বরে পাঠান (যেমন: *OTP 1234* বা শুধু *1234*)। ওটিপি যাচাই ছাড়া যাত্রা শুরু করা যাবে না।`,
     };
+  }
+
+  // Handle Driver OTP Verification via incoming WhatsApp message
+  const otpMatch = (ctx.textBody || incomingText).match(/(?:otp|ওটিপি)?\s*([0-9]{4})/i);
+  if (otpMatch && driver) {
+    const { data: activeAssignedBooking } = await supabase
+      .from("bookings")
+      .select("*")
+      .eq("driver_id", driver.id)
+      .eq("status", "assigned")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeAssignedBooking) {
+      const enteredOtp = otpMatch[1];
+      let meta: any = {};
+      try { meta = JSON.parse(activeAssignedBooking.feedback || "{}"); } catch {}
+      const expectedOtp = meta.start_otp || (activeAssignedBooking.booking_number || activeAssignedBooking.id || "").replace(/\D/g, "").slice(-4) || "5821";
+
+      if (enteredOtp === expectedOtp) {
+        const updatedMeta = JSON.stringify({
+          ...meta,
+          trip_start_time: new Date().toISOString(),
+          otp_verified: true,
+        });
+        await supabase
+          .from("bookings")
+          .update({ status: "in_progress", feedback: updatedMeta, updated_at: new Date().toISOString() })
+          .eq("id", activeAssignedBooking.id);
+
+        const extraNotifications = activeAssignedBooking.customer_phone ? [
+          {
+            toPhone: activeAssignedBooking.customer_phone,
+            type: "text" as const,
+            bodyText: `🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।`,
+          },
+        ] : [];
+
+        return {
+          toPhone: rawPhone,
+          type: "interactive_buttons",
+          bodyText: `🟢 ওটিপি (${enteredOtp}) সফলভাবে যাচাই হয়েছে!\nযাত্রী নিয়ে যাত্রা শুরু হয়েছে, সাবধানে ড্রাইভ করুন।\n\n🏁 গন্তব্যে পৌঁছে ট্রিপ সমাপ্ত করতে নিচের বোতামে চাপ দিন:`,
+          buttons: [
+            { id: `driver_complete_${activeAssignedBooking.id}`, title: "🏁 ট্রিপ সমাপ্ত" },
+          ],
+          extraNotifications,
+        };
+      } else {
+        return {
+          toPhone: rawPhone,
+          type: "text",
+          bodyText: `❌ ভুল ওটিপি (${enteredOtp})! অনুগ্রহ করে যাত্রীর অ্যাপ বা হোয়াটসঅ্যাপে দেখানো সঠিক ৪ ডিজিটের ওটিপিটি জেনে লিখে পাঠান।`,
+        };
+      }
+    }
   }
 
   if (payload.startsWith("driver_complete_")) {
@@ -634,10 +696,30 @@ export async function processTotoMessage(
       .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`)
       .maybeSingle();
 
+    let meta: any = {};
+    try { meta = JSON.parse(booking?.feedback || "{}"); } catch {}
+
+    const sLat = meta.start_coords?.[0] || 21.8760;
+    const sLng = meta.start_coords?.[1] || 88.1920;
+    const eLat = meta.end_coords?.[0] || (sLat + 0.02);
+    const eLng = meta.end_coords?.[1] || (sLng + 0.02);
+
+    const distKm = Math.max(0.5, Math.round(calculateDistanceKm(sLat, sLng, eLat, eLng) * 1.25 * 10) / 10);
+    const finalFare = Math.max(20, Math.ceil((20 + (Math.max(1, distKm) - 1) * 10) / 5) * 5);
+
+    const updatedMeta = JSON.stringify({
+      ...meta,
+      actual_distance_km: distKm,
+      calculated_fare: finalFare,
+      trip_end_time: new Date().toISOString(),
+    });
+
     if (booking) {
       await supabase.from("bookings").update({
         status: "completed",
-        final_fare: booking.estimated_fare,
+        final_fare: finalFare,
+        feedback: updatedMeta,
+        updated_at: new Date().toISOString(),
       }).eq("id", booking.id);
     }
 
@@ -651,7 +733,7 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons" as const,
-        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :`,
+        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n=======================\n📍 মোট অতিক্রান্ত দূরত্ব: ${distKm} কিমি\n💵 সংগৃহীত চূড়ান্ত ভাড়া: ₹${finalFare}.00\n=======================\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :`,
         buttons: [
           { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
           { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
@@ -661,11 +743,8 @@ export async function processTotoMessage(
 
     return {
       toPhone: rawPhone,
-      type: "interactive_buttons",
-      bodyText: `✅ ট্রিপ সফলভাবে সম্পন্ন হয়েছে!\n=======================\n💵 ভাড়া সংগৃহীত: ₹${booking?.estimated_fare || 50}.00\n=======================\nআপনি পুনরায় নতুন রাইড গ্রহণের জন্য অনলাইন আছেন। ধন্যবাদ! 🙏`,
-      buttons: [
-        { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
-      ],
+      type: "text",
+      bodyText: `🏁 ট্রিপ সফলভাবে সম্পন্ন হয়েছে!\n=======================\n📍 মোট অতিক্রান্ত দূরত্ব: ${distKm} কিমি\n💵 সংগৃহীত চূড়ান্ত ভাড়া: ₹${finalFare}.00\n=======================\nআপনি এখন পরবর্তী রাইড পাওয়ার জন্য প্রস্তুত।`,
       extraNotifications,
     };
   }
@@ -677,7 +756,7 @@ export async function processTotoMessage(
     isRegisteredDriver &&
     driver &&
     (payload === "driver_agree_terms" ||
-      (!driver.agreed_terms && (incomingText.includes("চালক শর্তে সম্মত") || incomingText === "হ্যাঁ চালক")))
+      (!driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ চালক" || incomingText.includes("agree"))))
   ) {
     // Clear any accidental customer booking state
     customerBookingStates.delete(cleanPhone);
@@ -827,22 +906,18 @@ export async function processTotoMessage(
     if (isRegisteredDriver && driver) {
       // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button and attached PDF
       if (!driver.agreed_terms) {
-        const driverTerms =
-          settings.driver_terms_bengali ||
-          DEFAULT_TOTO_DRIVER_DISCLAIMER;
-
         return {
           toPhone: rawPhone,
           type: "interactive_buttons",
-          bodyText: driverTerms,
+          bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
           media: {
             kind: "document",
             url: RIDER_DISCLAIMER_PDF_URL,
             filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-            caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+            caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
           },
           buttons: [
-            { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+            { id: "driver_agree_terms", title: "সম্মত" },
           ],
         };
       }
@@ -981,22 +1056,18 @@ export async function processTotoMessage(
     payload !== "view_customer_disclaimer" &&
     payload !== "customer_disclaimer"
   ) {
-    const driverTerms =
-      settings.driver_terms_bengali ||
-      DEFAULT_TOTO_DRIVER_DISCLAIMER;
-
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: driverTerms,
+      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
       media: {
         kind: "document",
         url: RIDER_DISCLAIMER_PDF_URL,
         filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-        caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+        caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
       },
       buttons: [
-        { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+        { id: "driver_agree_terms", title: "সম্মত" },
       ],
     };
   }
@@ -1271,7 +1342,7 @@ export async function processTotoMessage(
         return {
           toPhone: recipientPhone,
           type: "interactive_buttons" as const,
-          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹50.00\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [
             { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
             { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ প্রত্যাখ্যান" },
@@ -1282,7 +1353,7 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹50.00\n=======================\n🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
+        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\n🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],
@@ -1409,22 +1480,18 @@ export async function processTotoMessage(
   if (isRegisteredDriver && driver) {
     // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button and attached PDF
     if (!driver.agreed_terms) {
-      const driverTerms =
-        settings.driver_terms_bengali ||
-        DEFAULT_TOTO_DRIVER_DISCLAIMER;
-
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: driverTerms,
+        bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
         media: {
           kind: "document",
           url: RIDER_DISCLAIMER_PDF_URL,
           filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-          caption: "📄 সুন্দরবন রাইডার — অফিসিয়াল চালক চুক্তি ও ডিসক্লেইমার (PDF)",
+          caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
         },
         buttons: [
-          { id: "driver_agree_terms", title: "✅ চালক শর্তে সম্মত" },
+          { id: "driver_agree_terms", title: "সম্মত" },
         ],
       };
     }

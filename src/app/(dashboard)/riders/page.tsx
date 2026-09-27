@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Upload,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ interface Driver {
   name: string;
   phone: string;
   toto_number: string;
+  unique_id?: string;
   district?: string;
   block?: string;
   aadhar_no?: string;
@@ -54,6 +56,8 @@ interface Driver {
   aadhar_card_url?: string;
   secondary_doc_url?: string;
   secondary_doc_type?: string;
+  license_doc_url?: string;
+  toto_receipt_doc_url?: string;
   total_trips?: number;
   rating?: number;
   created_at?: string;
@@ -79,6 +83,20 @@ export default function RidersPage() {
   const [uploadingAadharDoc, setUploadingAadharDoc] = useState(false);
   const aadharFileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+
+  // Approve Driver Dialog State with Unique ID assignment
+  const [isApproveOpen, setIsApproveOpen] = useState(false);
+  const [approvingDriver, setApprovingDriver] = useState<Driver | null>(null);
+  const [assignUniqueId, setAssignUniqueId] = useState("");
+  const [approving, setApproving] = useState(false);
+
+  // Edit Driver Dialog State
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editUniqueId, setEditUniqueId] = useState("");
+  const [editTotoNumber, setEditTotoNumber] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const handleAadharDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -240,23 +258,119 @@ export default function RidersPage() {
     }
   };
 
-  // Approve Driver & Trigger Email/WhatsApp Notifications
-  const handleApproveDriver = async (driverId: string) => {
+  // Delete Driver & Free for Re-registration
+  const handleDeleteDriver = async (driver: Driver) => {
+    const confirmed = window.confirm(
+      `আপনি কি নিশ্চিত যে চালক ${driver.name} (${driver.phone})-কে মুছে ফেলতে চান?\n\nমুছে ফেললে এই চালক পুনরায় নতুন করে রেজিস্ট্রেশন করতে পারবেন।`
+    );
+    if (!confirmed) return;
+
     try {
+      const res = await fetch(`/api/drivers?id=${encodeURIComponent(driver.id)}&phone=${encodeURIComponent(driver.phone)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success(data.message || "চালক সফলভাবে মুছে ফেলা হয়েছে");
+        loadDrivers();
+      } else {
+        toast.error(data.error || "মুছে ফেলা ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("সার্ভার ত্রুটি");
+    }
+  };
+
+  // Open Approve Modal & Suggest Unique ID
+  const handleOpenApproveModal = (driver: Driver) => {
+    setApprovingDriver(driver);
+    const cleanDigits = (driver.phone || "").replace(/\D/g, "").slice(-4);
+    const defaultUid = driver.unique_id || (cleanDigits ? `SR-${cleanDigits}` : `SR-${Math.floor(1000 + Math.random() * 9000)}`);
+    setAssignUniqueId(defaultUid);
+    setIsApproveOpen(true);
+  };
+
+  // Confirm Approve & Assign Unique ID
+  const handleConfirmApprove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!approvingDriver) return;
+    if (!assignUniqueId.trim()) {
+      toast.error("ইউনিক চালক আইডি আবশ্যক");
+      return;
+    }
+
+    try {
+      setApproving(true);
       const res = await fetch("/api/drivers/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ driver_id: driverId, approve: true }),
+        body: JSON.stringify({
+          driver_id: approvingDriver.id,
+          approve: true,
+          unique_id: assignUniqueId.trim().toUpperCase(),
+        }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success(json.message || "চালক সফলভাবে অনুমোদিত হয়েছে!");
+        toast.success(json.message || `চালক সফলভাবে অনুমোদিত হয়েছে (আইডি: ${assignUniqueId})!`);
+        setIsApproveOpen(false);
+        setApprovingDriver(null);
         loadDrivers();
       } else {
         toast.error(json.message || "অনুমোদন ব্যর্থ হয়েছে");
       }
     } catch {
       toast.error("সার্ভার ত্রুটি");
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  // Open Edit Modal for driver Unique ID and details
+  const handleOpenEditModal = (driver: Driver) => {
+    setEditingDriver(driver);
+    setEditName(driver.name || "");
+    setEditUniqueId(driver.unique_id || driver.toto_number || "");
+    setEditTotoNumber(driver.toto_number || "");
+    setIsEditOpen(true);
+  };
+
+  // Save Driver Edits
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDriver) return;
+    if (!editName.trim() || !editTotoNumber.trim() || !editUniqueId.trim()) {
+      toast.error("চালকের নাম, টোটো নম্বর এবং ইউনিক আইডি আবশ্যক");
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+      const res = await fetch("/api/drivers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingDriver.id,
+          name: editName.trim(),
+          toto_number: editTotoNumber.trim().toUpperCase(),
+          unique_id: editUniqueId.trim().toUpperCase(),
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || "আপডেট করা যায়নি");
+      }
+
+      toast.success("✅ চালকের তথ্য ও ইউনিক আইডি সফলভাবে আপডেট হয়েছে!");
+      setIsEditOpen(false);
+      setEditingDriver(null);
+      loadDrivers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "আপডেট করা যায়নি";
+      toast.error(msg);
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -498,10 +612,12 @@ export default function RidersPage() {
                             <Phone className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>{driver.phone}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Car className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="font-mono font-medium text-foreground">
-                              {driver.toto_number}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-mono">
+                              🆔 আইডি: {driver.unique_id || driver.toto_number}
+                            </span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              (টোটো: {driver.toto_number})
                             </span>
                           </div>
 
@@ -515,7 +631,7 @@ export default function RidersPage() {
                           {driver.aadhar_no && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
                               <CreditCard className="h-3.5 w-3.5 text-amber-500" />
-                              <span>আধার: {driver.aadhar_no}</span>
+                              <span>লাইসেন্স/নথি: {driver.aadhar_no}</span>
                             </div>
                           )}
                         </div>
@@ -533,30 +649,30 @@ export default function RidersPage() {
                     </div>
 
                     {/* KYC Documents Links if submitted */}
-                    {(driver.aadhar_card_url || driver.secondary_doc_url) && (
-                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-3 text-xs">
+                    {(driver.license_doc_url || driver.aadhar_card_url || driver.toto_receipt_doc_url || driver.secondary_doc_url) && (
+                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-3 text-xs flex-wrap">
                         <span className="text-muted-foreground font-medium">ডকুমেন্টস:</span>
-                        {driver.aadhar_card_url && (
+                        {(driver.license_doc_url || driver.aadhar_card_url) && (
                           <a
-                            href={driver.aadhar_card_url}
+                            href={driver.license_doc_url || driver.aadhar_card_url}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 text-blue-500 hover:underline font-medium"
                           >
                             <FileText className="h-3 w-3" />
-                            আধার কার্ড
+                            ড্রাইভিং লাইসেন্স
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}
-                        {driver.secondary_doc_url && (
+                        {(driver.toto_receipt_doc_url || driver.secondary_doc_url) && (
                           <a
-                            href={driver.secondary_doc_url}
+                            href={driver.toto_receipt_doc_url || driver.secondary_doc_url}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 text-purple-500 hover:underline font-medium"
                           >
                             <FileText className="h-3 w-3" />
-                            ২য় ডকুমেন্ট
+                            টোটো রসিদ
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}
@@ -581,7 +697,7 @@ export default function RidersPage() {
                       {driver.is_approved === false ? (
                         <Button
                           size="sm"
-                          onClick={() => handleApproveDriver(driver.id)}
+                          onClick={() => handleOpenApproveModal(driver)}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 gap-1.5 shadow-sm"
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
@@ -602,6 +718,27 @@ export default function RidersPage() {
                           {driver.is_active ? "অফলাইন করুন" : "অনলাইন করুন"}
                         </Button>
                       )}
+
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="আইডি ও চালক তথ্য সম্পাদনা"
+                          onClick={() => handleOpenEditModal(driver)}
+                          className="text-xs h-8 px-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="চালক সম্পূর্ণ ডিলিট করুন"
+                          onClick={() => handleDeleteDriver(driver)}
+                          className="text-xs h-8 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -764,6 +901,145 @@ export default function RidersPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve & Assign Unique ID Dialog */}
+      <Dialog open={isApproveOpen} onOpenChange={setIsApproveOpen}>
+        <DialogContent className="sm:max-w-[440px] border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">চালক অনুমোদন ও ইউনিক আইডি বরাদ্দ</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              অনুমোদনের পূর্বে চালকের জন্য একটি ইউনিক আইডি নির্ধারণ করুন। এই আইডিটি অ্যাপ ও বুকিং সিস্টেমে টোটো নম্বরের পরিবর্তে প্রদর্শিত হবে।
+            </DialogDescription>
+          </DialogHeader>
+          {approvingDriver && (
+            <form onSubmit={handleConfirmApprove} className="space-y-4 py-2">
+              <div className="rounded-lg bg-muted/60 p-3 space-y-1.5 text-xs text-muted-foreground border border-border/50">
+                <div className="flex justify-between">
+                  <span>চালকের নাম:</span>
+                  <span className="font-semibold text-foreground">{approvingDriver.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>ফোন নম্বর:</span>
+                  <span className="font-mono text-foreground">{approvingDriver.phone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>টোটো নম্বর:</span>
+                  <span className="font-mono text-foreground">{approvingDriver.toto_number}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="approveUniqueId" className="text-foreground font-semibold">
+                  ইউনিক চালক আইডি (Unique Driver ID) *
+                </Label>
+                <Input
+                  id="approveUniqueId"
+                  placeholder="যেমন: SR-101 / SR-DRV-01"
+                  value={assignUniqueId}
+                  onChange={(e) => setAssignUniqueId(e.target.value)}
+                  required
+                  className="bg-muted border-emerald-500/50 text-foreground font-mono font-bold uppercase tracking-wider text-base focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  প্রয়োজনে এই আইডিটি আপনি নিজের ইচ্ছামতো পরিবর্তন করতে পারেন।
+                </p>
+              </div>
+
+              <DialogFooter className="pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsApproveOpen(false)}
+                  className="border-border text-foreground"
+                >
+                  বাতিল
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={approving || !assignUniqueId.trim()}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+                >
+                  {approving ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  {approving ? "অনুমোদন হচ্ছে..." : "অনুমোদন ও আইডি বরাদ্দ"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Driver & Unique ID Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="sm:max-w-[440px] border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">চালক ও ইউনিক আইডি সম্পাদনা</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              চালকের ইউনিক আইডি বা নাম ও টোটো নম্বর পরিবর্তন করুন।
+            </DialogDescription>
+          </DialogHeader>
+          {editingDriver && (
+            <form onSubmit={handleSaveEdit} className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="editUniqueId" className="text-foreground font-semibold">
+                  ইউনিক চালক আইডি (Unique Driver ID) *
+                </Label>
+                <Input
+                  id="editUniqueId"
+                  placeholder="যেমন: SR-101"
+                  value={editUniqueId}
+                  onChange={(e) => setEditUniqueId(e.target.value)}
+                  required
+                  className="bg-muted border-border text-foreground font-mono font-bold uppercase"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editName" className="text-foreground">চালকের পূর্ণ নাম *</Label>
+                <Input
+                  id="editName"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  className="bg-muted border-border text-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="editToto" className="text-foreground">টোটো রেজিস্ট্রেশন নম্বর *</Label>
+                <Input
+                  id="editToto"
+                  value={editTotoNumber}
+                  onChange={(e) => setEditTotoNumber(e.target.value)}
+                  required
+                  className="bg-muted border-border text-foreground font-mono uppercase"
+                />
+              </div>
+
+              <DialogFooter className="pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditOpen(false)}
+                  className="border-border text-foreground"
+                >
+                  বাতিল
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  {savingEdit ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

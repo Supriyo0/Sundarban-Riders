@@ -31,6 +31,7 @@ interface Booking {
   driver_name?: string;
   driver_phone?: string;
   toto_number?: string;
+  driver_unique_id?: string;
   pickup_location?: string;
   drop_location?: string;
   distance_km?: number;
@@ -341,7 +342,7 @@ export default function DispatchRadarPage() {
                       {b.driver_name ? (
                         <div className="flex items-center gap-1.5 font-medium text-foreground">
                           <Car className="h-3.5 w-3.5 text-primary" />
-                          <span>{b.driver_name} ({b.toto_number})</span>
+                          <span>{b.driver_name} (🆔 {b.driver_unique_id || b.toto_number})</span>
                         </div>
                       ) : (
                         <span className="text-amber-500 font-medium">অ্যাসাইন অপেক্ষমাণ...</span>

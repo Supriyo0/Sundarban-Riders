@@ -31,6 +31,7 @@ import {
   X,
   ThumbsUp,
   MessageSquare,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -85,6 +86,7 @@ interface LiveRideTrackingMapProps {
     driverName: string;
     driverPhone: string;
     totoNumber: string;
+    startOtp?: string;
   };
   pickupCoords: [number, number];
   dropCoords: [number, number];
@@ -544,6 +546,41 @@ export function LiveRideTrackingMap({
 
   return (
     <div className="space-y-3.5 animate-in fade-in duration-300 pb-36">
+      {/* ------------------------------------------------------------- */}
+      {/* RIDE START OTP CARD (For Passenger to share with driver)       */}
+      {/* ------------------------------------------------------------- */}
+      {rideStep !== "in_trip" && rideStep !== "arrived" && (
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-4 text-white shadow-xl border border-amber-300/40 space-y-2.5 animate-in slide-in-from-top-2 duration-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0 border border-white/30 shadow-inner">
+                <KeyRound className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-black tracking-wider text-amber-100 block">
+                  রাইড শুরুর ওটিপি (Ride Start OTP)
+                </span>
+                <p className="text-xs text-white font-semibold">
+                  টোটোতে উঠে চালককে এই কোডটি বলুন
+                </p>
+              </div>
+            </div>
+            <div className="bg-white text-slate-900 px-4 py-2 rounded-2xl shadow-lg border border-amber-200 shrink-0 text-center">
+              <span className="text-2xl font-black tracking-widest font-mono text-amber-600 block">
+                {booking.startOtp || "5821"}
+              </span>
+              <span className="text-[9px] font-bold text-slate-500 uppercase block tracking-wider">
+                ৪ সংখ্যার কোড
+              </span>
+            </div>
+          </div>
+          <div className="text-[11px] bg-black/25 backdrop-blur-sm rounded-xl px-3 py-1.5 text-amber-100 flex items-center gap-2 border border-white/10">
+            <span>🔒</span>
+            <span>ওটিপি ছাড়া চালক যাত্রা শুরু করতে পারবেন না। চালক পিকআপে পৌঁছালে এই ওটিপি দিন।</span>
+          </div>
+        </div>
+      )}
+
       {/* ------------------------------------------------------------- */}
       {/* 0. PROMINENT DROPPING TIME & ROUTE BANNER (Requested by User) */}
       {/* ------------------------------------------------------------- */}

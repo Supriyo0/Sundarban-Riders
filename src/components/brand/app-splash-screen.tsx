@@ -97,8 +97,8 @@ export function AppSplashScreen({
             <span className="text-emerald-400">RIDERS</span>
           </h1>
 
-          <p className="text-emerald-300 font-bold text-base tracking-tight">
-            সুন্দরবন রাইডার্স
+          <p className="text-amber-300 font-bold text-base tracking-tight">
+            অনলাইন স্মার্ট টোটো বুকিং
           </p>
 
           <p className="text-slate-400 text-xs font-medium max-w-xs mx-auto pt-1">

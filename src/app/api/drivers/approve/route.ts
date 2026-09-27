@@ -14,7 +14,7 @@ function getSupabaseAdmin() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { driver_id, approve = true } = body;
+    const { driver_id, approve = true, unique_id } = body;
 
     if (!driver_id) {
       return NextResponse.json(
@@ -41,39 +41,60 @@ export async function POST(req: Request) {
 
     // Parse email and metadata
     let email = "";
+    let meta: Record<string, unknown> = {};
     if (driver.current_location_name) {
       try {
-        const meta = JSON.parse(driver.current_location_name);
-        if (meta.email) email = meta.email;
+        meta = JSON.parse(driver.current_location_name);
+        if (meta.email) email = meta.email as string;
       } catch {
         // Not JSON
       }
     }
 
+    const cleanPhone = (driver.phone || "").replace(/\D/g, "");
+    const finalUniqueId = (
+      unique_id ||
+      driver.unique_id ||
+      meta.unique_id ||
+      `SR-${cleanPhone ? cleanPhone.slice(-4) : Math.floor(1000 + Math.random() * 9000)}`
+    ).toString().trim().toUpperCase();
+
     // 2. Update driver status
-    let meta: Record<string, unknown> = {};
-    if (driver.current_location_name) {
-      try {
-        meta = JSON.parse(driver.current_location_name);
-      } catch {}
-    }
     meta.status = approve ? "approved" : "rejected";
     meta.approved_at = approve ? new Date().toISOString() : null;
+    if (approve) {
+      meta.unique_id = finalUniqueId;
+    }
 
-    const { error: updateErr } = await supabase
+    // Try updating with unique_id column, fallback to without if column not yet added
+    let updatePayload: Record<string, unknown> = {
+      is_active: approve,
+      is_available: approve,
+      current_location_name: JSON.stringify(meta),
+      unique_id: finalUniqueId,
+    };
+
+    let { error: updateErr } = await supabase
       .from("drivers")
-      .update({
+      .update(updatePayload)
+      .eq("id", driver_id);
+
+    if (updateErr) {
+      // Fallback if unique_id column is not yet present
+      const fallbackPayload = {
         is_active: approve,
         is_available: approve,
         current_location_name: JSON.stringify(meta),
-      })
-      .eq("id", driver_id);
-
-    if (updateErr) throw updateErr;
+      };
+      const fallbackRes = await supabase
+        .from("drivers")
+        .update(fallbackPayload)
+        .eq("id", driver_id);
+      if (fallbackRes.error) throw fallbackRes.error;
+    }
 
     if (approve) {
       // 3. Send WhatsApp Notification
-      const cleanPhone = driver.phone.replace(/\D/g, "");
       try {
         const { data: config } = await supabase
           .from("whatsapp_config")
@@ -91,7 +112,7 @@ export async function POST(req: Request) {
             phoneNumberId: config.phone_number_id,
             accessToken: token,
             to: cleanPhone,
-            text: `🎉 অভিনন্দন! চালক অ্যাকাউন্ট অনুমোদিত হয়েছে! 🎉\n=======================\nনমস্কার ${driver.name}!\nআপনার সুন্দরবন রাইডার চালক অ্যাকাউন্ট ও ডকুমেন্টস সফলভাবে অনুমোদিত হয়েছে।\n\nএখনই অ্যাপে লগইন করে 'অনলাইন যান' অপশনে চাপ দিন এবং রাইড গ্রহণ শুরু করুন! 🛺✨`,
+            text: `🎉 অভিনন্দন! চালক অ্যাকাউন্ট অনুমোদিত হয়েছে! 🎉\n=======================\nনমস্কার ${driver.name}!\nআপনার সুন্দরবন রাইডার চালক অ্যাকাউন্ট ও ডকুমেন্টস সফলভাবে অনুমোদিত হয়েছে।\n\n🆔 আপনার ইউনিক চালক আইডি: ${finalUniqueId}\n\nএখনই অ্যাপে লগইন করে 'অনলাইন যান' অপশনে চাপ দিন এবং রাইড গ্রহণ শুরু করুন! 🛺✨`,
           });
         }
       } catch (waErr) {
@@ -103,15 +124,16 @@ export async function POST(req: Request) {
         await sendDriverApprovalEmail({
           toEmail: email,
           driverName: driver.name,
-          totoNumber: driver.toto_number || "WB-96-T-XXXX",
+          totoNumber: finalUniqueId || driver.toto_number || "WB-96-T-XXXX",
         }).catch((e) => console.warn("[Approve] Email error:", e));
       }
     }
 
     return NextResponse.json({
       success: true,
+      unique_id: finalUniqueId,
       message: approve
-        ? "চালক অ্যাকাউন্ট সফলভাবে অনুমোদিত হয়েছে এবং নোটিফিকেশন পাঠানো হয়েছে।"
+        ? `চালক অ্যাকাউন্ট সফলভাবে অনুমোদিত হয়েছে (আইডি: ${finalUniqueId})।`
         : "চালক অ্যাকাউন্ট স্থগিত/প্রত্যাখ্যান করা হয়েছে।",
     });
   } catch (error: unknown) {

@@ -157,8 +157,8 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
             <span className="text-xs font-black tracking-wider text-white leading-none">
               SUNDARBAN RIDERS
             </span>
-            <span className="text-[10px] font-semibold text-amber-400 mt-0.5 leading-none">
-              স্মার্ট টোটো বুকিং
+            <span className="text-[10px] font-bold text-amber-400 mt-0.5 leading-none">
+              অনলাইন স্মার্ট টোটো বুকিং
             </span>
           </div>
         </div>

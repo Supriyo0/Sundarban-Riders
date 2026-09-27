@@ -45,6 +45,7 @@ interface Driver {
   district?: string;
   block?: string;
   aadhar_no?: string;
+  license_no?: string;
   license_number?: string;
   current_location_name?: string;
   vehicle_type?: string;
@@ -631,7 +632,13 @@ export default function RidersPage() {
                           {driver.aadhar_no && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
                               <CreditCard className="h-3.5 w-3.5 text-amber-500" />
-                              <span>লাইসেন্স/নথি: {driver.aadhar_no}</span>
+                              <span>আধার: {driver.aadhar_no}</span>
+                            </div>
+                          )}
+                          {driver.license_no && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                              <FileText className="h-3.5 w-3.5 text-blue-500" />
+                              <span>লাইসেন্স: {driver.license_no}</span>
                             </div>
                           )}
                         </div>
@@ -649,18 +656,18 @@ export default function RidersPage() {
                     </div>
 
                     {/* KYC Documents Links if submitted */}
-                    {(driver.license_doc_url || driver.aadhar_card_url || driver.toto_receipt_doc_url || driver.secondary_doc_url) && (
-                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-3 text-xs flex-wrap">
+                    {(driver.aadhar_card_url || driver.toto_receipt_doc_url || driver.secondary_doc_url || driver.license_doc_url) && (
+                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-2 text-xs flex-wrap">
                         <span className="text-muted-foreground font-medium">ডকুমেন্টস:</span>
-                        {(driver.license_doc_url || driver.aadhar_card_url) && (
+                        {driver.aadhar_card_url && (
                           <a
-                            href={driver.license_doc_url || driver.aadhar_card_url}
+                            href={driver.aadhar_card_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-500 hover:underline font-medium"
+                            className="inline-flex items-center gap-1 text-emerald-600 hover:underline font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20"
                           >
                             <FileText className="h-3 w-3" />
-                            ড্রাইভিং লাইসেন্স
+                            আধার কার্ড
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}
@@ -669,10 +676,22 @@ export default function RidersPage() {
                             href={driver.toto_receipt_doc_url || driver.secondary_doc_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-purple-500 hover:underline font-medium"
+                            className="inline-flex items-center gap-1 text-purple-600 hover:underline font-semibold bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20"
                           >
                             <FileText className="h-3 w-3" />
                             টোটো রসিদ
+                            <ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                        )}
+                        {driver.license_doc_url && (
+                          <a
+                            href={driver.license_doc_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20"
+                          >
+                            <FileText className="h-3 w-3" />
+                            ড্রাইভিং লাইসেন্স (ঐচ্ছিক)
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}

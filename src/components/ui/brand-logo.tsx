@@ -69,8 +69,8 @@ export function BrandLogo({
           <span className={cn("font-bold leading-tight text-foreground", config.titleText)}>
             Sundarban Riders
           </span>
-          <span className={cn("leading-tight font-sans", config.subText)}>
-            সুন্দরবন রাইডার
+          <span className={cn("leading-tight font-sans text-amber-500 font-bold", config.subText)}>
+            অনলাইন স্মার্ট টোটো বুকিং
           </span>
         </div>
       )}

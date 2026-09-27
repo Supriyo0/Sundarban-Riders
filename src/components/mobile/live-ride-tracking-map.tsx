@@ -172,12 +172,12 @@ export function LiveRideTrackingMap({
         if (!res.ok) return;
         const data = await res.json();
         const status = data?.booking?.status || data?.status;
-        if (status === "completed") {
+        if (status === "completed" || status === "arrived") {
           onStepChange("arrived");
           clearInterval(interval);
-        } else if (status === "on_trip" && rideStep !== "in_trip") {
+        } else if ((status === "in_progress" || status === "on_trip") && rideStep !== "in_trip") {
           onStepChange("in_trip");
-        } else if (status === "accepted" && rideStep === "assigned") {
+        } else if ((status === "assigned" || status === "arriving" || status === "accepted") && rideStep === "assigned") {
           onStepChange("arriving");
         }
       } catch {

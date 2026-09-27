@@ -37,6 +37,8 @@ export async function GET(request: Request) {
       let aadhar_card_url = "";
       let secondary_doc_url = "";
       let secondary_doc_type = "";
+      let license_no = "";
+      let license_doc_url = "";
       let unique_id = d.unique_id || "";
       let latitude = typeof d.latitude === "number" ? d.latitude : (d.latitude ? parseFloat(d.latitude) : null);
       let longitude = typeof d.longitude === "number" ? d.longitude : (d.longitude ? parseFloat(d.longitude) : null);
@@ -46,11 +48,13 @@ export async function GET(request: Request) {
           const meta = JSON.parse(d.current_location_name);
           district = district || meta.district || "";
           block = block || meta.block || "";
-          aadhar_no = aadhar_no || meta.aadhar_no || meta.license_no || "";
+          aadhar_no = aadhar_no || meta.aadhar_no || "";
+          license_no = meta.license_no || "";
           email = email || meta.email || "";
-          aadhar_card_url = meta.aadhar_card_url || meta.license_doc_url || "";
+          aadhar_card_url = meta.aadhar_card_url || "";
+          license_doc_url = meta.license_doc_url || "";
           secondary_doc_url = meta.secondary_doc_url || meta.toto_receipt_doc_url || "";
-          secondary_doc_type = meta.secondary_doc_type || "driving_license";
+          secondary_doc_type = meta.secondary_doc_type || "toto_receipt";
           unique_id = unique_id || meta.unique_id || "";
           if ((latitude === null || isNaN(latitude)) && meta.lat) latitude = parseFloat(meta.lat);
           if ((longitude === null || isNaN(longitude)) && meta.lng) longitude = parseFloat(meta.lng);
@@ -80,11 +84,12 @@ export async function GET(request: Request) {
         district,
         block,
         aadhar_no,
+        license_no,
         email,
         aadhar_card_url,
         secondary_doc_url,
         secondary_doc_type,
-        license_doc_url: aadhar_card_url,
+        license_doc_url,
         toto_receipt_doc_url: secondary_doc_url,
         unique_id,
         is_approved: isApproved,

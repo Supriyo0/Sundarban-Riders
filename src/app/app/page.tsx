@@ -172,17 +172,27 @@ function MobileAppPageContent() {
   const [kycEmail, setKycEmail] = useState("");
   const [kycDistrict, setKycDistrict] = useState("দক্ষিণ ২৪ পরগনা");
   const [kycBlock, setKycBlock] = useState("কাকদ্বীপ");
-  const [kycTotoNumber, setKycTotoNumber] = useState("");
   const [kycAadharNumber, setKycAadharNumber] = useState("");
+  const [kycTotoNumber, setKycTotoNumber] = useState("");
+  const [kycLicenseNumber, setKycLicenseNumber] = useState("");
+
+  // 1. Aadhaar Card (Top - Mandatory)
   const [kycAadharDoc, setKycAadharDoc] = useState("");
   const [kycAadharName, setKycAadharName] = useState("");
-  const [kycSecondaryDoc, setKycSecondaryDoc] = useState("");
-  const [kycSecondaryName, setKycSecondaryName] = useState("");
-  const [kycSecondaryType, setKycSecondaryType] = useState("driving_license");
   const [uploadingAadhar, setUploadingAadhar] = useState(false);
-  const [uploadingSecondary, setUploadingSecondary] = useState(false);
   const aadharFileInputRef = useRef<HTMLInputElement>(null);
-  const secondaryFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 2. Toto Rosit / Receipt (Mandatory)
+  const [kycReceiptDoc, setKycReceiptDoc] = useState("");
+  const [kycReceiptName, setKycReceiptName] = useState("");
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const receiptFileInputRef = useRef<HTMLInputElement>(null);
+
+  // 3. Driving Licence (Optional)
+  const [kycLicenseDoc, setKycLicenseDoc] = useState("");
+  const [kycLicenseName, setKycLicenseName] = useState("");
+  const [uploadingLicense, setUploadingLicense] = useState(false);
+  const licenseFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAadharFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -222,7 +232,7 @@ function MobileAppPageContent() {
 
         if (uploadedUrl) {
           setKycAadharDoc(uploadedUrl);
-          toast.success("আধার কার্ড ImgBB-তে সফলভাবে সংরক্ষিত হয়েছে!");
+          toast.success("আধার কার্ড সফলভাবে আপলোড হয়েছে!");
         } else {
           toast.success("আধার কার্ড সফলভাবে সংযুক্ত হয়েছে!");
         }
@@ -236,21 +246,21 @@ function MobileAppPageContent() {
     }
   };
 
-  const handleSecondaryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleReceiptFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      setUploadingSecondary(true);
+      setUploadingReceipt(true);
       const dataUrl = await processDocumentFile(file);
-      setKycSecondaryDoc(dataUrl);
-      setKycSecondaryName(file.name);
+      setKycReceiptDoc(dataUrl);
+      setKycReceiptName(file.name);
 
       // Upload to ImgBB directly from browser or via /api/upload
       try {
         const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY || "9629d00aad1613f9bb2f05c5a3a0dd40";
         const formData = new FormData();
         formData.append("image", file);
-        formData.append("name", `secondary_${file.name}`);
+        formData.append("name", `toto_receipt_${file.name}`);
 
         let uploadedUrl: string | null = null;
         try {
@@ -273,18 +283,70 @@ function MobileAppPageContent() {
         }
 
         if (uploadedUrl) {
-          setKycSecondaryDoc(uploadedUrl);
-          toast.success("২য় ডকুমেন্ট ImgBB-তে সফলভাবে সংরক্ষিত হয়েছে!");
+          setKycReceiptDoc(uploadedUrl);
+          toast.success("টোটো রসিদ সফলভাবে আপলোড হয়েছে!");
         } else {
-          toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+          toast.success("টোটো রসিদ সফলভাবে সংযুক্ত হয়েছে!");
         }
       } catch {
-        toast.success("২য় ডকুমেন্ট সফলভাবে সংযুক্ত হয়েছে!");
+        toast.success("টোটো রসিদ সফলভাবে সংযুক্ত হয়েছে!");
       }
     } catch {
       toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
     } finally {
-      setUploadingSecondary(false);
+      setUploadingReceipt(false);
+    }
+  };
+
+  const handleLicenseFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingLicense(true);
+      const dataUrl = await processDocumentFile(file);
+      setKycLicenseDoc(dataUrl);
+      setKycLicenseName(file.name);
+
+      // Upload to ImgBB directly from browser or via /api/upload
+      try {
+        const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY || "9629d00aad1613f9bb2f05c5a3a0dd40";
+        const formData = new FormData();
+        formData.append("image", file);
+        formData.append("name", `license_${file.name}`);
+
+        let uploadedUrl: string | null = null;
+        try {
+          const directRes = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+            method: "POST",
+            body: formData,
+          });
+          const directJson = await directRes.json();
+          if (directJson.success && directJson.data?.url) {
+            uploadedUrl = directJson.data.url;
+          }
+        } catch {}
+
+        if (!uploadedUrl) {
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const json = await res.json();
+          if (json.success && json.url && !json.fallback) {
+            uploadedUrl = json.url;
+          }
+        }
+
+        if (uploadedUrl) {
+          setKycLicenseDoc(uploadedUrl);
+          toast.success("ড্রাইভিং লাইসেন্স সফলভাবে আপলোড হয়েছে!");
+        } else {
+          toast.success("ড্রাইভিং লাইসেন্স সংযুক্ত হয়েছে (ঐচ্ছিক)!");
+        }
+      } catch {
+        toast.success("ড্রাইভিং লাইসেন্স সংযুক্ত হয়েছে (ঐচ্ছিক)!");
+      }
+    } catch {
+      toast.error("ফাইল প্রসেস করতে ত্রুটি হয়েছে");
+    } finally {
+      setUploadingLicense(false);
     }
   };
 
@@ -1245,7 +1307,7 @@ function MobileAppPageContent() {
     }
   };
 
-  // Handle KYC Submission (Only Licence & Toto Receipt)
+  // Handle KYC Submission (Aadhaar & Toto Rosit mandatory, Driving Licence optional)
   const handleKycSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const effectivePhone = phoneInput || session?.phone || "";
@@ -1253,18 +1315,19 @@ function MobileAppPageContent() {
       toast.error("মোবাইল নম্বর পাওয়া যায়নি। অনুগ্রহ করে পুনরায় লগইন করুন।");
       return;
     }
-    if (!kycName.trim() || !kycTotoNumber.trim() || !kycAadharNumber.trim()) {
-      toast.error("চালকের নাম, টোটো নম্বর ও ড্রাইভিং লাইসেন্স নম্বর প্রদান করুন");
+    if (!kycName.trim() || !kycAadharNumber.trim() || !kycTotoNumber.trim()) {
+      toast.error("চালকের নাম, আধার নম্বর ও টোটো নম্বর প্রদান করুন");
       return;
     }
     if (!kycAadharDoc) {
-      toast.error("অনুগ্রহ করে আপনার ড্রাইভিং লাইসেন্সের ছবি আপলোড করুন");
+      toast.error("অনুগ্রহ করে আপনার আধার কার্ডের ছবি আপলোড করুন");
       return;
     }
-    if (!kycSecondaryDoc) {
+    if (!kycReceiptDoc) {
       toast.error("অনুগ্রহ করে আপনার টোটো রসিদের ছবি আপলোড করুন");
       return;
     }
+    // Driving licence is optional
 
     try {
       setLoading(true);
@@ -1277,13 +1340,13 @@ function MobileAppPageContent() {
           email: kycEmail.trim(),
           district: kycDistrict,
           block: kycBlock,
-          toto_number: kycTotoNumber.trim().toUpperCase(),
-          license_number: kycAadharNumber.trim(),
           aadhar_number: kycAadharNumber.trim(),
-          license_doc: kycAadharDoc,
+          toto_number: kycTotoNumber.trim().toUpperCase(),
+          license_number: kycLicenseNumber.trim() || "",
           aadhar_doc: kycAadharDoc,
-          toto_receipt_doc: kycSecondaryDoc,
-          secondary_doc: kycSecondaryDoc,
+          toto_receipt_doc: kycReceiptDoc,
+          license_doc: kycLicenseDoc || "",
+          secondary_doc: kycReceiptDoc,
           secondary_doc_type: "toto_receipt",
         }),
       });
@@ -1302,7 +1365,7 @@ function MobileAppPageContent() {
         setSession(newSession);
         localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
         setPhase("kyc_pending");
-        toast.success("লাইসেন্স ও টোটো রসিদ সফলভাবে জমা হয়েছে!");
+        toast.success("আধার, টোটো রসিদ ও চালক তথ্য সফলভাবে জমা হয়েছে!");
       } else {
         toast.error(json.message || "রেজিস্ট্রেশন ব্যর্থ হয়েছে");
       }
@@ -1354,11 +1417,15 @@ function MobileAppPageContent() {
         setSession(null);
         setRole("rider");
         setKycName("");
-        setKycEmail("");
         setKycTotoNumber("");
         setKycAadharNumber("");
+        setKycLicenseNumber("");
         setKycAadharDoc("");
-        setKycSecondaryDoc("");
+        setKycAadharName("");
+        setKycReceiptDoc("");
+        setKycReceiptName("");
+        setKycLicenseDoc("");
+        setKycLicenseName("");
         setPhase("kyc_form");
       } else {
         toast.error(data.error || "অ্যাকাউন্ট মুছে ফেলা ব্যর্থ হয়েছে");
@@ -1720,8 +1787,8 @@ function MobileAppPageContent() {
             <h2 className="text-2xl font-bold tracking-tight text-slate-900">
               চালক তথ্য ও ডকুমেন্ট সাবমিট
             </h2>
-            <p className="text-slate-500 text-xs mt-1 font-medium">
-              যাচাইকরণের জন্য সঠিক তথ্য, ড্রাইভিং লাইসেন্স ও টোটো রসিদের পরিষ্কার ছবি সংযুক্ত করুন।
+            <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+              যাচাইকরণের জন্য আধার কার্ড ও টোটো রসিদের ছবি আপলোড করুন। ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন (ঐচ্ছিক)।
             </p>
           </div>
 
@@ -1737,7 +1804,7 @@ function MobileAppPageContent() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">ইমেইল ঠিকানা (অনুমোদনপত্রের জন্য)</Label>
+              <Label className="text-xs text-slate-700 font-semibold">ইমেইল ঠিকানা (ঐচ্ছিক / অনুমোদনপত্রের জন্য)</Label>
               <Input
                 type="email"
                 placeholder="example@gmail.com"
@@ -1766,8 +1833,26 @@ function MobileAppPageContent() {
               </div>
             </div>
 
+            {/* 1. Aadhaar Card Number (AT TOP) */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">টোটো রেজিস্ট্রেশন নম্বর *</Label>
+              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                <span>১. আধার নম্বর (Aadhaar Number) *</span>
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
+              </Label>
+              <Input
+                placeholder="১২ ডিজিটের আধার নম্বর (যেমন: 1234 5678 9012)"
+                value={kycAadharNumber}
+                onChange={(e) => setKycAadharNumber(e.target.value)}
+                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm"
+              />
+            </div>
+
+            {/* 2. Toto Registration Number */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                <span>২. টোটো রেজিস্ট্রেশন নম্বর (Toto Registration No) *</span>
+                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
+              </Label>
               <Input
                 placeholder="যেমন: WB-96-T-8421"
                 value={kycTotoNumber}
@@ -1776,17 +1861,21 @@ function MobileAppPageContent() {
               />
             </div>
 
+            {/* 3. Driving Licence Number (OPTIONAL) */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">ড্রাইভিং লাইসেন্স নম্বর *</Label>
+              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                <span>৩. ড্রাইভিং লাইসেন্স নম্বর (Driving Licence No)</span>
+                <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">ঐচ্ছিক (Optional)</span>
+              </Label>
               <Input
-                placeholder="যেমন: WB-01-2020-0012345"
-                value={kycAadharNumber}
-                onChange={(e) => setKycAadharNumber(e.target.value)}
+                placeholder="ড্রাইভিং লাইসেন্স নম্বর (যদি থাকে, যেমন: WB-01-2020-0012345)"
+                value={kycLicenseNumber}
+                onChange={(e) => setKycLicenseNumber(e.target.value)}
                 className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm uppercase"
               />
             </div>
 
-            {/* Document Upload Section: Only Licence and Toto Receipt */}
+            {/* Document Upload Section: Aadhaar (Top), Toto Rosit (Middle), Driving Licence (Optional Bottom) */}
             <div className="space-y-4 pt-2">
               <input
                 ref={aadharFileInputRef}
@@ -1796,17 +1885,24 @@ function MobileAppPageContent() {
                 onChange={handleAadharFileChange}
               />
               <input
-                ref={secondaryFileInputRef}
+                ref={receiptFileInputRef}
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
-                onChange={handleSecondaryFileChange}
+                onChange={handleReceiptFileChange}
+              />
+              <input
+                ref={licenseFileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={handleLicenseFileChange}
               />
 
-              {/* 1. Driving Licence Upload Card */}
+              {/* 1. Aadhaar Card Upload Card (TOP - Mandatory) */}
               <div className="space-y-2">
                 <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>১. ড্রাইভিং লাইসেন্স ছবি (Driving Licence) *</span>
+                  <span>১. আধার কার্ডের ছবি (Aadhaar Card) *</span>
                   {kycAadharDoc ? (
                     <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
@@ -1819,23 +1915,22 @@ function MobileAppPageContent() {
                 </Label>
 
                 {kycAadharDoc ? (
-                  /* Uploaded Preview State */
                   <div className="p-3.5 rounded-2xl border-2 border-emerald-400 bg-emerald-50/40 shadow-sm space-y-3">
                     <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-emerald-200">
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-emerald-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
                         {kycAadharDoc.startsWith("data:image") || kycAadharDoc.startsWith("http") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycAadharDoc} alt="Licence Preview" className="w-full h-full object-cover" />
+                          <img src={kycAadharDoc} alt="Aadhar Preview" className="w-full h-full object-cover" />
                         ) : (
                           <FileText className="w-8 h-8 text-emerald-600" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycAadharName || "ড্রাইভিং লাইসেন্স (সংযুক্ত)"}
+                          {kycAadharName || "আধার কার্ড (সংযুক্ত)"}
                         </p>
                         <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
-                          ✓ লাইসেন্সের প্রিভিউ প্রস্তুত
+                          ✓ আধার কার্ডের প্রিভিউ প্রস্তুত
                         </p>
                       </div>
                     </div>
@@ -1869,7 +1964,6 @@ function MobileAppPageContent() {
                     </div>
                   </div>
                 ) : (
-                  /* Empty Upload State */
                   <div
                     onClick={() => aadharFileInputRef.current?.click()}
                     className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
@@ -1878,8 +1972,8 @@ function MobileAppPageContent() {
                       <Upload className="w-6 h-6" />
                     </div>
                     <div>
-                      <h5 className="text-xs font-bold text-slate-900">ড্রাইভিং লাইসেন্সের ছবি নির্বাচন করুন</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">গ্যালারি বা ক্যামেরা থেকে পরিষ্কার ছবি সিলেক্ট করুন</p>
+                      <h5 className="text-xs font-bold text-slate-900">আধার কার্ডের ছবি নির্বাচন করুন</h5>
+                      <p className="text-[11px] text-slate-500 mt-0.5">আধার কার্ডের সামনের পরিষ্কার ছবি বা স্ক্যান কপি আপলোড করুন</p>
                     </div>
                     <Button
                       type="button"
@@ -1888,17 +1982,17 @@ function MobileAppPageContent() {
                       className="h-9 px-4 text-xs font-bold rounded-xl border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 gap-1.5 shadow-xs pointer-events-none"
                     >
                       <Upload className="w-3.5 h-3.5" />
-                      লাইসেন্স ছবি সিলেক্ট করুন
+                      আধার ছবি সিলেক্ট করুন
                     </Button>
                   </div>
                 )}
               </div>
 
-              {/* 2. Toto Receipt Upload Card */}
+              {/* 2. Toto Rosit / Receipt Upload Card (MIDDLE - Mandatory) */}
               <div className="space-y-2 pt-1">
                 <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>২. টোটো রসিদ / রেজিস্ট্রেশন ডকুমেন্ট (Toto Receipt) *</span>
-                  {kycSecondaryDoc ? (
+                  <span>২. টোটো রসিদ / রেজিস্ট্রেশন ডকুমেন্ট (Toto Rosit / Receipt) *</span>
+                  {kycReceiptDoc ? (
                     <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
                     </span>
@@ -1909,21 +2003,20 @@ function MobileAppPageContent() {
                   )}
                 </Label>
 
-                {kycSecondaryDoc ? (
-                  /* Uploaded Preview State */
+                {kycReceiptDoc ? (
                   <div className="p-3.5 rounded-2xl border-2 border-purple-400 bg-purple-50/40 shadow-sm space-y-3">
                     <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-purple-200">
                       <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-purple-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
-                        {kycSecondaryDoc.startsWith("data:image") || kycSecondaryDoc.startsWith("http") ? (
+                        {kycReceiptDoc.startsWith("data:image") || kycReceiptDoc.startsWith("http") ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycSecondaryDoc} alt="Toto Receipt Preview" className="w-full h-full object-cover" />
+                          <img src={kycReceiptDoc} alt="Toto Receipt Preview" className="w-full h-full object-cover" />
                         ) : (
                           <FileText className="w-8 h-8 text-purple-600" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycSecondaryName || "টোটো রসিদ (সংযুক্ত)"}
+                          {kycReceiptName || "টোটো রসিদ (সংযুক্ত)"}
                         </p>
                         <p className="text-[11px] text-purple-600 font-semibold mt-0.5">
                           ✓ রসিদের প্রিভিউ প্রস্তুত
@@ -1937,10 +2030,10 @@ function MobileAppPageContent() {
                         variant="outline"
                         size="sm"
                         className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
-                        disabled={uploadingSecondary}
-                        onClick={() => secondaryFileInputRef.current?.click()}
+                        disabled={uploadingReceipt}
+                        onClick={() => receiptFileInputRef.current?.click()}
                       >
-                        {uploadingSecondary ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-purple-600" />}
+                        {uploadingReceipt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-purple-600" />}
                         ছবি পরিবর্তন (Replace)
                       </Button>
                       <Button
@@ -1949,9 +2042,9 @@ function MobileAppPageContent() {
                         size="sm"
                         className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
                         onClick={() => {
-                          setKycSecondaryDoc("");
-                          setKycSecondaryName("");
-                          if (secondaryFileInputRef.current) secondaryFileInputRef.current.value = "";
+                          setKycReceiptDoc("");
+                          setKycReceiptName("");
+                          if (receiptFileInputRef.current) receiptFileInputRef.current.value = "";
                         }}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1960,9 +2053,8 @@ function MobileAppPageContent() {
                     </div>
                   </div>
                 ) : (
-                  /* Empty Upload State */
                   <div
-                    onClick={() => secondaryFileInputRef.current?.click()}
+                    onClick={() => receiptFileInputRef.current?.click()}
                     className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-purple-500 hover:bg-purple-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
                   >
                     <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
@@ -1980,6 +2072,95 @@ function MobileAppPageContent() {
                     >
                       <Upload className="w-3.5 h-3.5" />
                       টোটো রসিদ সিলেক্ট করুন
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Driving Licence Upload Card (BOTTOM - OPTIONAL) */}
+              <div className="space-y-2 pt-1">
+                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                  <span>৩. ড্রাইভিং লাইসেন্স (Driving Licence - ঐচ্ছিক / Optional)</span>
+                  {kycLicenseDoc ? (
+                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
+                      ঐচ্ছিক (বাধ্যতামূলক নয়)
+                    </span>
+                  )}
+                </Label>
+
+                {kycLicenseDoc ? (
+                  <div className="p-3.5 rounded-2xl border-2 border-blue-400 bg-blue-50/40 shadow-sm space-y-3">
+                    <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-blue-200">
+                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-blue-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
+                        {kycLicenseDoc.startsWith("data:image") || kycLicenseDoc.startsWith("http") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={kycLicenseDoc} alt="License Preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <FileText className="w-8 h-8 text-blue-600" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-slate-900 truncate">
+                          {kycLicenseName || "ড্রাইভিং লাইসেন্স (ঐচ্ছিক)"}
+                        </p>
+                        <p className="text-[11px] text-blue-600 font-semibold mt-0.5">
+                          ✓ লাইসেন্সের প্রিভিউ প্রস্তুত (ঐচ্ছিক)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+                        disabled={uploadingLicense}
+                        onClick={() => licenseFileInputRef.current?.click()}
+                      >
+                        {uploadingLicense ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-blue-600" />}
+                        ছবি পরিবর্তন (Replace)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
+                        onClick={() => {
+                          setKycLicenseDoc("");
+                          setKycLicenseName("");
+                          if (licenseFileInputRef.current) licenseFileInputRef.current.value = "";
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        মুছে ফেলুন (Remove)
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => licenseFileInputRef.current?.click()}
+                    className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-500 hover:bg-blue-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-bold text-slate-900">ড্রাইভিং লাইসেন্সের ছবি (ঐচ্ছিক)</h5>
+                      <p className="text-[11px] text-slate-500 mt-0.5">ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন, না থাকলেও কোনো সমস্যা নেই</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-4 text-xs font-bold rounded-xl border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 gap-1.5 shadow-xs pointer-events-none"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      লাইসেন্স ছবি সিলেক্ট করুন (ঐচ্ছিক)
                     </Button>
                   </div>
                 )}

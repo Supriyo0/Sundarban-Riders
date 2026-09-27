@@ -31,13 +31,15 @@ export async function POST(req: Request) {
       secondary_doc_type = "driving_license",
     } = body;
 
-    const effectiveLicenseNo = (license_number || aadhar_number || "").toString().trim();
-    const effectiveLicenseDoc = license_doc || aadhar_doc || null;
+    const effectiveAadharNo = (aadhar_number || "").toString().trim();
+    const effectiveAadharDoc = aadhar_doc || null;
     const effectiveReceiptDoc = toto_receipt_doc || secondary_doc || null;
+    const effectiveLicenseNo = (license_number || "").toString().trim();
+    const effectiveLicenseDoc = license_doc || null;
 
-    if (!name || !phone || !effectiveLicenseNo) {
+    if (!name || !phone || !effectiveAadharNo) {
       return NextResponse.json(
-        { success: false, message: "নাম, ফোন নম্বর এবং লাইসেন্স নম্বর বাধ্যতামূলক।" },
+        { success: false, message: "নাম, ফোন নম্বর এবং আধার নম্বর বাধ্যতামূলক।" },
         { status: 400 }
       );
     }
@@ -53,8 +55,23 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     // Upload documents to ImgBB if base64 data URLs were passed
-    let finalLicenseUrl = effectiveLicenseDoc;
+    let finalAadharUrl = effectiveAadharDoc;
     let finalReceiptUrl = effectiveReceiptDoc;
+    let finalLicenseUrl = effectiveLicenseDoc;
+
+    if (finalAadharUrl && typeof finalAadharUrl === "string" && finalAadharUrl.startsWith("data:image")) {
+      const uploadRes = await uploadImageToImgBB(finalAadharUrl, `aadhar_${cleanPhone}`);
+      if (uploadRes.success && uploadRes.url) {
+        finalAadharUrl = uploadRes.url;
+      }
+    }
+
+    if (finalReceiptUrl && typeof finalReceiptUrl === "string" && finalReceiptUrl.startsWith("data:image")) {
+      const uploadRes = await uploadImageToImgBB(finalReceiptUrl, `toto_receipt_${cleanPhone}`);
+      if (uploadRes.success && uploadRes.url) {
+        finalReceiptUrl = uploadRes.url;
+      }
+    }
 
     if (finalLicenseUrl && typeof finalLicenseUrl === "string" && finalLicenseUrl.startsWith("data:image")) {
       const uploadRes = await uploadImageToImgBB(finalLicenseUrl, `license_${cleanPhone}`);
@@ -63,22 +80,15 @@ export async function POST(req: Request) {
       }
     }
 
-    if (finalReceiptUrl && typeof finalReceiptUrl === "string" && finalReceiptUrl.startsWith("data:image")) {
-      const uploadRes = await uploadImageToImgBB(finalReceiptUrl, `receipt_${cleanPhone}`);
-      if (uploadRes.success && uploadRes.url) {
-        finalReceiptUrl = uploadRes.url;
-      }
-    }
-
     const metadata = {
       district: district || "দক্ষিণ ২৪ পরগনা",
       block: block || "কাকদ্বীপ",
-      license_no: effectiveLicenseNo,
-      aadhar_no: effectiveLicenseNo,
-      email: email || "",
-      license_doc_url: finalLicenseUrl,
-      aadhar_card_url: finalLicenseUrl,
+      aadhar_no: effectiveAadharNo,
+      aadhar_card_url: finalAadharUrl,
       toto_receipt_doc_url: finalReceiptUrl,
+      license_no: effectiveLicenseNo,
+      license_doc_url: finalLicenseUrl,
+      email: email || "",
       secondary_doc_url: finalReceiptUrl,
       secondary_doc_type: "toto_receipt",
       applied_at: new Date().toISOString(),
@@ -94,7 +104,7 @@ export async function POST(req: Request) {
         .update({
           name,
           toto_number: toto_number || "WB-96-T-XXXX",
-          license_number: effectiveLicenseNo,
+          license_number: effectiveLicenseNo || effectiveAadharNo,
           is_active: false,
           is_available: false,
           current_location_name: JSON.stringify(metadata),
@@ -114,7 +124,7 @@ export async function POST(req: Request) {
           phone: cleanPhone,
           toto_number: toto_number || "WB-96-T-XXXX",
           vehicle_type: "toto",
-          license_number: aadhar_number,
+          license_number: effectiveLicenseNo || effectiveAadharNo,
           is_active: false,
           is_available: false,
           rating: 5.0,

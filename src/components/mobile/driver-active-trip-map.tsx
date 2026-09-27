@@ -31,13 +31,14 @@ export function DriverActiveTripMap({
 
   const targetName = status === "heading_pickup" ? pickup : drop;
   const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;
-  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${driverCoords[0]},${driverCoords[1]}&destination=${targetCoords[0]},${targetCoords[1]}&travelmode=driving`;
+  const originCoords = driverCoords && driverCoords[0] ? driverCoords : (status === "heading_pickup" ? [21.8760, 88.1920] : pickupCoords);
+  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originCoords[0]},${originCoords[1]}&destination=${targetCoords[0]},${targetCoords[1]}&travelmode=driving&dir_action=navigate`;
 
   // Fetch real road route
   useEffect(() => {
     let isCancelled = false;
-    const from = status === "heading_pickup" ? driverCoords : pickupCoords;
-    const to = status === "heading_pickup" ? pickupCoords : dropCoords;
+    const from: [number, number] = driverCoords && driverCoords[0] ? driverCoords : (status === "heading_pickup" ? [21.8760, 88.1920] : pickupCoords);
+    const to: [number, number] = status === "heading_pickup" ? pickupCoords : dropCoords;
 
     async function loadRoute() {
       try {
@@ -144,9 +145,9 @@ export function DriverActiveTripMap({
         opacity: 0.85,
       }).addTo(map);
 
-      // Fit bounds to show route
-      const bounds = L.latLngBounds([driverCoords, pickupCoords, dropCoords]);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      // Fit bounds to show current active navigation segment
+      const activeBounds = L.latLngBounds([driverCoords, targetCoords]);
+      map.fitBounds(activeBounds, { padding: [40, 40] });
 
       mapInstanceRef.current = map;
     }

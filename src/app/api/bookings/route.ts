@@ -269,6 +269,31 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
         { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
       ],
     }).catch(() => {});
+
+    // Notify Driver with digital cash receipt on WhatsApp
+    if (booking.driver_phone) {
+      const dPhone = formatWhatsAppPhone(booking.driver_phone);
+      const driverFare = booking.final_fare || booking.estimated_fare || 50;
+      const cleanCustPhone = (booking.customer_phone || "").replace(/\D/g, "").slice(-10);
+      const driverReceiptText = `🏁 *ট্রিপ সমাপ্ত হয়েছে! (ডিজিটাল ক্যাশ রসিদ)*
+=======================
+🆔 ট্রিপ নং: #${booking.booking_number}
+👤 যাত্রী: ${booking.customer_name || "যাত্রী"}
+📱 ফোন: +91 ${cleanCustPhone}
+📍 পিকআপ: ${booking.pickup_location || "পিকআপ পয়েন্ট"}
+📍 গন্তব্য: ${booking.drop_location || "গন্তব্য পয়েন্ট"}
+${booking.actual_distance_km ? `📏 মোট দূরত্ব: ${booking.actual_distance_km} কিমি\n` : ""}=======================
+💰 *যাত্রীর থেকে সংগৃহীত নগদ ভাড়া: ₹${driverFare}.০০*
+=======================
+টোটো চালক দাদা, আপনার সার্ভিসের জন্য ধন্যবাদ! পরবর্তী রাইড পেতে অ্যাপে অনলাইন থাকুন। 🛺`;
+
+      await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: dPhone,
+        text: driverReceiptText,
+      }).catch((e) => console.warn("[notifyTripCompleted] Driver WhatsApp send error:", e));
+    }
   } catch (err) {
     console.error("[notifyTripCompleted] Error:", err);
   }

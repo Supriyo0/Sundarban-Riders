@@ -398,6 +398,8 @@ function MobileAppPageContent() {
   });
   const [customerStrikes, setCustomerStrikes] = useState<number>(0);
   const [isCustomerBlocked, setIsCustomerBlocked] = useState<boolean>(false);
+  const [driverCompletedRide, setDriverCompletedRide] = useState<any | null>(null);
+  const hasCompletedNotifiedRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number]>([21.8760, 88.1920]);
@@ -614,6 +616,7 @@ function MobileAppPageContent() {
     if (!bId) return;
 
     let isMounted = true;
+    let pollInterval: NodeJS.Timeout | null = null;
     const pollRideStatus = async () => {
       try {
         const res = await fetch(`/api/bookings?id=${bId}`);
@@ -626,6 +629,8 @@ function MobileAppPageContent() {
         if (b.drop_location) setDropText(b.drop_location);
         if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
         if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+        if (b.final_fare || b.estimated_fare) setTripFare(Number(b.final_fare || b.estimated_fare));
+        if (b.actual_distance_km) setTripDistance(Number(b.actual_distance_km));
 
         // Keep startOtp up to date if returned
         if (b.start_otp) {
@@ -642,22 +647,29 @@ function MobileAppPageContent() {
             return "in_trip";
           });
         } else if (b.status === "completed") {
-          setRideStep("arrived");
-          setPhase("passenger_trip_completed");
-          playSuccessSound();
-          toast.success("আপনার ট্রিপ সফলভাবে সম্পন্ন হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+          if (pollInterval) clearInterval(pollInterval);
+          if (hasCompletedNotifiedRef.current !== b.id) {
+            hasCompletedNotifiedRef.current = b.id;
+            setRideStep("arrived");
+            setPhase("passenger_trip_completed");
+            playSuccessSound();
+            toast.success("আপনার ট্রিপ সফলভাবে সম্পন্ন হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+          }
+          return;
         } else if (b.status === "cancelled") {
+          if (pollInterval) clearInterval(pollInterval);
           setPassengerBooking(null);
           toast.error("রাইডটি বাতিল করা হয়েছে।");
+          return;
         }
       } catch {}
     };
 
     pollRideStatus();
-    const interval = setInterval(pollRideStatus, 2500);
+    pollInterval = setInterval(pollRideStatus, 2500);
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [passengerBooking, activeBookingId]);
 
@@ -2596,11 +2608,31 @@ function MobileAppPageContent() {
                         });
                         const data = await res.json();
                         const finalFare = data.booking?.final_fare || activeRide.fare || 50;
-                        const distText = data.booking?.actual_distance_km ? ` (দূরত্ব: ${data.booking.actual_distance_km} কিমি)` : "";
+                        const distKm = data.booking?.actual_distance_km || 1.0;
                         playSuccessSound();
-                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত!${distText} নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+                        setDriverCompletedRide({
+                          id: activeRide.bookingNumber || activeRide.id,
+                          pickup: activeRide.pickup,
+                          drop: activeRide.drop,
+                          fare: finalFare,
+                          distanceKm: distKm,
+                          passengerName: activeRide.passengerName,
+                          passengerPhone: activeRide.passengerPhone,
+                        });
+                        setPhase("rider_trip_completed");
+                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
                       } catch {
                         playSuccessSound();
+                        setDriverCompletedRide({
+                          id: activeRide.bookingNumber || activeRide.id,
+                          pickup: activeRide.pickup,
+                          drop: activeRide.drop,
+                          fare: activeRide.fare || 50,
+                          distanceKm: 1.0,
+                          passengerName: activeRide.passengerName,
+                          passengerPhone: activeRide.passengerPhone,
+                        });
+                        setPhase("rider_trip_completed");
                         toast.success(`ট্রিপ সফলভাবে সমাপ্ত!`);
                       }
                       setActiveRide(null);
@@ -3174,11 +3206,38 @@ function MobileAppPageContent() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: POST-TRIP DIGITAL RECEIPT, RATING & COMPLAINTS SCREEN
+  // VIEW: DRIVER TRIP COMPLETED RECEIPT SCREEN
+  // -------------------------------------------------------------
+  if (phase === "rider_trip_completed" && driverCompletedRide) {
+    return (
+      <TripCompletionReceipt
+        role="rider"
+        tripId={driverCompletedRide.id || "SR-9412"}
+        customerName={driverCompletedRide.passengerName || "যাত্রী"}
+        customerPhone={driverCompletedRide.passengerPhone || ""}
+        driverName={session?.driverName || "টোটো চালক"}
+        driverPhone={session?.phone || ""}
+        totoNumber={session?.uniqueId || session?.totoNumber || "SR-DRV"}
+        pickup={driverCompletedRide.pickup}
+        drop={driverCompletedRide.drop}
+        distanceKm={driverCompletedRide.distanceKm || 1.0}
+        fare={driverCompletedRide.fare || 50}
+        onBookAnother={() => {
+          setDriverCompletedRide(null);
+          setPhase("rider_home");
+          toast.success("পরবর্তী বুকিং গ্রহণের জন্য আপনি অনলাইন আছেন 🟢");
+        }}
+      />
+    );
+  }
+
+  // -------------------------------------------------------------
+  // VIEW: POST-TRIP DIGITAL RECEIPT, RATING & COMPLAINTS SCREEN (PASSENGER)
   // -------------------------------------------------------------
   if (phase === "passenger_trip_completed") {
     return (
       <TripCompletionReceipt
+        role="passenger"
         tripId={passengerBooking?.id || activeBookingId || ""}
         customerName={session?.passengerName || "যাত্রী বন্ধু"}
         customerPhone={session?.phone || ""}
@@ -3190,7 +3249,9 @@ function MobileAppPageContent() {
         distanceKm={tripDistance}
         fare={tripFare}
         onBookAnother={() => {
+          hasCompletedNotifiedRef.current = null;
           setPassengerBooking(null);
+          setActiveBookingId(null);
           setPhase("passenger_home");
           toast.success("নতুন ট্রিপ বুক করার জন্য প্রস্তুত!");
         }}

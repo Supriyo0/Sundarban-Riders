@@ -35,6 +35,7 @@ interface TripCompletionReceiptProps {
   distanceKm: number;
   fare: number;
   onBookAnother: () => void;
+  role?: "rider" | "passenger";
 }
 
 export function TripCompletionReceipt({
@@ -49,6 +50,7 @@ export function TripCompletionReceipt({
   distanceKm,
   fare,
   onBookAnother,
+  role = "passenger",
 }: TripCompletionReceiptProps) {
   // Rating State
   const [rating, setRating] = useState<number>(5);
@@ -168,7 +170,9 @@ export function TripCompletionReceipt({
             ট্রিপ সফলভাবে সমাপ্ত!
           </h2>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            সুন্দরবন রাইডার ব্যবহার করার জন্য ধন্যবাদ।
+            {role === "rider"
+              ? "যাত্রীর থেকে নগদ ভাড়া সংগ্রহ করুন এবং পরবর্তী রাইডের জন্য প্রস্তুত হন।"
+              : "সুন্দরবন রাইডার ব্যবহার করার জন্য ধন্যবাদ।"}
           </p>
         </div>
 
@@ -292,78 +296,100 @@ export function TripCompletionReceipt({
               <span>📲 হোয়াটসঅ্যাপে রসিদ পাঠান / শেয়ার করুন</span>
             </Button>
 
-            {/* Driver Rating & Review Section */}
-            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="text-center">
-                <h4 className="font-bold text-sm text-slate-900">
-                  চালক {driverName}-কে রেটিং দিন
+            {role === "rider" ? (
+              <div className="bg-emerald-50 rounded-3xl p-5 border border-emerald-200 text-center space-y-2.5 shadow-xs">
+                <span className="text-3xl">💰</span>
+                <h4 className="font-extrabold text-base text-emerald-950">
+                  নগদ ভাড়া সংগ্রহ: ₹{fare}.০০
                 </h4>
-                <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
-                  আপনার মতামত চালকের মান ও সুন্দরবনের পরিষেবা উন্নত করতে সাহায্য করে।
+                <p className="text-xs text-emerald-800 font-medium">
+                  যাত্রী {customerName}-এর কাছ থেকে সফলভাবে নগদ ভাড়া সংগ্রহ নিশ্চিত করুন।
                 </p>
-              </div>
-
-              {/* Interactive 5-Star Selector */}
-              <div className="flex items-center justify-center gap-2 py-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    type="button"
-                    disabled={ratingSubmitted}
-                    onClick={() => setRating(star)}
-                    onMouseEnter={() => setHoverRating(star)}
-                    onMouseLeave={() => setHoverRating(0)}
-                    className="p-1 text-amber-400 hover:scale-110 active:scale-95 transition-all"
-                  >
-                    <Star
-                      className={`w-8 h-8 ${
-                        (hoverRating || rating) >= star
-                          ? "fill-amber-400 text-amber-500"
-                          : "text-slate-200"
-                      }`}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              {/* Compliments Chips */}
-              {!ratingSubmitted && (
-                <div className="flex flex-wrap gap-1.5 justify-center pt-1">
-                  {compliments.map((comp) => (
-                    <button
-                      key={comp}
-                      type="button"
-                      onClick={() => toggleCompliment(comp)}
-                      className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${
-                        selectedCompliments.includes(comp)
-                          ? "bg-emerald-600 text-white shadow-sm"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      }`}
+                {customerPhone && (
+                  <div className="pt-1">
+                    <a
+                      href={`tel:${customerPhone}`}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-emerald-300 text-emerald-700 font-bold text-xs shadow-2xs hover:bg-emerald-100/50"
                     >
-                      {comp}
+                      📞 যাত্রীকে ফোন করুন: +91 {customerPhone.replace(/\D/g, "").slice(-10)}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Driver Rating & Review Section */
+              <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
+                <div className="text-center">
+                  <h4 className="font-bold text-sm text-slate-900">
+                    চালক {driverName}-কে রেটিং দিন
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+                    আপনার মতামত চালকের মান ও সুন্দরবনের পরিষেবা উন্নত করতে সাহায্য করে।
+                  </p>
+                </div>
+
+                {/* Interactive 5-Star Selector */}
+                <div className="flex items-center justify-center gap-2 py-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      disabled={ratingSubmitted}
+                      onClick={() => setRating(star)}
+                      onMouseEnter={() => setHoverRating(star)}
+                      onMouseLeave={() => setHoverRating(0)}
+                      className="p-1 text-amber-400 hover:scale-110 active:scale-95 transition-all"
+                    >
+                      <Star
+                        className={`w-8 h-8 ${
+                          (hoverRating || rating) >= star
+                            ? "fill-amber-400 text-amber-500"
+                            : "text-slate-200"
+                        }`}
+                      />
                     </button>
                   ))}
                 </div>
-              )}
 
-              {!ratingSubmitted ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full h-10 rounded-xl text-xs font-bold border-emerald-500 text-emerald-700 hover:bg-emerald-50"
-                  onClick={handleSubmitRating}
-                >
-                  <ThumbsUp className="w-3.5 h-3.5 mr-1" />
-                  রেটিং জমা দিন ({rating} স্টার)
-                </Button>
-              ) : (
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center flex items-center justify-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>রেটিং সফলভাবে জমা হয়েছে ✓</span>
-                </div>
-              )}
-            </div>
+                {/* Compliments Chips */}
+                {!ratingSubmitted && (
+                  <div className="flex flex-wrap gap-1.5 justify-center pt-1">
+                    {compliments.map((comp) => (
+                      <button
+                        key={comp}
+                        type="button"
+                        onClick={() => toggleCompliment(comp)}
+                        className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-all ${
+                          selectedCompliments.includes(comp)
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {comp}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!ratingSubmitted ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-10 rounded-xl text-xs font-bold border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                    onClick={handleSubmitRating}
+                  >
+                    <ThumbsUp className="w-3.5 h-3.5 mr-1" />
+                    রেটিং জমা দিন ({rating} স্টার)
+                  </Button>
+                ) : (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>রেটিং সফলভাবে জমা হয়েছে ✓</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -465,7 +491,11 @@ export function TripCompletionReceipt({
           className="w-full h-13 rounded-2xl border-slate-300 text-slate-800 font-bold text-sm bg-white hover:bg-slate-100 shadow-sm"
           onClick={onBookAnother}
         >
-          <span>🛺 নতুন আরেকটি রাইড বুক করুন</span>
+          <span>
+            {role === "rider"
+              ? "✅ পরবর্তী রাইডের জন্য প্রস্তুত (ডিউটিতে ফিরুন)"
+              : "🛺 নতুন আরেকটি রাইড বুক করুন"}
+          </span>
           <ChevronRight className="w-4 h-4 ml-1" />
         </Button>
       </div>

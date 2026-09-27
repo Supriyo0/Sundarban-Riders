@@ -61,7 +61,8 @@ export async function GET(request: Request) {
         } catch {}
       }
 
-      unique_id = unique_id || d.toto_number || "";
+      const cleanPhoneDigits = (d.phone || "").replace(/\D/g, "");
+      unique_id = unique_id || (cleanPhoneDigits ? `SR-${cleanPhoneDigits.slice(-4)}` : "SR-DRV");
 
       // Strict: Do not generate fake/mock GPS coordinates. Only use real driver coordinates if available.
 

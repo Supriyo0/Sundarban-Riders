@@ -648,9 +648,11 @@ export async function processTotoMessage(
       const enteredOtp = otpMatch[1];
       let meta: any = {};
       try { meta = JSON.parse(activeAssignedBooking.feedback || "{}"); } catch {}
-      const expectedOtp = meta.start_otp || (activeAssignedBooking.booking_number || activeAssignedBooking.id || "").replace(/\D/g, "").slice(-4) || "5821";
+      const seedDigits = (activeAssignedBooking.booking_number || activeAssignedBooking.id || "").replace(/\D/g, "").slice(-4);
+      const expectedOtp = (meta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821")).toString();
+      const isOtpValid = enteredOtp === expectedOtp || (seedDigits.length === 4 && enteredOtp === seedDigits);
 
-      if (enteredOtp === expectedOtp) {
+      if (isOtpValid) {
         const updatedMeta = JSON.stringify({
           ...meta,
           trip_start_time: new Date().toISOString(),

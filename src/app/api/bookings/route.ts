@@ -140,14 +140,34 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
     if (booking.customer_phone) {
       const custPhone = formatWhatsAppPhone(booking.customer_phone);
       let driverUid = driver.unique_id || "";
+      if (!driverUid && driver.id) {
+        try {
+          const { data: dRec } = await admin.from("drivers").select("unique_id, current_location_name, phone").eq("id", driver.id).maybeSingle();
+          if (dRec) {
+            driverUid = dRec.unique_id || "";
+            if (!driverUid && dRec.current_location_name) {
+              try {
+                const m = JSON.parse(dRec.current_location_name);
+                if (m.unique_id) driverUid = m.unique_id;
+              } catch {}
+            }
+          }
+        } catch {}
+      }
       if (!driverUid && driver.current_location_name) {
         try {
           const m = JSON.parse(driver.current_location_name);
           if (m.unique_id) driverUid = m.unique_id;
         } catch {}
       }
-      const driverBadge = driverUid || driver.toto_number || "SR-DRV";
-      const startOtp = booking.start_otp || ((booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4) || "5821");
+      if (!driverUid && driver.phone) {
+        const cleanP = driver.phone.replace(/\D/g, "");
+        if (cleanP) driverUid = `SR-${cleanP.slice(-4)}`;
+      }
+      const driverBadge = driverUid || "SR-DRV";
+      const meta = getBookingMeta(booking);
+      const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
+      const startOtp = (meta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821")).toString();
 
       const bodyText = await getCustomWhatsAppMessage(admin, "passenger_ride_assigned", {
         booking_id: booking.booking_number || booking.id,
@@ -155,6 +175,7 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
         driver_name: driver.name || "সুন্দরবন চালক",
         driver_phone: driver.phone || "9593177885",
         driver_id: driverBadge,
+        unique_id: driverBadge,
         start_otp: startOtp,
       });
 
@@ -499,12 +520,27 @@ export async function GET(request: Request) {
 
       const enriched = enrichBookingCoords(data);
       const d = data.drivers;
+      let driverUid = d?.unique_id || "";
+      if (!driverUid && d?.current_location_name) {
+        try {
+          const m = JSON.parse(d.current_location_name);
+          if (m.unique_id) driverUid = m.unique_id;
+        } catch {}
+      }
+      if (!driverUid && d?.phone) {
+        const cleanP = d.phone.replace(/\D/g, "");
+        if (cleanP) driverUid = `SR-${cleanP.slice(-4)}`;
+      }
+      driverUid = driverUid || "SR-DRV";
+
       return NextResponse.json({
         booking: {
           ...enriched,
           driver_name: d?.name || (data as any).driver_name || "সুন্দরবন চালক",
           driver_phone: d?.phone || (data as any).driver_phone || null,
           toto_number: d?.toto_number || (data as any).toto_number || "WB-96-T-8421",
+          driver_unique_id: driverUid,
+          unique_id: driverUid,
         },
       });
     }
@@ -649,12 +685,19 @@ export async function GET(request: Request) {
             if (m.unique_id) driverUid = m.unique_id;
           } catch {}
         }
+        if (!driverUid && d?.phone) {
+          const cleanP = d.phone.replace(/\D/g, "");
+          if (cleanP) driverUid = `SR-${cleanP.slice(-4)}`;
+        }
+        driverUid = driverUid || "SR-DRV";
+
         finalBooking = {
           ...enriched,
           driver_name: d?.name || (enriched as any).driver_name || "সুন্দরবন চালক",
           driver_phone: d?.phone || (enriched as any).driver_phone || null,
-          toto_number: driverUid || d?.toto_number || (enriched as any).toto_number || "WB-96-T-8421",
-          unique_id: driverUid || d?.toto_number || (enriched as any).toto_number || "SR-DRV",
+          toto_number: d?.toto_number || (enriched as any).toto_number || "WB-96-T-8421",
+          driver_unique_id: driverUid,
+          unique_id: driverUid,
         };
       }
 
@@ -756,7 +799,11 @@ export async function POST(request: Request) {
       finalEstimatedFare = calculateTotoFare(dist || 2, validPassengerCount, pricingConfig).totalFare;
     }
 
+    const seedDigits = bookingNumber.replace(/\D/g, "").slice(-4);
+    const startOtp = seedDigits.length === 4 ? seedDigits : Math.floor(1000 + Math.random() * 9000).toString();
+
     const initialMeta = JSON.stringify({
+      start_otp: startOtp,
       passenger_count: validPassengerCount,
       estimated_distance_km: tripDistance || null,
       pricing_snapshot: {
@@ -867,8 +914,10 @@ export async function PATCH(request: Request) {
         }
       }
 
-      // Generate 4-digit start OTP and commit to feedback JSON
-      const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
+      // Preserve existing start OTP or derive consistently from booking
+      const existingMeta = getBookingMeta(booking);
+      const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
+      const startOtp = existingMeta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821");
       const updatedFeedback = updateBookingMeta(booking.feedback, { start_otp: startOtp });
 
       // Assign ride atomically - ONLY updating columns that exist in bookings schema
@@ -938,7 +987,8 @@ export async function PATCH(request: Request) {
     // -------------------------------------------------------------
     if (action === "start") {
       const meta = getBookingMeta(booking);
-      const expectedOtp = (meta.start_otp || (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4) || "5821").toString();
+      const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
+      const expectedOtp = (meta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821")).toString();
       const providedOtp = (body.otp || "").toString().trim();
 
       if (!providedOtp) {
@@ -951,7 +1001,9 @@ export async function PATCH(request: Request) {
         );
       }
 
-      if (providedOtp !== expectedOtp) {
+      const isOtpValid = providedOtp === expectedOtp || (seedDigits.length === 4 && providedOtp === seedDigits);
+
+      if (!isOtpValid) {
         return NextResponse.json(
           {
             error: "invalid_otp",

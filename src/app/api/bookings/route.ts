@@ -150,7 +150,8 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
       const startOtp = booking.start_otp || ((booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4) || "5821");
 
       const bodyText = await getCustomWhatsAppMessage(admin, "passenger_ride_assigned", {
-        booking_number: booking.booking_number,
+        booking_id: booking.booking_number || booking.id,
+        booking_number: booking.booking_number || booking.id,
         driver_name: driver.name || "সুন্দরবন চালক",
         driver_phone: driver.phone || "9593177885",
         driver_id: driverBadge,

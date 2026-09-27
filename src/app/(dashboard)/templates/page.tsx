@@ -141,6 +141,7 @@ export default function TemplatesPage() {
 
     // Replace demo values
     const demoReplaced = text
+      .replaceAll("{{booking_id}}", "SR-8492")
       .replaceAll("{{booking_number}}", "SR-8492")
       .replaceAll("{{customer_name}}", "সন্দীপ মন্ডল")
       .replaceAll("{{customer_phone}}", "+91 98765 43210")

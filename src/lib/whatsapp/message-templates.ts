@@ -125,8 +125,9 @@ Help No :- {{helpline}} (WhatsApp)`,
     key: "passenger_ride_assigned",
     nameBengali: "চালক রাইড গ্রহণ করলে যাত্রীকে ওটিপি সহ নোটিফিকেশন",
     category: "customer_ride",
-    description: "চালক রাইড গ্রহণ করলে যাত্রীর কাছে চালকের বিস্তারিত ও যাত্রা শুরুর ৪ ডিজিটের OTP যায়।",
+    description: "চালক রাইড গ্রহণ করলে যাত্রীর কাছে বুকিং আইডি, চালকের বিস্তারিত ও যাত্রা শুরুর ৪ ডিজিটের OTP যায়।",
     variables: [
+      "{{booking_id}}",
       "{{booking_number}}",
       "{{driver_name}}",
       "{{driver_phone}}",
@@ -135,6 +136,7 @@ Help No :- {{helpline}} (WhatsApp)`,
     ],
     defaultText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨
 =======================
+🆔 বুকিং আইডি: #{{booking_id}}
 🛺 চালক: {{driver_name}}
 📞 ফোন: {{driver_phone}}
 🆔 চালক আইডি: {{driver_id}}
@@ -241,7 +243,14 @@ export function interpolateTemplate(
   vars: Record<string, string | number | undefined | null>
 ): string {
   let result = template;
-  for (const [key, val] of Object.entries(vars)) {
+  const normalizedVars = { ...vars };
+  if (normalizedVars.booking_id && !normalizedVars.booking_number) {
+    normalizedVars.booking_number = normalizedVars.booking_id;
+  } else if (normalizedVars.booking_number && !normalizedVars.booking_id) {
+    normalizedVars.booking_id = normalizedVars.booking_number;
+  }
+
+  for (const [key, val] of Object.entries(normalizedVars)) {
     const rawVal = val === undefined || val === null ? "" : String(val);
     result = result.replaceAll(`{{${key}}}`, rawVal);
   }

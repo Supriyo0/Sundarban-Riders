@@ -515,12 +515,20 @@ export async function processTotoMessage(
       };
     }
 
+    const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
+    let bookingMeta: any = {};
+    try { bookingMeta = JSON.parse(booking.feedback || "{}"); } catch {}
+    const startOtp = (bookingMeta.start_otp || booking.start_otp || (seedNum.length >= 4 ? seedNum.slice(-4) : Math.floor(1000 + Math.random() * 9000).toString())).toString();
+    const updatedFeedback = JSON.stringify({ ...bookingMeta, start_otp: startOtp });
+
     // Assign to this driver atomically (protecting against race conditions)
     const { data: assignedBooking } = await supabase
       .from("bookings")
       .update({
         status: "assigned",
         driver_id: driver?.id,
+        feedback: updatedFeedback,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", booking.id)
       .eq("status", "pending")
@@ -556,10 +564,6 @@ export async function processTotoMessage(
       } catch {}
     }
     const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "SR-DRV";
-    const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
-    let bookingMeta: any = {};
-    try { bookingMeta = JSON.parse(booking.feedback || "{}"); } catch {}
-    const startOtp = bookingMeta.start_otp || booking.start_otp || (seedNum.length >= 4 ? seedNum.slice(-4) : "5821");
 
     const extraNotifications: NonNullable<OutboundWhatsAppAction["extraNotifications"]> = [
       {
@@ -1317,6 +1321,9 @@ export async function processTotoMessage(
       const fareResult = calculateTotoFare(estDistanceKm, passengerCount, pricingConfig, new Date());
       const estimatedFare = fareResult.totalFare;
 
+      const seedDigits = bookingNumber.replace(/\D/g, "").slice(-4);
+      const startOtp = seedDigits.length === 4 ? seedDigits : Math.floor(1000 + Math.random() * 9000).toString();
+
       const { data: newBooking } = await supabase.from("bookings").insert({
         booking_number: bookingNumber,
         customer_phone: cleanPhone,
@@ -1325,6 +1332,7 @@ export async function processTotoMessage(
         drop_location: dropLocation,
         estimated_fare: estimatedFare,
         feedback: JSON.stringify({
+          start_otp: startOtp,
           start_coords: pLat && pLng ? [pLat, pLng] : undefined,
           end_coords: dLatDrop && dLngDrop ? [dLatDrop, dLngDrop] : undefined,
           passenger_count: passengerCount,

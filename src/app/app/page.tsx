@@ -398,7 +398,15 @@ function MobileAppPageContent() {
   });
   const [customerStrikes, setCustomerStrikes] = useState<number>(0);
   const [isCustomerBlocked, setIsCustomerBlocked] = useState<boolean>(false);
-  const [driverCompletedRide, setDriverCompletedRide] = useState<any | null>(null);
+  const [driverCompletedRide, setDriverCompletedRide] = useState<any | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_driver_completed_ride");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
   const hasCompletedNotifiedRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
@@ -673,6 +681,61 @@ function MobileAppPageContent() {
     };
   }, [passengerBooking, activeBookingId]);
 
+  // Driver Live Polling for Active Ride: Detect when ride is completed (from App, WhatsApp, or Dispatch)
+  useEffect(() => {
+    if (!activeRide?.id || role !== "rider") return;
+    let isMounted = true;
+    let pollTimer: NodeJS.Timeout | null = null;
+
+    const checkDriverRideStatus = async () => {
+      try {
+        const res = await fetch(`/api/bookings?id=${activeRide.id}`);
+        const data = await res.json();
+        const b = data?.booking;
+        if (!b || !isMounted) return;
+
+        if (b.status === "completed") {
+          if (pollTimer) clearInterval(pollTimer);
+          const finalFare = b.final_fare || b.estimated_fare || activeRide.fare || 50;
+          const distKm = b.actual_distance_km || activeRide.distanceKm || 1.0;
+          const completedData = {
+            id: b.booking_number || b.id,
+            pickup: b.pickup_location || activeRide.pickup,
+            drop: b.drop_location || activeRide.drop,
+            fare: finalFare,
+            distanceKm: distKm,
+            passengerName: b.customer_name || activeRide.passengerName || "যাত্রী",
+            passengerPhone: b.customer_phone || activeRide.passengerPhone || "",
+          };
+          setDriverCompletedRide(completedData);
+          setActiveRide(null);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+            localStorage.removeItem("sr_active_ride");
+          }
+          setPhase("rider_trip_completed");
+          playSuccessSound();
+          toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+        } else if (b.status === "cancelled") {
+          if (pollTimer) clearInterval(pollTimer);
+          setActiveRide(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_active_ride");
+          }
+          toast.warning("যাত্রী রাইড বাতিল করেছেন।");
+        }
+      } catch (err) {
+        console.warn("Driver poll error:", err);
+      }
+    };
+
+    pollTimer = setInterval(checkDriverRideStatus, 2500);
+    return () => {
+      isMounted = false;
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [activeRide?.id, role]);
+
   // Auto-poll driver approval status when in kyc_pending
   const [checkingApproval, setCheckingApproval] = useState(false);
 
@@ -822,6 +885,15 @@ function MobileAppPageContent() {
             setActiveRide(null);
             if (typeof window !== "undefined") {
               localStorage.removeItem("sr_active_ride");
+              const savedCompleted = localStorage.getItem("sr_driver_completed_ride");
+              if (savedCompleted) {
+                try {
+                  const parsed = JSON.parse(savedCompleted);
+                  setDriverCompletedRide(parsed);
+                  setPhase("rider_trip_completed");
+                  return;
+                } catch {}
+              }
             }
           }
         } catch (err) {
@@ -2610,7 +2682,7 @@ function MobileAppPageContent() {
                         const finalFare = data.booking?.final_fare || activeRide.fare || 50;
                         const distKm = data.booking?.actual_distance_km || 1.0;
                         playSuccessSound();
-                        setDriverCompletedRide({
+                        const completedData = {
                           id: activeRide.bookingNumber || activeRide.id,
                           pickup: activeRide.pickup,
                           drop: activeRide.drop,
@@ -2618,12 +2690,18 @@ function MobileAppPageContent() {
                           distanceKm: distKm,
                           passengerName: activeRide.passengerName,
                           passengerPhone: activeRide.passengerPhone,
-                        });
+                        };
+                        setDriverCompletedRide(completedData);
+                        if (typeof window !== "undefined") {
+                          localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                          localStorage.removeItem("sr_active_ride");
+                        }
+                        setActiveRide(null);
                         setPhase("rider_trip_completed");
                         toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
                       } catch {
                         playSuccessSound();
-                        setDriverCompletedRide({
+                        const completedData = {
                           id: activeRide.bookingNumber || activeRide.id,
                           pickup: activeRide.pickup,
                           drop: activeRide.drop,
@@ -2631,11 +2709,16 @@ function MobileAppPageContent() {
                           distanceKm: 1.0,
                           passengerName: activeRide.passengerName,
                           passengerPhone: activeRide.passengerPhone,
-                        });
+                        };
+                        setDriverCompletedRide(completedData);
+                        if (typeof window !== "undefined") {
+                          localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                          localStorage.removeItem("sr_active_ride");
+                        }
+                        setActiveRide(null);
                         setPhase("rider_trip_completed");
                         toast.success(`ট্রিপ সফলভাবে সমাপ্ত!`);
                       }
-                      setActiveRide(null);
                     }}
                   />
                 </div>
@@ -3224,6 +3307,9 @@ function MobileAppPageContent() {
         fare={driverCompletedRide.fare || 50}
         onBookAnother={() => {
           setDriverCompletedRide(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_driver_completed_ride");
+          }
           setPhase("rider_home");
           toast.success("পরবর্তী বুকিং গ্রহণের জন্য আপনি অনলাইন আছেন 🟢");
         }}
@@ -3556,7 +3642,7 @@ function MobileAppPageContent() {
                   driverName: passengerBooking.driverName || "টোটো চালক",
                   driverPhone: passengerBooking.driverPhone || "",
                   totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || "",
-                  startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || passengerBooking.id || "").replace(/\D/g, "").slice(-4) || "5821"),
+                  startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
                 }}
             pickupCoords={pickupCoords}
             dropCoords={dropCoords}

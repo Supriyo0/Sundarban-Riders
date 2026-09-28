@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 
 interface OnboardingCarouselProps {
   onSelectRole: (role: "passenger" | "rider") => void;
-  onOpenAdminLogin?: () => void;
 }
 
 interface SlideItem {
@@ -59,7 +58,7 @@ const SLIDES: SlideItem[] = [
   },
 ];
 
-export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: OnboardingCarouselProps) {
+export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
@@ -321,8 +320,14 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
                   className="w-full p-3.5 rounded-2xl bg-white hover:bg-emerald-50/50 text-slate-900 shadow-md shadow-slate-200/50 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border-2 border-emerald-500/40 text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center text-xl shrink-0">
-                      ⚡
+                    <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                      <Image
+                        src="/driver-captain.png"
+                        alt="ক্যাপ্টেন / চালক"
+                        width={44}
+                        height={44}
+                        className="w-full h-full object-cover object-top"
+                      />
                     </div>
                     <div>
                       <div className="text-sm font-black text-slate-900 tracking-tight leading-snug">
@@ -335,19 +340,6 @@ export function OnboardingCarousel({ onSelectRole, onOpenAdminLogin }: Onboardin
                   </div>
                   <ChevronRight className="w-5 h-5 text-emerald-600" />
                 </button>
-
-                {/* Staff / CRM Shortcut Link */}
-                {onOpenAdminLogin && (
-                  <div className="pt-1 border-t border-slate-100 flex items-center justify-center">
-                    <button
-                      type="button"
-                      onClick={onOpenAdminLogin}
-                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 hover:underline flex items-center gap-1 cursor-pointer py-1"
-                    >
-                      <span>অফিস স্টাফ বা অ্যাডমিন? CRM ড্যাশবোর্ড লগইন →</span>
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 

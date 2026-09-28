@@ -1640,9 +1640,6 @@ function MobileAppPageContent() {
               setPhase("otp_login");
             }
           }}
-          onOpenAdminLogin={() => {
-            window.location.href = "/dashboard";
-          }}
         />
       </MobileAppShell>
     );

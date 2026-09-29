@@ -178,6 +178,7 @@ function MobileAppPageContent() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(60);
   const [loading, setLoading] = useState(false);
+  const [fallbackOtp, setFallbackOtp] = useState<string | null>(null);
 
   // Driver KYC Form State
   const [kycName, setKycName] = useState("");
@@ -1460,6 +1461,11 @@ function MobileAppPageContent() {
       if (json.success) {
         setOtpSent(true);
         setOtpTimer(60);
+        if (json.debugOtp) {
+          setFallbackOtp(json.debugOtp);
+        } else {
+          setFallbackOtp(null);
+        }
         toast.success(json.message || "WhatsApp-এ OTP পাঠানো হয়েছে!");
         if (json.debugOtp) {
           toast.info(`টেস্ট OTP: ${json.debugOtp}`);
@@ -2009,7 +2015,7 @@ function MobileAppPageContent() {
               </div>
 
               {otpSent && (
-                <div className="space-y-2 pt-2 animate-in fade-in">
+                <div className="space-y-3 pt-2 animate-in fade-in">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার OTP কোড</Label>
                     <span className="text-xs text-emerald-600 font-mono font-bold">
@@ -2025,14 +2031,55 @@ function MobileAppPageContent() {
                     className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
                   />
 
-                  {otpTimer === 0 && (
-                    <button
-                      onClick={handleSendOtp}
-                      className="text-xs text-emerald-600 font-bold hover:underline pt-1 block"
-                    >
-                      পুনরায় WhatsApp-এ OTP পাঠান
-                    </button>
+                  {/* Fallback OTP Auto-Fill if WhatsApp is delayed or outside 24h window */}
+                  {fallbackOtp && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-center justify-between shadow-2xs">
+                      <span>টেস্ট ওটিপি কোড: <strong className="font-mono text-sm tracking-wider text-amber-800">{fallbackOtp}</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => setOtpInput(fallbackOtp)}
+                        className="px-2 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-[11px] cursor-pointer"
+                      >
+                        স্বয়ংক্রিয় পূরণ
+                      </button>
+                    </div>
                   )}
+
+                  {/* Direct One-Tap WhatsApp Button to open chat & receive OTP instantly */}
+                  <a
+                    href={`https://wa.me/919732566827?text=${encodeURIComponent("OTP")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>WhatsApp-এ ওটিপি না আসলে এখানে চাপুন (সরাসরি কোড পান)</span>
+                  </a>
+
+                  <div className="flex items-center justify-between pt-1">
+                    {otpTimer === 0 ? (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        className="text-xs text-emerald-600 font-bold hover:underline cursor-pointer"
+                      >
+                        পুনরায় WhatsApp-এ OTP পাঠান
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOtpSent(false);
+                        setOtpInput("");
+                        setFallbackOtp(null);
+                      }}
+                      className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
+                    >
+                      নম্বর পরিবর্তন করুন
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

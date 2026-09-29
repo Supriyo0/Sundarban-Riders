@@ -693,8 +693,64 @@ export async function processTotoMessage(
     };
   }
 
+  // -------------------------------------------------------------
+  // FLOW C: USER / DRIVER INCOMING LOGIN OTP REQUEST VIA WHATSAPP
+  // -------------------------------------------------------------
+  const isExplicitOtpRequest =
+    /^(?:otp|ওটিপি|login|কোড|code)\b/i.test(incomingText) ||
+    incomingText === "otp" ||
+    incomingText === "ওটিপি";
+
   // Handle Driver OTP Verification via incoming WhatsApp message
   const otpMatch = (ctx.textBody || incomingText).match(/(?:otp|ওটিপি)?\s*([0-9]{4})/i);
+
+  if (isExplicitOtpRequest && !otpMatch) {
+    const key = `otp_91${last10}`;
+    const { data: existingOtpData } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", key)
+      .maybeSingle();
+
+    let otpToSend = "";
+    if (existingOtpData?.value) {
+      try {
+        const parsed = JSON.parse(existingOtpData.value);
+        if (Date.now() < parsed.expiresAt) {
+          otpToSend = parsed.otp;
+        }
+      } catch {}
+    }
+
+    if (!otpToSend) {
+      otpToSend = Math.floor(1000 + Math.random() * 9000).toString();
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+      const record = {
+        phone: `91${last10}`,
+        otp: otpToSend,
+        role: isRegisteredDriver ? "rider" : "passenger",
+        expiresAt,
+        attempts: 0,
+      };
+      await Promise.all([
+        supabase.from("system_settings").upsert(
+          { key: `otp_91${last10}`, value: JSON.stringify(record) },
+          { onConflict: "key" }
+        ),
+        supabase.from("system_settings").upsert(
+          { key: `otp_${last10}`, value: JSON.stringify(record) },
+          { onConflict: "key" }
+        ),
+      ]);
+    }
+
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `🔐 সুন্দরবন রাইডার্স লগইন OTP: *${otpToSend}*\n\nকোডটি ৫ মিনিটের জন্য কার্যকর। অ্যাপে ফিরে ওটিপির ঘরে এই ৪ সংখ্যার কোডটি লিখুন।\n\n${otpToSend} is your Sundarban Riders login OTP, valid for 5 min.`,
+    };
+  }
+
   if (otpMatch && driver) {
     const { data: activeAssignedBooking } = await supabase
       .from("bookings")

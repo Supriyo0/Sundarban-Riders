@@ -10,9 +10,23 @@ function getSupabaseAdmin() {
 }
 
 export function cleanPhoneNumber(phone: string): string {
-  let cleaned = phone.replace(/\D/g, "");
+  let cleaned = (phone || "").replace(/\D/g, "");
+  // Strip leading zero for 11-digit numbers (e.g. 09876543210 -> 9876543210)
+  if (cleaned.length === 11 && cleaned.startsWith("0")) {
+    cleaned = cleaned.slice(1);
+  }
+  // Standard 10 digit Indian number -> prepend 91
   if (cleaned.length === 10) {
-    cleaned = `91${cleaned}`;
+    return `91${cleaned}`;
+  }
+  // If already 12 digits starting with 91
+  if (cleaned.length === 12 && cleaned.startsWith("91")) {
+    return cleaned;
+  }
+  // If has country code with + or longer, take last 10 digits and prepend 91
+  if (cleaned.length > 10) {
+    const last10 = cleaned.slice(-10);
+    return `91${last10}`;
   }
   return cleaned;
 }
@@ -34,9 +48,10 @@ export async function sendWhatsAppOtp(
 ): Promise<{ success: boolean; message: string; debugOtp?: string }> {
   const supabase = getSupabaseAdmin();
   const phone = cleanPhoneNumber(rawPhone);
+  const last10 = phone.slice(-10);
 
   if (phone.length < 10) {
-    return { success: false, message: "সঠিক ফোন নম্বর প্রদান করুন।" };
+    return { success: false, message: "সঠিক ১০ সংখ্যার ফোন নম্বর প্রদান করুন।" };
   }
 
   // Generate 4-digit OTP
@@ -51,20 +66,21 @@ export async function sendWhatsAppOtp(
     attempts: 0,
   };
 
-  const key = `otp_${phone}`;
+  // Store into system_settings under both 91XXXXXXXXXX and 10-digit keys for bulletproof lookup
+  await Promise.all([
+    supabase.from("system_settings").upsert(
+      { key: `otp_${phone}`, value: JSON.stringify(record) },
+      { onConflict: "key" }
+    ),
+    supabase.from("system_settings").upsert(
+      { key: `otp_${last10}`, value: JSON.stringify(record) },
+      { onConflict: "key" }
+    ),
+  ]);
 
-  // Store into system_settings
-  await supabase.from("system_settings").upsert(
-    {
-      key,
-      value: JSON.stringify(record),
-    },
-    { onConflict: "key" }
-  );
-
-  // Formatted strictly as requested
-  const roleText = role === "rider" ? "driver" : "passenger";
-  const otpBody = `${otp} is your ${roleText} otp , valid for 5 min`;
+  // Clean bilingual OTP message for WhatsApp
+  const roleText = role === "rider" ? "চালক" : "যাত্রী";
+  const otpBody = `🔐 *${otp}* হলো আপনার সুন্দরবন রাইডার্স (${roleText}) লগইন OTP। এই কোডটি ৫ মিনিটের জন্য কার্যকর।\n\n${otp} is your Sundarban Riders OTP, valid for 5 min.`;
 
   // Fetch WhatsApp configuration
   try {
@@ -80,14 +96,31 @@ export async function sendWhatsAppOtp(
         ? config.access_token
         : decrypt(config.access_token);
 
-      await sendTextMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken: token,
-        to: phone,
-        text: otpBody,
-      });
+      // Attempt send with primary cleaned format (91XXXXXXXXXX)
+      try {
+        await sendTextMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken: token,
+          to: phone,
+          text: otpBody,
+        });
 
-      return { success: true, message: "হোয়াটসঅ্যাপে OTP কোড পাঠানো হয়েছে।" };
+        return { success: true, message: "হোয়াটসঅ্যাপে OTP কোড পাঠানো হয়েছে।" };
+      } catch (sendErr: any) {
+        console.warn("[OTP] Primary send error, trying alternate format:", sendErr?.message || sendErr);
+        // Fallback: try raw 10-digit if 91 failed
+        try {
+          await sendTextMessage({
+            phoneNumberId: config.phone_number_id,
+            accessToken: token,
+            to: last10,
+            text: otpBody,
+          });
+          return { success: true, message: "হোয়াটসঅ্যাপে OTP কোড পাঠানো হয়েছে।" };
+        } catch {
+          throw sendErr;
+        }
+      }
     } else {
       console.warn("[OTP] No WhatsApp config found in database. Dev mode OTP active.");
       return {
@@ -99,10 +132,10 @@ export async function sendWhatsAppOtp(
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[OTP] Failed to send WhatsApp OTP:", errorMsg);
-    // Return success in test environment so testing is never blocked
+    // Return debug OTP so user/admin is never blocked
     return {
       success: true,
-      message: "হোয়াটসঅ্যাপে OTP পাঠানো হয়েছে (টেস্ট মোড)।",
+      message: "হোয়াটসঅ্যাপে মেসেজ পাঠানো সম্ভব হয়নি (টেস্ট ওটিপি ব্যবহার করুন বা সরাসরি WhatsApp-এ কোড চান)।",
       debugOtp: otp,
     };
   }
@@ -117,20 +150,30 @@ export async function verifyWhatsAppOtp(
 ): Promise<{ success: boolean; message: string; role?: "rider" | "passenger" }> {
   const supabase = getSupabaseAdmin();
   const phone = cleanPhoneNumber(rawPhone);
-  const key = `otp_${phone}`;
+  const last10 = phone.slice(-10);
 
-  // Check stored record
-  const { data } = await supabase
+  // Master bypass OTP for rapid testing and network failure fallback
+  if (inputOtp.trim() === "1234") {
+    return { success: true, message: "সফলভাবে ভেরিফাই হয়েছে।" };
+  }
+
+  // Check stored record by primary key or last10 key
+  let { data } = await supabase
     .from("system_settings")
     .select("value")
-    .eq("key", key)
+    .eq("key", `otp_${phone}`)
     .maybeSingle();
 
   if (!data?.value) {
-    // Check dev backup OTP
-    if (inputOtp === "1234") {
-      return { success: true, message: "সফলভাবে ভেরিফাই হয়েছে।" };
-    }
+    const fallbackRes = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", `otp_${last10}`)
+      .maybeSingle();
+    data = fallbackRes.data;
+  }
+
+  if (!data?.value) {
     return { success: false, message: "কোনো সক্রিয় OTP পাওয়া যায়নি। অনুগ্রহ করে নতুন কোড চান।" };
   }
 
@@ -138,22 +181,34 @@ export async function verifyWhatsAppOtp(
     const record = JSON.parse(data.value) as StoredOtpRecord;
 
     if (Date.now() > record.expiresAt) {
-      await supabase.from("system_settings").delete().eq("key", key);
+      await Promise.all([
+        supabase.from("system_settings").delete().eq("key", `otp_${phone}`),
+        supabase.from("system_settings").delete().eq("key", `otp_${last10}`),
+      ]);
       return { success: false, message: "OTP এর মেয়াদ শেষ হয়ে গেছে। নতুন কোড চান।" };
     }
 
-    if (record.otp !== inputOtp.trim() && inputOtp.trim() !== "1234") {
+    if (record.otp !== inputOtp.trim()) {
       record.attempts = (record.attempts || 0) + 1;
-      await supabase
-        .from("system_settings")
-        .update({ value: JSON.stringify(record) })
-        .eq("key", key);
+      await Promise.all([
+        supabase
+          .from("system_settings")
+          .update({ value: JSON.stringify(record) })
+          .eq("key", `otp_${phone}`),
+        supabase
+          .from("system_settings")
+          .update({ value: JSON.stringify(record) })
+          .eq("key", `otp_${last10}`),
+      ]);
 
       return { success: false, message: "ভুল OTP কোড। অনুগ্রহ করে সঠিক কোড দিন।" };
     }
 
-    // Success -> remove OTP record
-    await supabase.from("system_settings").delete().eq("key", key);
+    // Success -> clean up stored OTP
+    await Promise.all([
+      supabase.from("system_settings").delete().eq("key", `otp_${phone}`),
+      supabase.from("system_settings").delete().eq("key", `otp_${last10}`),
+    ]);
 
     return {
       success: true,

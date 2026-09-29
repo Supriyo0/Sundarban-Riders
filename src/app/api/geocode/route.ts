@@ -88,16 +88,15 @@ export async function GET(req: Request) {
     }
 
     // -------------------------------------------------------------
-    // CASE 1: FORWARD SEARCH (Live Real Places Suggestions)
+    // CASE 1: FORWARD SEARCH (Live Real Places Suggestions from Map)
     // -------------------------------------------------------------
     if (query !== null) {
-      const cleanQ = (query || "").trim().toLowerCase();
+      const cleanQ = (query || "").trim();
       const suggestions: Array<{
         name: string;
         full_address: string;
         lat: number;
         lng: number;
-        isHub?: boolean;
         source?: string;
       }> = [];
 
@@ -108,37 +107,17 @@ export async function GET(req: Request) {
         });
       }
 
-      // 1. Check matching local landmarks ONLY if genuinely matched
-      const matchedLandmarks = SUNDARBAN_LANDMARKS.filter((lm) => {
-        const nameMatch = lm.name.toLowerCase().includes(cleanQ);
-        const aliasMatch = lm.aliases?.some(
-          (a) => cleanQ.includes(a.toLowerCase()) || a.toLowerCase().includes(cleanQ)
-        );
-        return nameMatch || aliasMatch;
-      });
-
-      matchedLandmarks.forEach((lm) => {
-        suggestions.push({
-          name: lm.name,
-          full_address: `${lm.name}, দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`,
-          lat: lm.lat,
-          lng: lm.lng,
-          isHub: true,
-          source: "hub",
-        });
-      });
-
-      // 2. Query Google Maps Geocoding if API key is present
+      // 1. Query Google Maps Geocoding if API key is present
       const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
       if (googleKey) {
         try {
           const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-            query + ", West Bengal, India"
+            cleanQ + ", West Bengal, India"
           )}&key=${googleKey}`;
           const gRes = await fetch(url);
           const gData = await gRes.json();
           if (gData.status === "OK" && gData.results?.length) {
-            gData.results.slice(0, 5).forEach((r: any) => {
+            gData.results.slice(0, 6).forEach((r: any) => {
               const placeName = r.formatted_address.split(",")[0];
               if (!suggestions.some((s) => s.name.toLowerCase() === placeName.toLowerCase())) {
                 suggestions.push({
@@ -156,15 +135,15 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3. Query OpenStreetMap Nominatim with address details (Real, Full Google Maps-style addresses)
+      // 2. Query OpenStreetMap Nominatim with English headers (Real, Live Google Maps-style addresses)
       try {
         const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          query
-        )}&format=json&addressdetails=1&countrycodes=in&limit=8`;
+          cleanQ
+        )}&format=json&addressdetails=1&countrycodes=in&limit=10`;
         const nRes = await fetch(nUrl, {
           headers: {
             "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
-            "Accept-Language": "en,bn;q=0.8",
+            "Accept-Language": "en",
           },
         });
         if (nRes.ok) {
@@ -173,12 +152,15 @@ export async function GET(req: Request) {
             nData.forEach((item: any) => {
               const addr = item.address || {};
               const mainName =
+                item.name ||
                 addr.amenity ||
                 addr.tourism ||
                 addr.railway ||
                 addr.shop ||
                 addr.road ||
-                item.name ||
+                addr.village ||
+                addr.town ||
+                addr.city ||
                 item.display_name.split(",")[0];
 
               const addrParts = [
@@ -214,17 +196,17 @@ export async function GET(req: Request) {
         console.warn("[geocode] Nominatim search error:", nErr);
       }
 
-      // 4. Query Photon Geocoder (Fast Real Map Data without bounding box)
+      // 3. Query Photon Geocoder (Fast Live Map Data in English)
       try {
         const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          query
-        )}&limit=8`;
+          cleanQ
+        )}&lang=en&limit=10`;
         const pRes = await fetch(photonUrl);
         if (pRes.ok) {
           const pData = await pRes.json();
           (pData.features || []).forEach((f: any) => {
             const props = f.properties || {};
-            const placeName = props.name || props.street || props.city || query;
+            const placeName = props.name || props.street || props.city || cleanQ;
             const fullAddr = [
               props.name,
               props.street,
@@ -273,8 +255,8 @@ export async function GET(req: Request) {
       });
 
       return NextResponse.json({
-        name: taggedSuggestions[0]?.name || query,
-        full_address: taggedSuggestions[0]?.full_address || query,
+        name: taggedSuggestions[0]?.name || cleanQ,
+        full_address: taggedSuggestions[0]?.full_address || cleanQ,
         lat: taggedSuggestions[0]?.lat || 0,
         lng: taggedSuggestions[0]?.lng || 0,
         isInServiceArea: taggedSuggestions[0] ? taggedSuggestions[0].isInServiceArea : false,
@@ -293,7 +275,7 @@ export async function GET(req: Request) {
     const longitude = parseFloat(lng);
     const isInTerritory = isLocationInServiceArea(latitude, longitude);
 
-    // 1. First attempt OpenStreetMap Nominatim reverse geocode for real street/road/village
+    // 1. First attempt OpenStreetMap Nominatim reverse geocode in English
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -303,7 +285,7 @@ export async function GET(req: Request) {
           signal: controller.signal,
           headers: {
             "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
-            "Accept-Language": "bn,en;q=0.8",
+            "Accept-Language": "en",
           },
         }
       );
@@ -313,8 +295,8 @@ export async function GET(req: Request) {
         const data = await res.json();
         const addr = data.address || {};
         const parts = [
-          addr.suburb || addr.neighbourhood || addr.village || addr.hamlet || addr.road,
-          addr.town || addr.city_district || addr.county || addr.state_district,
+          addr.amenity || addr.road || addr.suburb || addr.neighbourhood || addr.village || addr.hamlet,
+          addr.town || addr.city || addr.city_district || addr.county || addr.state_district,
         ].filter(Boolean);
 
         const displayName =
@@ -334,7 +316,7 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    // 2. Secondary Reverse Geocode (BigDataCloud client geocode for real city/locality anywhere in India)
+    // 2. Secondary Reverse Geocode (BigDataCloud client geocode in English)
     try {
       const bRes = await fetch(
         `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
@@ -359,39 +341,16 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    // 3. Check if coords are genuinely close to one of our regional hubs (< 2.5 km)
-    let closestLm: (typeof SUNDARBAN_LANDMARKS)[0] | null = null;
-    let minD = 9999;
-    for (const lm of SUNDARBAN_LANDMARKS) {
-      const d = calculateDistanceKm(latitude, longitude, lm.lat, lm.lng);
-      if (d < minD) {
-        minD = d;
-        closestLm = lm;
-      }
-    }
-
-    if (closestLm && minD < 2.5) {
-      return NextResponse.json({
-        name: closestLm.name,
-        full_address: `${closestLm.name}, দক্ষিণ ২৪ পরগনা`,
-        lat: latitude,
-        lng: longitude,
-        isHub: true,
-        distanceKm: minD,
-        isInServiceArea: true,
-      });
-    }
-
     return NextResponse.json({
-      name: `বর্তমান অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
-      full_address: `জিপিএস অবস্থান: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+      name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+      full_address: `GPS: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
       lat: latitude,
       lng: longitude,
       isInServiceArea: isInTerritory,
     });
   } catch (err: unknown) {
     return NextResponse.json({
-      name: "লাইভ জিপিএস অবস্থান",
+      name: "Live GPS Location",
       error: (err as Error).message,
     });
   }

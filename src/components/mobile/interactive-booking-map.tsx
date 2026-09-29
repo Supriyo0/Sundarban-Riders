@@ -622,11 +622,13 @@ export function InteractiveBookingMap({
         const errorMsg =
           msg ||
           (isDenied
-            ? "⚠️ লোকেশন পারমিশন বন্ধ রয়েছে! ফোনের GPS লোকেশন অন করুন অথবা ওপরে পিকআপ স্থান টাইপ করুন।"
-            : "⚠️ লোকেশন সনাক্ত করা যায়নি! অনুগ্রহ করে ফোনের GPS অন করুন অথবা ওপরে পিকআপ স্থান লিখুন।");
+            ? "⚠️ Chrome-এ লোকেশন পারমিশন ব্লক (Blocked) আছে! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।"
+            : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ওপরে আপনার পিকআপ স্থান টাইপ করুন বা ম্যাপে ক্লিক করুন।");
 
         setLocationError(errorMsg);
-        toast.error(errorMsg, { duration: 5000 });
+        if (userInitiated || isDenied) {
+          toast.error(errorMsg, { duration: 6000 });
+        }
       };
 
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
@@ -635,7 +637,7 @@ export function InteractiveBookingMap({
         // Strict Service Area Boundary Check: Never accept foreign, Washington, or out-of-territory points
         if (!isLocationInServiceArea(latitude, longitude)) {
           handleFail(
-            "⚠️ আপনার বর্তমান অবস্থানটি সুন্দরবন পরিষেবা এলাকার (ডায়মন্ড হারবার থেকে বকখালি ও সাগর) বাইরে! পরিষেবা পেতে ওপরে অনুমোদিত পিকআপ স্থান টাইপ করুন。"
+            "⚠️ আপনার বর্তমান অবস্থানটি সুন্দরবন পরিষেবা এলাকার (ডায়মন্ড হারবার থেকে বকখালি ও সাগর) বাইরে! পরিষেবা পেতে ওপরে অনুমোদিত পিকআপ স্থান টাইপ করুন।"
           );
           return;
         }
@@ -675,16 +677,52 @@ export function InteractiveBookingMap({
         return;
       }
 
+      // Check permission state in Chrome / modern browsers
+      if (typeof navigator.permissions !== "undefined" && navigator.permissions.query) {
+        navigator.permissions
+          .query({ name: "geolocation" as PermissionName })
+          .then((status) => {
+            if (status.state === "denied") {
+              handleFail(
+                "⚠️ Chrome-এ লোকেশন ব্লক করা আছে! URL বারের বামে তালা/টিউন (🔒) আইকনে ক্লিক করে Location 'Allow' করুন।",
+                true
+              );
+            }
+          })
+          .catch(() => {});
+      }
+
       navigator.geolocation.getCurrentPosition(
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
         (err) => {
-          navigator.geolocation.getCurrentPosition(
-            (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-            (fallbackErr) => handleFail(undefined, fallbackErr?.code === 1 || err?.code === 1),
-            { enableHighAccuracy: false, timeout: 8000 }
-          );
+          if (err.code === 1) {
+            handleFail(
+              "⚠️ Chrome-এ লোকেশন পারমিশন দেওয়া হয়নি! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।",
+              true
+            );
+          } else {
+            // Try fallback with low accuracy (Wi-Fi / Cell tower)
+            navigator.geolocation.getCurrentPosition(
+              (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
+              (fallbackErr) => {
+                if (fallbackErr.code === 1) {
+                  handleFail(
+                    "⚠️ Chrome-এ লোকেশন পারমিশন দেওয়া হয়নি! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।",
+                    true
+                  );
+                } else if (fallbackErr.code === 2) {
+                  handleFail(
+                    "⚠️ ডিভাইসের জিপিএস পজিশন পাওয়া যায়নি (কম্পিউটার/ফোনে লোকেশন বন্ধ থাকতে পারে)। ওপরে পিকআপ টাইপ করুন বা ম্যাপে ক্লিক করুন।"
+                  );
+                } else {
+                  handleFail("⚠️ জিপিএস রেসপন্স টাইমআউট হয়েছে। অনুগ্রহ করে ওপরে আপনার পিকআপ স্থান লিখুন।");
+                }
+              },
+              { enableHighAccuracy: false, timeout: 8000 }
+            );
+          }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -1125,7 +1163,7 @@ export function InteractiveBookingMap({
               </div>
               <Input
                 type="text"
-                placeholder="কোথায় যাবেন? (Where to? যেমন: ফ্রেজারগঞ্জ, বকখালি...)"
+                placeholder="কোথায় যাবেন? (Where to? Search destination...)"
                 value={dropInputValue}
                 onChange={(e) => handleQueryPlaces(e.target.value, "drop")}
                 onFocus={() => handleQueryPlaces(dropInputValue, "drop")}
@@ -1168,7 +1206,7 @@ export function InteractiveBookingMap({
               <div className="px-1 pb-1 flex items-center justify-between text-[10.5px] font-bold text-slate-600">
                 <span className="flex items-center gap-1.5 text-emerald-800">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {activeSearchField === "drop" ? "গন্তব্যের পরামর্শ" : "পিকআপ পয়েন্টের পরামর্শ"}
+                  {activeSearchField === "drop" ? "Google Map Destination Suggestions" : "Google Map Pickup Suggestions"}
                 </span>
                 <button
                   type="button"
@@ -1204,7 +1242,7 @@ export function InteractiveBookingMap({
                         <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
                         {!inZone && (
                           <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-full shrink-0">
-                            পরিষেবা বাইরে
+                            Out of Service Area
                           </span>
                         )}
                       </div>
@@ -1570,7 +1608,7 @@ export function InteractiveBookingMap({
               >
                 <div className="flex items-center gap-2">
                   <Search className="w-4 h-4 text-emerald-600" />
-                  <span>গন্তব্য নির্বাচন করুন... (যেমন: ফ্রেজারগঞ্জ সৈকত)</span>
+                  <span>গন্তব্য নির্বাচন করুন... (Search destination)</span>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               </button>

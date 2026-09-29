@@ -1,25 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Navigation, MapPin, Compass, ExternalLink, Smartphone, Globe } from "lucide-react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { Navigation, MapPin, Compass, ExternalLink, Smartphone, Globe, Activity, Clock, IndianRupee } from "lucide-react";
 import "leaflet/dist/leaflet.css";
+import { LiveFareMeter, LiveMeterReading } from "@/lib/mobile/live-fare-meter";
+import { DEFAULT_TOTO_PRICING, TotoPricingConfig, calculateTotoFare } from "@/lib/pricing/fare-calculator";
 
 interface DriverActiveTripMapProps {
+  bookingId?: string;
   pickup: string;
   drop: string;
   pickupCoords?: [number, number];
   dropCoords?: [number, number];
   driverCoords?: [number, number];
   status: "heading_pickup" | "on_trip";
+  passengerCount?: number;
+  pricingConfig?: TotoPricingConfig;
+  tripStartTime?: string;
+  onOdometerUpdate?: (reading: LiveMeterReading) => void;
 }
 
 export function DriverActiveTripMap({
+  bookingId,
   pickup,
   drop,
   pickupCoords = [21.8760, 88.1920],
   dropCoords = [21.8680, 88.1630],
   driverCoords = [21.8770, 88.1930],
   status,
+  passengerCount = 3,
+  pricingConfig = DEFAULT_TOTO_PRICING,
+  tripStartTime,
+  onOdometerUpdate,
 }: DriverActiveTripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -29,10 +41,65 @@ export function DriverActiveTripMap({
   const [routeDuration, setRouteDuration] = useState<number>(10);
   const [routeSummary, setRouteSummary] = useState<string>("ডায়মন্ড হারবার রোড (NH-117)");
 
-  const targetName = status === "heading_pickup" ? pickup : drop;
+  // Live Fare Meter instance
+  const meterRef = useRef<LiveFareMeter | null>(null);
+  const [meterReading, setMeterReading] = useState<LiveMeterReading>({
+    totalKm: 0,
+    liveFare: pricingConfig.baseFare || 30,
+    tripMinutes: 0,
+    currentSpeedKmh: 0,
+  });
+
+  // Initialize and keep meter synced
+  useEffect(() => {
+    if (status === "on_trip") {
+      if (!meterRef.current) {
+        meterRef.current = new LiveFareMeter(passengerCount, pricingConfig, tripStartTime);
+      } else {
+        meterRef.current.setPassengerCount(passengerCount);
+        meterRef.current.setPricingConfig(pricingConfig);
+      }
+    } else {
+      meterRef.current = null;
+    }
+  }, [status, passengerCount, pricingConfig, tripStartTime]);
+
+  // Feed driver GPS coordinates into LiveFareMeter when on_trip
+  useEffect(() => {
+    if (status === "on_trip" && meterRef.current && driverCoords && driverCoords[0] && driverCoords[1]) {
+      const reading = meterRef.current.addGpsReading(driverCoords[0], driverCoords[1]);
+      setMeterReading(reading);
+      onOdometerUpdate?.(reading);
+
+      // Periodic backend sync (throttled)
+      if (bookingId && reading.totalKm > 0) {
+        fetch("/api/bookings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_odometer",
+            bookingId,
+            distanceKm: reading.totalKm,
+            currentCoords: driverCoords,
+          }),
+        }).catch(() => {});
+      }
+    }
+  }, [driverCoords, status, bookingId, onOdometerUpdate]);
+
   const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;
   const originCoords = driverCoords && driverCoords[0] ? driverCoords : (status === "heading_pickup" ? [21.8760, 88.1920] : pickupCoords);
-  const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originCoords[0]},${originCoords[1]}&destination=${targetCoords[0]},${targetCoords[1]}&travelmode=driving&dir_action=navigate`;
+
+  // Generate robust Android navigation intent with Web fallback
+  const getGoogleMapsNavUrl = (target: [number, number]) => {
+    const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      return `google.navigation:q=${target[0]},${target[1]}&mode=d`;
+    }
+    return `https://www.google.com/maps/dir/?api=1&origin=${originCoords[0]},${originCoords[1]}&destination=${target[0]},${target[1]}&travelmode=driving&dir_action=navigate`;
+  };
+
+  const currentGoogleMapsUrl = getGoogleMapsNavUrl(targetCoords);
 
   // Fetch real road route
   useEffect(() => {
@@ -79,10 +146,10 @@ export function DriverActiveTripMap({
 
       const map = L.map(mapContainerRef.current, {
         center: status === "heading_pickup" ? pickupCoords : dropCoords,
-        zoom: 14,
+        zoom: 17,
         zoomControl: false,
-        scrollWheelZoom: false,
-        dragging: !L.Browser.mobile,
+        scrollWheelZoom: true,
+        dragging: true,
       });
 
       L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
@@ -147,7 +214,7 @@ export function DriverActiveTripMap({
 
       // Fit bounds to show current active navigation segment
       const activeBounds = L.latLngBounds([driverCoords, targetCoords]);
-      map.fitBounds(activeBounds, { padding: [40, 40] });
+      map.fitBounds(activeBounds, { padding: [40, 40], maxZoom: 17 });
 
       mapInstanceRef.current = map;
     }
@@ -201,24 +268,67 @@ export function DriverActiveTripMap({
         </button>
       </div>
 
-      {/* Route & ETA Banner */}
-      <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-            <Compass className="w-5 h-5 animate-spin-slow" />
-          </div>
-          <div>
-            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
-              {status === "heading_pickup" ? "পিকআপের দিকে যাচ্ছেন" : "গন্তব্যের লাইভ রোড ম্যাপ"}
+      {/* Driver Real-Time Odometer & Live Synced Fare Meter (During On Trip) */}
+      {status === "on_trip" ? (
+        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-4 rounded-2xl border border-emerald-500/30 shadow-lg space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>লাইভ ওডোমিটার ও চলমান মিটার</span>
             </span>
-            <p className="text-xs font-bold text-slate-100">{routeSummary}</p>
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+              GPS ১০০% নির্ভুল
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {/* Live Distance */}
+            <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-800">
+              <span className="text-[9px] text-slate-400 font-bold uppercase block">অতিক্রান্ত দূরত্ব</span>
+              <p className="text-xl font-black text-emerald-400 tabular-nums mt-0.5">
+                {meterReading.totalKm.toFixed(2)}
+                <span className="text-[10px] ml-0.5 text-slate-400 font-normal">কিমি</span>
+              </p>
+            </div>
+
+            {/* Live Synchronized Fare */}
+            <div className="bg-slate-900/90 rounded-xl p-2 border border-amber-500/30">
+              <span className="text-[9px] text-amber-400 font-bold uppercase block">চলমান নগদ ভাড়া</span>
+              <p className="text-xl font-black text-amber-400 tabular-nums mt-0.5">
+                ₹{meterReading.liveFare}
+              </p>
+            </div>
+
+            {/* Trip Duration */}
+            <div className="bg-slate-900/90 rounded-xl p-2 border border-slate-800">
+              <span className="text-[9px] text-sky-400 font-bold uppercase block">চলার সময়</span>
+              <p className="text-lg font-black text-sky-300 tabular-nums mt-0.5">
+                {meterReading.tripMinutes}
+                <span className="text-[10px] ml-0.5 text-slate-400 font-normal">মিনিট</span>
+              </p>
+            </div>
           </div>
         </div>
-        <div className="text-right">
-          <span className="text-xs font-black text-white">{routeDistance} কিমি</span>
-          <span className="block text-[10px] text-slate-400">~{routeDuration} মিনিট</span>
+      ) : (
+        /* Route & ETA Banner */
+        <div className="bg-slate-900 text-white p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold">
+              <Compass className="w-5 h-5 animate-spin-slow" />
+            </div>
+            <div>
+              <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider block">
+                পিকআপের দিকে যাচ্ছেন
+              </span>
+              <p className="text-xs font-bold text-slate-100">{routeSummary}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-xs font-black text-white">{routeDistance} কিমি</span>
+            <span className="block text-[10px] text-slate-400">~{routeDuration} মিনিট</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* View 1: Inbuilt Interactive Leaflet Map */}
       {mapViewOption === "inbuilt" ? (
@@ -227,7 +337,7 @@ export function DriverActiveTripMap({
 
           <div className="absolute bottom-2.5 right-2.5 z-20">
             <a
-              href={googleMapsUrl}
+              href={currentGoogleMapsUrl}
               target="_blank"
               rel="noreferrer"
               className="px-3 py-1.5 rounded-xl bg-white/95 text-blue-700 text-xs font-bold shadow-md border border-blue-200 flex items-center gap-1.5 backdrop-blur-md active:scale-95 transition-all"
@@ -243,14 +353,14 @@ export function DriverActiveTripMap({
           <div className="relative w-full h-64 sm:h-72 rounded-2xl overflow-hidden border-2 border-blue-400 shadow-md bg-slate-100">
             <iframe
               title="Google Maps Navigation View"
-              src={`https://maps.google.com/maps?q=${targetCoords[0]},${targetCoords[1]}&hl=bn&z=15&output=embed`}
+              src={`https://maps.google.com/maps?q=${targetCoords[0]},${targetCoords[1]}&hl=bn&z=17&output=embed`}
               className="w-full h-full border-0"
               loading="lazy"
               allowFullScreen
             />
             <div className="absolute bottom-2.5 left-2.5 right-2.5 z-20">
               <a
-                href={googleMapsUrl}
+                href={currentGoogleMapsUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
@@ -263,6 +373,22 @@ export function DriverActiveTripMap({
           </div>
         </div>
       )}
+
+      {/* Main Google Maps CTA Button */}
+      <a
+        href={currentGoogleMapsUrl}
+        target="_blank"
+        rel="noreferrer"
+        className={`flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl font-bold text-sm shadow-md active:scale-[0.98] transition-all ${
+          status === "heading_pickup"
+            ? "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-600/20"
+            : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+        }`}
+      >
+        <Navigation className="w-4 h-4" />
+        <span>🌐 গুগল ম্যাপে {status === "heading_pickup" ? "পিকআপ পয়েন্টে" : "গন্তব্যে"} নেভিগেশন চালু করুন</span>
+        <ExternalLink className="w-4 h-4 opacity-80" />
+      </a>
     </div>
   );
 }

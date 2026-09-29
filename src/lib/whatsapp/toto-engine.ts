@@ -14,6 +14,11 @@ function getSupabaseAdmin() {
   );
 }
 
+export function toBengaliDigits(num: number | string): string {
+  const bengaliDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return String(num).replace(/[0-9]/g, (digit) => bengaliDigits[Number(digit)]);
+}
+
 export interface TotoMessageContext {
   fromPhone: string;
   senderName?: string;
@@ -316,9 +321,13 @@ export const RIDER_DISCLAIMER_PDF_URL =
   process.env.RIDER_DISCLAIMER_PDF_URL ||
   "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/rider-disclaimer.pdf";
 
+export const CUSTOMER_DISCLAIMER_PDF_URL =
+  process.env.CUSTOMER_DISCLAIMER_PDF_URL ||
+  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/customer-disclaimer.pdf";
+
 export const CUSTOMER_DISCLAIMER_IMAGE_URL =
   process.env.CUSTOMER_DISCLAIMER_IMAGE_URL ||
-  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/Customer.jpeg";
+  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/customer-disclaimer.pdf";
 
 export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্টব্য: ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী
 "সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। এই প্ল্যাটফর্মটি স্থানীয় টোটো চালক ও যাত্রীদের সরাসরি যোগাযোগের মাধ্যম। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:
@@ -804,7 +813,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\n📍 এবার আপনার বর্তমান অবস্থান (Driver Location) প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যে থাকা যাত্রীদের বুকিং পেতে আপনার অবস্থান প্রয়োজন।\n\n👉 নিচের যে কোনো একটি উপায়ে আপনার অবস্থান শেয়ার করুন:\n১) WhatsApp-এর Attach (📎) আইকন থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা আপনার বর্তমান বাসস্ট্যান্ড/বাজারের নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর", "লট ৮ ঘাট")।`,
+      bodyText: `🟢 ধন্যবাদ ${driver.name || "চালক বন্ধু"}! আপনার চালক চুক্তি সফলভাবে সম্পন্ন হয়েছে।\n\n📍 এবার আপনার বর্তমান অবস্থান (Driver Location) প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যে থাকা যাত্রীদের বুকিং পেতে আপনার অবস্থান প্রয়োজন।\n\n👉 নিচের যে কোনো একটি উপায়ে আপনার অবস্থান শেয়ার করুন:\n১) WhatsApp-এর Attach (📎) আইকন থেকে 'Location' -> 'Share Live Location' সিলেক্ট করে সময় '8 Hours' (৮ ঘণ্টা) নির্বাচন করে পাঠান (অথবা Current Location পাঠান)।\n২) অথবা আপনার বর্তমান বাসস্ট্যান্ড/বাজারের নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর", "লট ৮ ঘাট")।`,
     };
   }
 
@@ -846,7 +855,8 @@ export async function processTotoMessage(
     }
 
     if (lat !== undefined && lng !== undefined && locName) {
-      const durationMs = locType === "live" ? 15 * 60 * 1000 : 30 * 60 * 1000;
+      // Live location validity is automatically set to 8 hours (8 * 60 * 60 * 1000 ms)
+      const durationMs = 8 * 60 * 60 * 1000;
       const expiresAt = Date.now() + durationMs;
 
       driverLocationStates.set(cleanPhone, {
@@ -900,7 +910,7 @@ export async function processTotoMessage(
       ).catch(() => {});
 
       const typeLabel = locType === "live" ? "লাইভ লোকেশন" : "ম্যাপ লোকেশন";
-      const validityText = locType === "live" ? "১৫ মিনিট (WhatsApp লাইভ)" : "৩০ মিনিট";
+      const validityText = "৮ ঘণ্টা (স্বয়ংক্রিয় লাইভ)";
 
       return {
         toPhone: rawPhone,
@@ -932,7 +942,7 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "interactive_buttons",
-          bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
+          bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
           media: {
             kind: "document",
             url: RIDER_DISCLAIMER_PDF_URL,
@@ -940,7 +950,7 @@ export async function processTotoMessage(
             caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
           },
           buttons: [
-            { id: "driver_agree_terms", title: "সম্মত" },
+            { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
           ],
         };
       }
@@ -958,7 +968,7 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "text",
-          bodyText: `🛺 ডিউটি শুরুর পূর্বে অবস্থান প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার যাত্রীদের বুকিং পেতে আপনার বর্তমান অবস্থান প্রয়োজন।\n\n👉 যে কোনো একটি উপায়ে লোকেশন পাঠান:\n১) WhatsApp-এর Attach (📎) থেকে 'Location' -> 'Share Live Location' বা Current Location পাঠান।\n২) অথবা বর্তমান এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
+          bodyText: `🛺 ডিউটি শুরুর পূর্বে অবস্থান প্রদান করুন:\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার যাত্রীদের বুকিং পেতে আপনার বর্তমান অবস্থান প্রয়োজন।\n\n👉 যে কোনো একটি উপায়ে লোকেশন পাঠান:\n১) WhatsApp-এর Attach (📎) থেকে 'Location' -> 'Share Live Location' সিলেক্ট করে সময় '8 Hours' (৮ ঘণ্টা) নির্বাচন করে পাঠান (অথবা Current Location পাঠান)।\n২) অথবা বর্তমান এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ স্টেশন", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
         };
       }
 
@@ -973,7 +983,7 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\n📍 অবস্থান: ${driverLoc.locationName || "সুন্দরবন"}\nশীঘ্রই আপনার কাছে নতুন রাইডের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি বন্ধ করতে বা নিজে টোটো বুক করতে নিচের বোতামে চাপুন)`,
+        bodyText: `🟢 আপনি এখন অনলাইন আছেন!\n📍 অবস্থান: ${driverLoc.locationName || "সুন্দরবন"}\n⏳ লাইভ লোকেশন ভ্যালিডিটি: ৮ ঘণ্টা স্বয়ংক্রিয়ভাবে সক্রিয় থাকবে।\nশীঘ্রই আপনার কাছে নতুন রাইডের নোটিফিকেশন পৌঁছে যাবে।\n\n(ডিউটি বন্ধ করতে বা নিজে টোটো বুক করতে নিচের বোতামে চাপুন)`,
         buttons: [
           { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
@@ -1060,7 +1070,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `⚠️ আপনার লাইভ লোকেশনের সময় শেষ হয়েছে!\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার নতুন যাত্রীদের বুকিং চালু রাখতে অনুগ্রহ করে পুনরায় আপনার লাইভ লোকেশন অথবা বর্তমান এলাকার নাম পাঠান।\n\n👉 WhatsApp-এর Attach (📎) থেকে 'Location' শেয়ার করুন অথবা এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
+      bodyText: `⚠️ আপনার লাইভ লোকেশনের ৮ ঘণ্টার সময়সীমা শেষ হয়েছে!\n=======================\nকাছাকাছি ৫ কিমির মধ্যকার নতুন যাত্রীদের বুকিং চালু রাখতে অনুগ্রহ করে পুনরায় আপনার লাইভ লোকেশন (Share Live Location -> 8 Hours) অথবা বর্তমান এলাকার নাম পাঠান।\n\n👉 WhatsApp-এর Attach (📎) থেকে 'Location' শেয়ার করুন অথবা এলাকার নাম লিখে জানান (যেমন: "কাকদ্বীপ", "নামখানা", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")।`,
     };
   }
 
@@ -1082,7 +1092,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
+      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
       media: {
         kind: "document",
         url: RIDER_DISCLAIMER_PDF_URL,
@@ -1090,7 +1100,7 @@ export async function processTotoMessage(
         caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
       },
       buttons: [
-        { id: "driver_agree_terms", title: "সম্মত" },
+        { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
       ],
     };
   }
@@ -1173,7 +1183,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।\n=======================\n❌ ৩ বারের বেশি বুকিং বাতিল করলে আপনার নম্বরটি সাময়িকভাবে স্থগিত হতে পারে।\n(আপনার বর্তমান বাতিল সংখ্যা: ${newCancels}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
+      bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।\n=======================\n❌ ৩ বারের বেশি বুকিং বাতিল করলে আপনার নম্বরটি সাময়িকভাবে স্থগিত হতে পারে।\n(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(newCancels)}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
       buttons: [
         { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
       ],
@@ -1349,12 +1359,11 @@ export async function processTotoMessage(
         .select("*")
         .neq("is_active", false);
 
-      // Filter drivers within 5km radius of pickup location (exclude sender driver if they are booking as passenger)
+      // Filter drivers strictly within 5km radius of pickup location (exclude sender driver if they are booking as passenger)
       const nearbyDrivers = (onlineDrivers || []).filter((d) => {
         if (driver && d.id === driver.id) return false;
         const dClean = (d.phone || "").replace(/\D/g, "").slice(-10);
         if (dClean === last10) return false;
-        if (!pLat || !pLng) return true;
         let dLat = d.latitude;
         let dLng = d.longitude;
         if (!dLat || !dLng) {
@@ -1364,7 +1373,7 @@ export async function processTotoMessage(
             dLng = meta.lng;
           } catch {}
         }
-        if (!dLat || !dLng) return true; // Include if unknown coordinates
+        if (!pLat || !pLng || !dLat || !dLng) return false; // Strictly require coordinates within 5km
         const distKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
         return distKm <= 5.0; // 5 km radar!
       });
@@ -1478,13 +1487,18 @@ export async function processTotoMessage(
       };
     }
 
-    // First time booking: Send short disclaimer with "See More" and "Agree" buttons
+    // First time booking: Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT,
+      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।",
+      media: {
+        kind: "document",
+        url: CUSTOMER_DISCLAIMER_PDF_URL,
+        filename: "Customer_Disclaimer_Sundarban_Riders.pdf",
+        caption: "📄 সুন্দরবন রাইডার — যাত্রী সুরক্ষা ও নির্দেশিকা (PDF)",
+      },
       buttons: [
-        { id: "see_more_disclaimer", title: "📖 বিস্তারিত দেখুন" },
         { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
       ],
     };
@@ -1538,7 +1552,7 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের 'সম্মত' বাটনে ক্লিক করুন।",
+        bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
         media: {
           kind: "document",
           url: RIDER_DISCLAIMER_PDF_URL,
@@ -1546,7 +1560,7 @@ export async function processTotoMessage(
           caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
         },
         buttons: [
-          { id: "driver_agree_terms", title: "সম্মত" },
+          { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
         ],
       };
     }

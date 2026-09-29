@@ -197,25 +197,16 @@ export function DriverRadarPanel({
       }
     };
 
-    // Stage 1: Fast coarse network fix (< 300ms)
+    // Request precise satellite GPS with maximumAge: 0
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        handleDriverPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
-
-        // Stage 2: Background GPS refinement
-        navigator.geolocation.getCurrentPosition(
-          (accuratePos) => {
-            handleDriverPosition(accuratePos.coords.latitude, accuratePos.coords.longitude, accuratePos.coords.accuracy);
-          },
-          () => {},
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
+      (accuratePos) => {
+        handleDriverPosition(accuratePos.coords.latitude, accuratePos.coords.longitude, accuratePos.coords.accuracy);
       },
       (err) => {
-        // Fallback to high accuracy if coarse failed
+        // Fallback to coarse if high accuracy satellite timed out
         navigator.geolocation.getCurrentPosition(
-          (highPos) => {
-            handleDriverPosition(highPos.coords.latitude, highPos.coords.longitude, highPos.coords.accuracy);
+          (fallbackPos) => {
+            handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude, fallbackPos.coords.accuracy);
           },
           (finalErr) => {
             setIsUpdatingLocation(false);
@@ -223,13 +214,13 @@ export function DriverRadarPanel({
             if (finalErr.code === 1) {
               if (userInitiated) toast.error("ব্রাউজারে লোকেশন অনুমতি (Allow) দিন যাতে আপনার বর্তমান অবস্থান স্বয়ংক্রিয়ভাবে পাওয়া যায়।");
             } else if (userInitiated) {
-              toast.info("GPS সিগন্যাল দুর্বল, ডিভাইসের লোকেশন অন করুন।");
+              toast.info("GPS সিগন্যাল দুর্বল, ডিভাইসের লোকেশন/GPS অন করুন।");
             }
           },
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+          { enableHighAccuracy: false, timeout: 8000 }
         );
       },
-      { enableHighAccuracy: false, timeout: 4000, maximumAge: 120000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }, [driverSession?.driverId, isOnline]);
 

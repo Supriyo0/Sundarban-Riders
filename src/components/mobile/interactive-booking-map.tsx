@@ -241,6 +241,12 @@ export function InteractiveBookingMap({
       setDistanceKm(safeDist);
       const computed = calculateTotoFare(safeDist, passengerCount, pricingConfig);
 
+      if (mapInstanceRef.current && dText && dText.trim()) {
+        try {
+          mapInstanceRef.current.fitBounds([pCoords, dCoords], { padding: [50, 50], maxZoom: 17 });
+        } catch {}
+      }
+
       onRouteSelectedRef.current?.({
         pickup: pText,
         drop: dText,
@@ -322,7 +328,7 @@ export function InteractiveBookingMap({
 
         const map = L.map(mapContainerRef.current, {
           center: pickupCoords,
-          zoom: 14,
+          zoom: 17,
           zoomControl: false,
         });
 
@@ -510,7 +516,7 @@ export function InteractiveBookingMap({
           pickupMarkerRef.current.setLatLng(newPickup);
         }
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo(newPickup, 16, { duration: 1.0 });
+          mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.2 });
         }
 
         const detectedName = await resolveLocationAddress(latitude, longitude);
@@ -526,20 +532,28 @@ export function InteractiveBookingMap({
         if (userInitiated) toast.success(`📍 আপনার অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
       };
 
+      if (userInitiated) {
+        toast.info("📍 স্যাটেলাইট GPS থেকে আপনার সঠিক অবস্থান সনাক্ত করা হচ্ছে...");
+      }
+
+      // Request precise hardware GPS first with maximumAge: 0
       navigator.geolocation.getCurrentPosition(
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
-        () => {
+        (err) => {
+          console.warn("[InteractiveBookingMap] Precise GPS failed, trying fallback:", err.message);
           navigator.geolocation.getCurrentPosition(
-            (accuratePos) => handleSuccess(accuratePos.coords.latitude, accuratePos.coords.longitude),
-            (err) => {
+            (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
+            (fallbackErr) => {
               setIsLocating(false);
-              if (err.code === 1) setPermissionState("denied");
-              if (userInitiated) toast.error("GPS পারমিশন সক্রিয় করা সম্ভব হয়নি");
+              if (fallbackErr.code === 1) setPermissionState("denied");
+              if (userInitiated) {
+                toast.error("GPS লোকেশন সক্রিয় করা সম্ভব হয়নি। অনুগ্রহ করে ফোনের লোকেশন/GPS অন করুন।");
+              }
             },
-            { enableHighAccuracy: true, timeout: 8000 }
+            { enableHighAccuracy: false, timeout: 8000 }
           );
         },
-        { enableHighAccuracy: false, timeout: 4000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     },
     [dropCoords, dropInputValue, updateRoute]

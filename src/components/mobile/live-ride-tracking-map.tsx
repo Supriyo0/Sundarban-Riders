@@ -368,7 +368,7 @@ export function LiveRideTrackingMap({
 
       const map = L.map(mapContainerRef.current, {
         center: driverPos,
-        zoom: 14,
+        zoom: 17,
         zoomControl: false,
       });
 
@@ -941,6 +941,40 @@ export function LiveRideTrackingMap({
           })}
         </div>
       </div>
+
+      {/* 4. LIVE ODOMETER & SYNCHRONIZED FARE METER HUD (During In-Trip) */}
+      {rideStep === "in_trip" && (
+        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white p-4 rounded-3xl border border-emerald-500/30 shadow-lg space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <span className="text-[10px] text-emerald-400 font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span>লাইভ ওডোমিটার ও চলমান ট্রিপ মিটার</span>
+            </span>
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+              GPS লাইভ সিঙ্ক
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-center">
+            {/* Live Distance Traveled */}
+            <div className="bg-slate-900/90 rounded-2xl p-3 border border-slate-800">
+              <span className="text-[10px] text-slate-400 font-bold uppercase block">অতিক্রান্ত দূরত্ব</span>
+              <p className="text-2xl font-black text-emerald-400 tabular-nums mt-0.5">
+                {tripDistance ? tripDistance.toFixed(1) : "১.০"}
+                <span className="text-xs ml-0.5 text-slate-400 font-normal">কিমি</span>
+              </p>
+            </div>
+
+            {/* Live Synced Fare */}
+            <div className="bg-slate-900/90 rounded-2xl p-3 border border-amber-500/30">
+              <span className="text-[10px] text-amber-400 font-bold uppercase block">চলমান নগদ ভাড়া</span>
+              <p className="text-2xl font-black text-amber-400 tabular-nums mt-0.5">
+                ₹{tripFare}.০০
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
 
       {/* ------------------------------------------------------------- */}

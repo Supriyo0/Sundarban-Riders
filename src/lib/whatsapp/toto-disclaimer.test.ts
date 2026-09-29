@@ -4,20 +4,18 @@ dotenv.config({ path: ".env.local" });
 
 import {
   processTotoMessage,
-  DEFAULT_TOTO_CUSTOMER_DISCLAIMER,
-  DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT,
-  DEFAULT_TOTO_DRIVER_DISCLAIMER,
   RIDER_DISCLAIMER_PDF_URL,
-  CUSTOMER_DISCLAIMER_IMAGE_URL,
+  CUSTOMER_DISCLAIMER_PDF_URL,
+  toBengaliDigits,
 } from "./toto-engine";
 
 describe("WhatsApp Disclaimers & Media Attachments", () => {
-  it("has correct URLs configured for the rider PDF and customer image", () => {
+  it("has correct URLs configured for the rider PDF and customer PDF", () => {
     expect(RIDER_DISCLAIMER_PDF_URL).toContain("rider-disclaimer.pdf");
-    expect(CUSTOMER_DISCLAIMER_IMAGE_URL).toContain("Customer.jpeg");
+    expect(CUSTOMER_DISCLAIMER_PDF_URL).toContain("customer-disclaimer.pdf");
   });
 
-  it("returns short customer disclaimer on initial book_toto request with See More button", async () => {
+  it("returns customer disclaimer PDF on initial book_toto request with single agree button", async () => {
     const freshPhone = "+919112233445";
     const action = await processTotoMessage({
       fromPhone: freshPhone,
@@ -26,25 +24,8 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
 
     expect(action).not.toBeNull();
     expect(action?.type).toBe("interactive_buttons");
-    expect(action?.bodyText).toBe(DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT);
-    expect(action?.buttons).toEqual([
-      { id: "see_more_disclaimer", title: "📖 বিস্তারিত দেখুন" },
-      { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
-    ]);
-  });
-
-  it("returns full customer disclaimer with Customer.jpeg image on see_more_disclaimer click", async () => {
-    const freshPhone = "+919112233445";
-    const action = await processTotoMessage({
-      fromPhone: freshPhone,
-      buttonPayload: "see_more_disclaimer",
-    });
-
-    expect(action).not.toBeNull();
-    expect(action?.type).toBe("interactive_buttons");
-    expect(action?.bodyText).toBe(DEFAULT_TOTO_CUSTOMER_DISCLAIMER);
-    expect(action?.media?.kind).toBe("image");
-    expect(action?.media?.url).toBe(CUSTOMER_DISCLAIMER_IMAGE_URL);
+    expect(action?.media?.kind).toBe("document");
+    expect(action?.media?.url).toBe(CUSTOMER_DISCLAIMER_PDF_URL);
     expect(action?.buttons).toEqual([
       { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
     ]);
@@ -63,7 +44,7 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
     expect(action?.media?.url).toBe(RIDER_DISCLAIMER_PDF_URL);
     expect(action?.media?.filename).toContain("Rider_Disclaimer");
     expect(action?.buttons).toEqual([
-      { id: "driver_agree_terms", title: "সম্মত" },
+      { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
     ]);
   });
 
@@ -110,5 +91,12 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
       { id: "take_ride", title: "🛺 রাইডার লগইন" },
       { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
     ]);
+  });
+
+  it("converts numbers to Bengali numerals cleanly without mixed English digits", () => {
+    expect(toBengaliDigits(3)).toBe("৩");
+    expect(toBengaliDigits(1)).toBe("১");
+    expect(toBengaliDigits("3/3")).toBe("৩/৩");
+    expect(`(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(3)}/৩)`).toBe("(আপনার বর্তমান বাতিল সংখ্যা: ৩/৩)");
   });
 });

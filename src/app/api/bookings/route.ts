@@ -49,11 +49,22 @@ async function notifyOnlineDriversViaWhatsApp(
 
     if (!drivers || drivers.length === 0) return;
 
-    const pLat = pickupCoords?.[0] || booking.pickup_lat;
-    const pLng = pickupCoords?.[1] || booking.pickup_lng;
+    const bMeta = getBookingMeta(booking);
+    let pLat = pickupCoords?.[0] || booking.pickup_lat || bMeta.start_coords?.[0];
+    let pLng = pickupCoords?.[1] || booking.pickup_lng || bMeta.start_coords?.[1];
+
+    if ((!pLat || !pLng) && booking.pickup_location) {
+      try {
+        const { geocodeLocation } = await import("@/lib/whatsapp/toto-engine");
+        const geo = await geocodeLocation(booking.pickup_location);
+        if (geo?.lat && geo?.lng) {
+          pLat = geo.lat;
+          pLng = geo.lng;
+        }
+      } catch {}
+    }
 
     const nearbyDrivers = drivers.filter((d) => {
-      if (!pLat || !pLng) return true;
       let dLat = d.latitude;
       let dLng = d.longitude;
       if (!dLat || !dLng) {
@@ -63,7 +74,7 @@ async function notifyOnlineDriversViaWhatsApp(
           dLng = meta.lng;
         } catch {}
       }
-      if (!dLat || !dLng) return true;
+      if (!pLat || !pLng || !dLat || !dLng) return false;
       const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
       return dKm <= 5.0;
     });
@@ -565,7 +576,8 @@ function enrichBookingCoords(booking: any) {
     end_coords: [dropLat, dropLng],
     start_otp: startOtp,
     passenger_count: meta.passenger_count || 3,
-    actual_distance_km: meta.actual_distance_km || booking.actual_distance_km || null,
+    actual_distance_km: meta.actual_distance_km || meta.live_distance_km || booking.actual_distance_km || null,
+    final_fare: booking.final_fare || meta.calculated_fare || meta.live_fare || booking.estimated_fare,
     trip_start_time: meta.trip_start_time || null,
   };
 }
@@ -1179,6 +1191,50 @@ export async function PATCH(request: Request) {
       }
 
       return NextResponse.json({ success: true, booking: enrichBookingCoords(updated) });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION: UPDATE LIVE ODOMETER & FARE METER
+    // -------------------------------------------------------------
+    if (action === "update_odometer" || action === "sync_live_trip") {
+      const distanceKm = typeof body.distanceKm === "number" ? Math.max(0.1, body.distanceKm) : null;
+      const currentCoords = body.currentCoords;
+
+      if (distanceKm !== null) {
+        const meta = getBookingMeta(booking);
+        const pricingConfig = await loadActivePricingConfig(admin);
+        const passengerCount = meta.passenger_count || 3;
+        const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
+        const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
+        const liveFare = fareResult.totalFare;
+
+        const updatedMeta = updateBookingMeta(booking.feedback, {
+          live_distance_km: distanceKm,
+          live_fare: liveFare,
+          live_coords: currentCoords,
+          live_updated_at: new Date().toISOString(),
+        });
+
+        const { data: updated } = await admin
+          .from("bookings")
+          .update({
+            feedback: updatedMeta,
+            final_fare: liveFare,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", booking.id)
+          .select()
+          .maybeSingle();
+
+        return NextResponse.json({
+          success: true,
+          booking: updated ? enrichBookingCoords(updated) : undefined,
+          liveDistanceKm: distanceKm,
+          liveFare,
+        });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
     // -------------------------------------------------------------

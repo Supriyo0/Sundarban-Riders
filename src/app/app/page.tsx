@@ -42,6 +42,14 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { SwipeToConfirm } from "@/components/mobile/swipe-to-confirm";
 import { playRideAlertSound, playSuccessSound } from "@/lib/mobile/sound";
+import {
+  startDriverBackgroundLocationTracking,
+  stopDriverBackgroundLocationTracking,
+} from "@/lib/mobile/background-location";
+import {
+  subscribeDriverToPushNotifications,
+  showLocalRideAlertNotification,
+} from "@/lib/mobile/push-notifications";
 import dynamic from "next/dynamic";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
@@ -377,7 +385,7 @@ function MobileAppPageContent() {
   const [showSosModal, setShowSosModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [rideStep, setRideStep] = useState<"assigned" | "arriving" | "in_trip" | "arrived">("assigned");
-  const [searchStatus, setSearchStatus] = useState<"searching" | "unaccepted" | "accepted">("searching");
+  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "unaccepted" | "accepted">("idle");
   const [searchCountdown, setSearchCountdown] = useState(180); // 3 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(() => {
     if (typeof window !== "undefined") {
@@ -402,6 +410,15 @@ function MobileAppPageContent() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("sr_driver_completed_ride");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
+  const [passengerCompletedRide, setPassengerCompletedRide] = useState<any | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_passenger_completed_ride");
         if (saved) return JSON.parse(saved);
       } catch {}
     }
@@ -501,7 +518,7 @@ function MobileAppPageContent() {
       setPhase("otp_login");
       return;
     }
-    setPhase("passenger_searching");
+    setPhase("passenger_home");
     setSearchStatus("searching");
     setSearchCountdown(180);
     playRideAlertSound();
@@ -561,10 +578,10 @@ function MobileAppPageContent() {
     }
   }, []);
 
-  // Passenger Radar Search Countdown Effect (5 minutes timeout for nearby driver accept)
+  // Passenger Radar Search Countdown Effect (3 minutes timeout for nearby driver accept)
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (phase === "passenger_searching" && searchStatus === "searching") {
+    if (searchStatus === "searching" && activeBookingId) {
       if (searchCountdown > 0) {
         timer = setTimeout(() => {
           setSearchCountdown((prev) => prev - 1);
@@ -576,13 +593,13 @@ function MobileAppPageContent() {
       }
     }
     return () => clearTimeout(timer);
-  }, [phase, searchStatus, searchCountdown]);
+  }, [searchStatus, searchCountdown, activeBookingId]);
 
   // Passenger Live Polling: Check if any driver accepted the ride (from App or WhatsApp)
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
 
-    if (phase === "passenger_searching" && searchStatus === "searching" && activeBookingId) {
+    if (searchStatus === "searching" && activeBookingId) {
       const checkBookingAcceptance = async () => {
         try {
           const res = await fetch(`/api/bookings?id=${activeBookingId}`);
@@ -603,6 +620,7 @@ function MobileAppPageContent() {
               uniqueId: b.driver_unique_id || b.toto_number || "",
               startOtp: b.start_otp,
             });
+            setSearchStatus("idle");
             setPhase("passenger_home");
             playSuccessSound();
             toast.success("চালক রাইড গ্রহণ করেছেন!");
@@ -615,7 +633,7 @@ function MobileAppPageContent() {
     }
 
     return () => clearInterval(pollInterval);
-  }, [phase, searchStatus, activeBookingId]);
+  }, [searchStatus, activeBookingId]);
 
   // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
   useEffect(() => {
@@ -656,6 +674,21 @@ function MobileAppPageContent() {
           });
         } else if (b.status === "completed") {
           if (pollInterval) clearInterval(pollInterval);
+          // Store completed trip details for receipt
+          setPassengerCompletedRide({
+            ...b,
+            driverName: b.driver_name || passengerBooking?.driverName,
+            driverPhone: b.driver_phone || passengerBooking?.driverPhone,
+            totoNumber: b.toto_number || passengerBooking?.totoNumber,
+          });
+          // Clear active passenger booking immediately so customer panel does not show live ride
+          setPassengerBooking(null);
+          setActiveBookingId(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_passenger_booking");
+            localStorage.removeItem("sr_active_booking_id");
+            localStorage.removeItem("sr_search_status");
+          }
           if (hasCompletedNotifiedRef.current !== b.id) {
             hasCompletedNotifiedRef.current = b.id;
             setRideStep("arrived");
@@ -667,6 +700,12 @@ function MobileAppPageContent() {
         } else if (b.status === "cancelled") {
           if (pollInterval) clearInterval(pollInterval);
           setPassengerBooking(null);
+          setActiveBookingId(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_passenger_booking");
+            localStorage.removeItem("sr_active_booking_id");
+            localStorage.removeItem("sr_search_status");
+          }
           toast.error("রাইডটি বাতিল করা হয়েছে।");
           return;
         }
@@ -835,6 +874,15 @@ function MobileAppPageContent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (passengerCompletedRide) {
+      localStorage.setItem("sr_passenger_completed_ride", JSON.stringify(passengerCompletedRide));
+    } else {
+      localStorage.removeItem("sr_passenger_completed_ride");
+    }
+  }, [passengerCompletedRide]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     if (activeBookingId) {
       localStorage.setItem("sr_active_booking_id", activeBookingId);
     } else {
@@ -960,8 +1008,20 @@ function MobileAppPageContent() {
                 localStorage.setItem("sr_active_booking_id", b.id);
                 localStorage.removeItem("sr_search_status");
               }
+            } else if (b.status === "completed" || b.status === "cancelled") {
+              // Booking is already completed or cancelled — clear from active view
+              setPassengerBooking(null);
+              setActiveBookingId(null);
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("sr_passenger_booking");
+                localStorage.removeItem("sr_active_booking_id");
+                localStorage.removeItem("sr_search_status");
+              }
+              if (b.status === "completed") {
+                setPassengerCompletedRide(b);
+              }
             }
-          } else if (data?.booking === null) {
+          } else {
             setPassengerBooking(null);
             setActiveBookingId(null);
             if (typeof window !== "undefined") {
@@ -1012,6 +1072,11 @@ function MobileAppPageContent() {
     let interval: NodeJS.Timeout;
     if (incomingRide) {
       playRideAlertSound();
+      showLocalRideAlertNotification(
+        "🛺 নতুন টোটো রাইড রিকোয়েস্ট!",
+        `পিকআপ: ${incomingRide.pickup_location || "কাছাকাছি এলাকা"} • ভাড়া: ₹${incomingRide.fare || "30"}`,
+        incomingRide.id
+      );
       const soundInterval = setInterval(() => {
         playRideAlertSound();
       }, 5000);
@@ -1037,39 +1102,29 @@ function MobileAppPageContent() {
   }, [incomingRide]);
 
   
-  // Proactively watch and broadcast driver live GPS to server
+  // Proactively watch and broadcast driver live GPS with Screen Wake Lock & Background Tracking
   useEffect(() => {
-    let watchId: number;
-    if (typeof window !== "undefined" && navigator.geolocation && role === "rider" && isOnline) {
-      watchId = navigator.geolocation.watchPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setDriverLiveCoords([latitude, longitude]);
-          if (session?.driverId || session?.phone) {
-            try {
-              await fetch("/api/drivers", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  id: session?.driverId,
-                  phone: session?.phone,
-                  latitude,
-                  longitude,
-                  is_active: isOnline,
-                }),
-              });
-            } catch {}
-          }
+    if (role === "rider" && isOnline) {
+      // Auto-register push notifications so sound & vibration fire when screen is locked
+      subscribeDriverToPushNotifications({
+        phone: session?.phone || "",
+        driverId: session?.driverId,
+      }).catch(() => {});
+
+      const cleanupTracking = startDriverBackgroundLocationTracking({
+        driverId: session?.driverId,
+        phone: session?.phone || "",
+        onLocationUpdate: (coords) => {
+          setDriverLiveCoords(coords);
         },
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-      );
+      });
+
+      return () => {
+        cleanupTracking();
+      };
+    } else {
+      stopDriverBackgroundLocationTracking();
     }
-    return () => {
-      if (watchId && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
   }, [role, isOnline, session?.driverId, session?.phone]);
 
   // Two-way online/offline status synchronization between App and WhatsApp/Database
@@ -1181,7 +1236,7 @@ function MobileAppPageContent() {
     return () => clearInterval(activeRidePollInterval);
   }, [phase, activeRide]);
 
-  // Proactively fetch customer real-time GPS location on app load
+  // Proactively fetch customer real-time GPS location on app load with precise GPS
   useEffect(() => {
     if (typeof window !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -1195,8 +1250,24 @@ function MobileAppPageContent() {
             })
             .catch(() => {});
         },
-        () => {},
-        { enableHighAccuracy: true, timeout: 15000 }
+        (err) => {
+          console.warn("[App] High accuracy satellite GPS fix failed, falling back to network:", err.message);
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => {
+              const { latitude, longitude } = pos2.coords;
+              setPickupCoords([latitude, longitude]);
+              fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d && d.name) setPickupText(d.name);
+                })
+                .catch(() => {});
+            },
+            () => {},
+            { enableHighAccuracy: false, timeout: 8000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     }
   }, []);
@@ -1221,9 +1292,23 @@ function MobileAppPageContent() {
             .catch(() => {});
         },
         (err) => {
-          console.warn("Geolocation permission error or ignored:", err.message);
+          console.warn("Precise GPS failed, falling back:", err.message);
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => {
+              const { latitude, longitude } = pos2.coords;
+              setPickupCoords([latitude, longitude]);
+              fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  if (d && d.name) setPickupText(d.name);
+                })
+                .catch(() => {});
+            },
+            () => {},
+            { enableHighAccuracy: false, timeout: 8000 }
+          );
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     }
 
@@ -2392,7 +2477,6 @@ function MobileAppPageContent() {
             }}
             onSwitchRole={handleSwitchRole}
             onSosClick={() => setShowSosModal(true)}
-            onLogout={handleLogout}
             onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
           />
         }
@@ -2446,7 +2530,14 @@ function MobileAppPageContent() {
                 const nextOnline = !isOnline;
                 setIsOnline(nextOnline);
                 if (!isSoundMuted) playSuccessSound();
-                toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
+                toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢 (ব্যাকগ্রাউন্ড জিপিএস সক্রিয়)" : "আপনি এখন অফলাইন আছেন 🔴");
+
+                if (nextOnline) {
+                  subscribeDriverToPushNotifications({
+                    phone: session?.phone || "",
+                    driverId: session?.driverId,
+                  }).catch(() => {});
+                }
 
                 // Sync online/offline status with server and WhatsApp
                 const driverId = session?.driverId;
@@ -3044,246 +3135,7 @@ function MobileAppPageContent() {
     );
   }
 
-  // -------------------------------------------------------------
-  // VIEW: PASSENGER SEARCHING / UBER-STYLE RADAR SCREEN (Light Theme)
-  // -------------------------------------------------------------
-  if (phase === "passenger_searching") {
-    return (
-      <MobileAppShell>
-        <div className="min-h-full text-slate-900 flex flex-col justify-between select-none" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
-        {/* Radar Header */}
-        <div className="p-4 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setPhase("passenger_home");
-                setSearchStatus("searching");
-              }}
-              className="text-xs text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition-colors"
-            >
-              ← ফিরে যান
-            </button>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900">
-                {searchStatus === "searching" ? "চালক অনুসন্ধান চলছে..." : "অনুসন্ধান ফলাফল"}
-              </h3>
-              <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                ৫ কিমি রেডিয়াসে লাইভ রাডার
-              </p>
-            </div>
-          </div>
 
-          <span
-            className={`text-xs font-bold px-3 py-1 rounded-full ${
-              searchStatus === "searching"
-                ? "bg-amber-100 text-amber-800 border border-amber-200"
-                : "bg-red-100 text-red-800 border border-red-200"
-            }`}
-          >
-            {searchStatus === "searching"
-              ? `অপেক্ষার সময়: ${Math.floor(searchCountdown / 60)}:${(searchCountdown % 60).toString().padStart(2, "0")}`
-              : "অপেক্ষারত"}
-          </span>
-        </div>
-
-        {/* Live Radar Map Area with Nearby Totos */}
-        <div className="flex-1 p-4 flex flex-col space-y-4 pb-44">
-          <div className="h-64 sm:h-72 w-full rounded-3xl overflow-hidden shadow-sm">
-            <NearbyRidersRadarMap
-              pickupCoords={pickupCoords}
-              dropCoords={dropCoords}
-              pickupName={pickupText}
-              dropName={dropText}
-            />
-          </div>
-
-          {/* Bottom Card: Status + Trip Details */}
-          {searchStatus === "searching" ? (
-            <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-md space-y-4 animate-in slide-in-from-bottom duration-300">
-              <div className="flex items-center gap-4">
-                <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
-                  <div className="absolute inset-0 rounded-full bg-emerald-100 animate-ping" />
-                  <div className="w-10 h-10 rounded-full bg-emerald-600 flex items-center justify-center text-white text-lg shadow-md">
-                    🛺
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-bold text-base text-slate-900">
-                    কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                    আশেপাশের অনলাইন টোটো চালকদের কাছে আপনার অনুরোধ পাঠানো হচ্ছে (৩ মিনিট অপেক্ষা)।
-                  </p>
-                </div>
-              </div>
-
-              {/* Progress Countdown Bar (3 min / 180s) */}
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full transition-all duration-1000 rounded-full"
-                  style={{ width: `${(searchCountdown / 180) * 100}%` }}
-                />
-              </div>
-
-              {/* Trip Details Preview */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
-                {/* Tier and Payment pill */}
-                <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800">
-                      {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড ইকোনমি" : selectedTier === "reserved" ? "🛺✨ স্পেশাল রিজার্ভ" : "🛺 স্ট্যান্ডার্ড টোটো"}
-                    </span>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-800">
-                      👥 {passengerCount} যাত্রী
-                    </span>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">
-                      {paymentMode === "upi" ? "📱 UPI" : "💵 নগদ"}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-medium text-slate-500">
-                    ~{Math.round(tripDistance * 3.5 + 2)} মিনিট
-                  </span>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">পিকআপ:</span>
-                    <span className="font-bold text-slate-800 ml-1">{pickupText}</span>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">গন্তব্য:</span>
-                    <span className="font-bold text-slate-800 ml-1">{dropText}</span>
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-slate-200/80 flex flex-col gap-1 font-medium">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">দূরত্ব: {tripDistance} কিমি</span>
-                    <span className="text-sm font-black text-emerald-700">₹{tripFare}.০০ (আনুমানিক)</span>
-                  </div>
-                  <p className="text-[10px] text-amber-700 bg-amber-50 p-1.5 rounded-lg border border-amber-200 leading-relaxed">
-                    ⚠️ এটি আনুমানিক ভাড়া। পিকআপ ও ড্রপের সঠিক অবস্থান এবং রোডের দূরত্বের উপর ভিত্তি করে চূড়ান্ত ভাড়া সামান্য কম বা বেশি হতে পারে।
-                  </p>
-                </div>
-              </div>
-
-                            {/* Action Buttons */}
-              <div className="pt-2 space-y-2">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full h-12 rounded-xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer"
-                  onClick={() => {
-                    setShowCancelModal(true);
-                  }}
-                >
-                  ❌ রিকোয়েস্ট বাতিল করুন
-                </Button>
-
-
-              </div>
-              <div className="h-24 w-full shrink-0" aria-hidden="true" />
-            </div>
-          ) : (
-            /* Rider Did Not Accept View (Shows trip details & Find Again) */
-            <div className="bg-white rounded-3xl p-5 border-2 border-amber-300 shadow-xl space-y-4 animate-in slide-in-from-bottom duration-300">
-              <div className="flex items-start gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 text-xl">
-                  ⚠️
-                </div>
-                <div>
-                  <h4 className="font-bold text-base text-slate-900">
-                    কোনো চালক রাইড গ্রহণ করতে পারেননি
-                  </h4>
-                  <p className="text-xs text-slate-600 mt-1 font-medium leading-relaxed">
-                    আমরা আন্তরিকভাবে দুঃখিত! আপনার ৫ কিমির ভেতরের চালকরা এই মুহূর্তে অন্য ট্রিপে ব্যস্ত আছেন অথবা রিকোয়েস্টটি গ্রহণ করতে পারেননি।
-                  </p>
-                </div>
-              </div>
-
-              {/* Keep Trip Details Visible */}
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-2 text-xs">
-                <span className="text-[10px] text-amber-800 font-bold uppercase tracking-wider block">
-                  আপনার সংরক্ষিত ট্রিপের বিবরণ:
-                </span>
-                <div className="flex items-start gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">পিকআপ:</span>
-                    <span className="font-bold text-slate-900 ml-1">{pickupText}</span>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">গন্তব্য:</span>
-                    <span className="font-bold text-slate-900 ml-1">{dropText}</span>
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-amber-200/80 flex items-center justify-between font-medium">
-                  <span className="text-slate-600">দূরত্ব: {tripDistance} কিমি</span>
-                  <span className="text-sm font-black text-slate-900">নগদ ভাড়া: ₹{tripFare}.00</span>
-                </div>
-              </div>
-
-              {/* Action Buttons: Find Again vs Cancel vs Demo Accept */}
-              <div className="space-y-2 pt-1">
-                <Button
-                  size="lg"
-                  className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2"
-                  onClick={async () => {
-                    setSearchStatus("searching");
-                    setSearchCountdown(180);
-                    playRideAlertSound();
-                    toast.info("পুনরায় ৩ মিনিটের জন্য চালক খোঁজা হচ্ছে...");
-
-                    try {
-                      const res = await fetch("/api/bookings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          customerName: session?.passengerName || "যাত্রী",
-                          customerPhone: session?.phone || "918348122122",
-                          pickupLocation: pickupText,
-                          dropLocation: dropText,
-                          pickupCoords,
-                          dropCoords,
-                          estimatedFare: tripFare,
-                          tripDistance,
-                        }),
-                      });
-                      const data = await res.json();
-                      if (data.booking && data.booking.id) {
-                        setActiveBookingId(data.booking.id);
-                      }
-                    } catch {}
-                  }}
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  <span>🔄 আবার খুঁজুন (Find Again)</span>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full h-11 rounded-xl text-xs text-slate-700 border-slate-300 font-semibold bg-white cursor-pointer"
-                  onClick={() => {
-                    setShowCancelModal(true);
-                  }}
-                >
-                  ❌ বুকিং বাতিল করুন
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </MobileAppShell>
-    );
-  }
 
   // -------------------------------------------------------------
   // VIEW: DRIVER TRIP COMPLETED RECEIPT SCREEN
@@ -3321,20 +3173,27 @@ function MobileAppPageContent() {
     return (
       <TripCompletionReceipt
         role="passenger"
-        tripId={passengerBooking?.id || activeBookingId || ""}
+        tripId={passengerCompletedRide?.id || passengerBooking?.id || activeBookingId || ""}
         customerName={session?.passengerName || "যাত্রী বন্ধু"}
         customerPhone={session?.phone || ""}
-        driverName={passengerBooking?.driverName || "টোটো চালক"}
-        driverPhone={passengerBooking?.driverPhone || ""}
-        totoNumber={passengerBooking?.totoNumber || ""}
-        pickup={pickupText}
-        drop={dropText}
-        distanceKm={tripDistance}
-        fare={tripFare}
+        driverName={passengerCompletedRide?.driverName || passengerBooking?.driverName || "টোটো চালক"}
+        driverPhone={passengerCompletedRide?.driverPhone || passengerBooking?.driverPhone || ""}
+        totoNumber={passengerCompletedRide?.totoNumber || passengerBooking?.totoNumber || ""}
+        pickup={passengerCompletedRide?.pickup_location || pickupText}
+        drop={passengerCompletedRide?.drop_location || dropText}
+        distanceKm={passengerCompletedRide?.actual_distance_km || tripDistance}
+        fare={passengerCompletedRide?.final_fare || passengerCompletedRide?.estimated_fare || tripFare}
         onBookAnother={() => {
           hasCompletedNotifiedRef.current = null;
+          setPassengerCompletedRide(null);
           setPassengerBooking(null);
           setActiveBookingId(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_passenger_booking");
+            localStorage.removeItem("sr_active_booking_id");
+            localStorage.removeItem("sr_search_status");
+            localStorage.removeItem("sr_passenger_completed_ride");
+          }
           setPhase("passenger_home");
           toast.success("নতুন ট্রিপ বুক করার জন্য প্রস্তুত!");
         }}
@@ -3358,7 +3217,6 @@ function MobileAppPageContent() {
           }}
           onSwitchRole={handleSwitchRole}
           onSosClick={() => setShowSosModal(true)}
-          onLogout={handleLogout}
           onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
         />
       }
@@ -3652,6 +3510,18 @@ function MobileAppPageContent() {
             rideStep={rideStep}
             onStepChange={setRideStep}
             onFinishTrip={() => {
+              setPassengerCompletedRide({
+                ...passengerBooking,
+                actual_distance_km: tripDistance,
+                final_fare: tripFare,
+              });
+              setPassengerBooking(null);
+              setActiveBookingId(null);
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("sr_passenger_booking");
+                localStorage.removeItem("sr_active_booking_id");
+                localStorage.removeItem("sr_search_status");
+              }
               setPhase("passenger_trip_completed");
               playSuccessSound();
               toast.success("ট্রিপ সফলভাবে সমাপ্ত হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
@@ -3671,6 +3541,131 @@ function MobileAppPageContent() {
           </div>
         )}
           </>
+        )}
+
+        {/* ------------------------------------------------------------- */}
+        {/* 🔍 UBER/RAPIDO FLOATING SEARCH BOTTOM SHEET (Map Remains Active in BG) */}
+        {/* ------------------------------------------------------------- */}
+        {(searchStatus === "searching" || searchStatus === "unaccepted") && !passengerBooking && (
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-none animate-in fade-in duration-300"
+            style={{ background: "rgba(15,23,42,0.3)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+          >
+            <div className="pointer-events-auto mx-3 mb-24 rounded-3xl bg-white/98 shadow-2xl border border-slate-200 animate-in slide-in-from-bottom-8 duration-500 ease-out overflow-hidden max-h-[85dvh] overflow-y-auto">
+              {searchStatus === "searching" ? (
+                <div className="p-5 space-y-4">
+                  {/* Radar Header */}
+                  <div className="flex items-center gap-3.5">
+                    <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-full bg-emerald-200 animate-ping opacity-60" />
+                      <div className="absolute inset-1.5 rounded-full bg-emerald-300 animate-ping opacity-30 delay-200" />
+                      <div className="relative w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-2xl shadow-lg">
+                        🛺
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-extrabold text-base text-slate-900 leading-tight">
+                        কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>অনলাইন টোটো চালকদের কাছে রিকোয়েস্ট প্রেরিত</span>
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-black font-mono text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                        {Math.floor(searchCountdown / 60)}:{(searchCountdown % 60).toString().padStart(2, "0")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Progress Countdown Bar (3 min / 180s) */}
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-1000 rounded-full"
+                      style={{ width: `${(searchCountdown / 180) * 100}%` }}
+                    />
+                  </div>
+
+                  {/* Trip Details Preview */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                          {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                          👥 {passengerCount} যাত্রী
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-700">
+                        {tripDistance} কিমি • ₹{tripFare}.০০
+                      </span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-600 mt-1 shrink-0" />
+                      <p className="truncate text-slate-800 font-semibold">{pickupText}</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-500 mt-1 shrink-0" />
+                      <p className="truncate text-slate-800 font-semibold">{dropText}</p>
+                    </div>
+                  </div>
+
+                  {/* Cancel Button */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full h-11 rounded-2xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer"
+                    onClick={() => setShowCancelModal(true)}
+                  >
+                    ❌ রিকোয়েস্ট বাতিল করুন
+                  </Button>
+                </div>
+              ) : (
+                /* Unaccepted View: Try Again */
+                <div className="p-5 space-y-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0 text-xl">
+                      ⚠️
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-base text-slate-900">
+                        কোনো চালক রাইড গ্রহণ করতে পারেননি
+                      </h4>
+                      <p className="text-xs text-slate-600 mt-0.5 font-medium leading-relaxed">
+                        আপনার ৫ কিমির ভেতরের চালকরা এই মুহূর্তে অন্য ট্রিপে ব্যস্ত আছেন। অনুগ্রহ করে আবার চেষ্টা করুন।
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <Button
+                      size="lg"
+                      className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                      onClick={() => handleConfirmBooking()}
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      <span>🔄 পুনরায় খুঁজুন (Find Again)</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-11 rounded-2xl text-xs text-slate-700 border-slate-300 font-semibold bg-white cursor-pointer"
+                      onClick={() => {
+                        setSearchStatus("idle");
+                        setActiveBookingId(null);
+                      }}
+                    >
+                      বন্ধ করুন
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

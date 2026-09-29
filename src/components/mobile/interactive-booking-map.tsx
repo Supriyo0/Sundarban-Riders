@@ -627,7 +627,7 @@ export function InteractiveBookingMap({
 
         setLocationError(errorMsg);
         if (userInitiated || isDenied) {
-          toast.error(errorMsg, { duration: 6000 });
+          toast.error(errorMsg);
         }
       };
 
@@ -1007,7 +1007,7 @@ export function InteractiveBookingMap({
     if (!hasValidPickup || !pickupInputValue.trim() || pickupCoords[0] === 0) {
       const msg = "⚠️ সঠিক পিকআপ স্থান নির্বাচন করুন! জিপিএস অন করুন অথবা ওপরে পিকআপ স্থান লিখুন।";
       setLocationError(msg);
-      toast.error(msg, { duration: 5000 });
+      toast.error(msg);
       setActiveSearchField("pickup");
       return;
     }
@@ -1020,8 +1020,7 @@ export function InteractiveBookingMap({
 
     if (isDropOutOfService || !isLocationInServiceArea(dropCoords[0], dropCoords[1])) {
       toast.error(
-        "🚫 দুঃখিত! নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়। সুন্দরবন রাইডার্স বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে কাকদ্বীপ, নামখানা, সাগর ও বকখালি) উপলব্ধ।",
-        { duration: 6000 }
+        "🚫 দুঃখিত! নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়। সুন্দরবন রাইডার্স বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে কাকদ্বীপ, নামখানা, সাগর ও বকখালি) উপলব্ধ।"
       );
       return;
     }
@@ -1325,265 +1324,305 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
+      {/* ------------------------------------------------------------- */}
+      {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
+      {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-        <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 ${
-            sheetExpanded
-              ? "max-h-[75dvh] overflow-y-auto"
-              : dropInputValue && dropInputValue.trim()
-              ? "max-h-28 overflow-hidden"
-              : "max-h-64 overflow-hidden"
-          }`}
-          style={{
-            transform: sheetDragDelta !== 0 ? `translateY(${sheetDragDelta}px)` : undefined,
-            transition: isSheetDragging ? "none" : "transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.28s ease",
-            willChange: isSheetDragging ? "transform" : "auto",
-          }}
-        >
-          {/* Interactive Drag Handle Area (Manual Move / Drag / Tap Toggle) */}
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={toggleSheet}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerCancel}
-            onTouchStart={(e) => startDrag(e.touches[0].clientY)}
-            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
-            onTouchEnd={endDrag}
-            className="w-full py-2 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1.5 select-none group touch-none"
-            title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag sheet up or down)"
-          >
-            <div className="w-14 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
-            <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-600 group-hover:text-slate-900 transition-colors">
-              {sheetExpanded ? (
-                <>
-                  <ChevronDown className="w-4 h-4 text-slate-500" />
-                  <span>মানচিত্র দেখতে স্লাইডার নিচে নামান</span>
-                </>
-              ) : (
-                <>
-                  <ChevronUp className="w-4 h-4 text-emerald-600 animate-bounce" />
-                  <span className="text-emerald-700">বুকিং ও ভাড়া দেখতে স্লাইডার উপরে তুলুন ⌃</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {dropInputValue && dropInputValue.trim() ? (
-            /* STATE A: DESTINATION SELECTED -> UBER VEHICLE SELECTION */
-            !sheetExpanded ? (
-              /* Minimized Peek Mode (allows full map viewing while keeping fare accessible) */
-              <div
-                onClick={() => setSheetExpanded(true)}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerCancel}
-                onTouchStart={(e) => startDrag(e.touches[0].clientY)}
-                onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
-                onTouchEnd={endDrag}
-                className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/95 border-2 border-emerald-300 cursor-pointer shadow-sm active:scale-[0.99] transition-transform touch-none"
+        {dropInputValue && dropInputValue.trim() ? (
+          /* ============================================================ */
+          /* STATE A: DESTINATION SELECTED                                 */
+          /* ============================================================ */
+          !sheetExpanded ? (
+            /* Minimized Peek Mode: Crisp, Un-squished Floating Bar */
+            <div
+              onClick={() => setSheetExpanded(true)}
+              onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+              onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+              onTouchEnd={endDrag}
+              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-2xl bg-white/98 backdrop-blur-xl border-2 border-emerald-400 shadow-[0_8px_30px_rgba(0,0,0,0.18)] p-3 flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all animate-in slide-in-from-bottom-2 select-none"
+              title="বুকিং ও ভাড়া দেখতে ট্যাপ বা উপরে টানুন"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
+                  🛺
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
+                    <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
+                    {isDropOutOfService && (
+                      <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                        পরিষেবা বাইরে
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10.5px] text-slate-500 font-bold truncate block">
+                    {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"} ➔ {dropInputValue.slice(0, 14)} • {distanceKm} কিমি
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSheetExpanded(true);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
+                <span>বুকিং ও ভাড়া ⌃</span>
+              </button>
+            </div>
+          ) : (
+            /* Full Expanded Sheet: Complete Ride Configuration */
+            <div
+              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 max-h-[75dvh] overflow-y-auto animate-in slide-in-from-bottom-3 duration-250 select-none"
+              style={{
+                transform: sheetDragDelta > 0 ? `translateY(${sheetDragDelta}px)` : undefined,
+                transition: isSheetDragging ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+              }}
+            >
+              {/* Header with Drag Handle & Quick Minimize Button */}
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerCancel}
+                  onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+                  onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+                  onTouchEnd={endDrag}
+                  onClick={() => setSheetExpanded(false)}
+                  className="flex-1 py-1.5 flex items-center gap-2 cursor-pointer select-none group touch-none"
+                  title="মানচিত্র দেখতে নিচে নামান বা ট্যাপ করুন"
+                >
+                  <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
+                  <span className="text-[11px] font-bold text-slate-500 group-hover:text-slate-800 flex items-center gap-1">
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    <span>মানচিত্র দেখতে নিচে নামান</span>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSheetExpanded(false)}
+                  className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0"
+                  title="ম্যাপ দেখতে প্যানেল মিনিমাইজ করুন"
+                >
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  <span>মিনিমাইজ</span>
+                </button>
+              </div>
+
+              {/* Route Summary Pill */}
+              <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
+                <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
+                    }`}
+                  />
+                  <span className="truncate">
+                    {hasValidPickup && pickupInputValue
+                      ? pickupInputValue.slice(0, 14)
+                      : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
+                  </span>
+                  <span>➔</span>
+                  <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
+                </div>
+                <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
+                  {isCalculatingRoute
+                    ? "রুট গণনা..."
+                    : distanceKm > 0
+                    ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
+                    : "রোড রুট"}
+                </span>
+              </div>
+
+              {/* Service Territory Warning */}
+              {isDropOutOfService && (
+                <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-1 animate-in fade-in">
+                  <div className="flex items-center gap-2 text-rose-700 font-black">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়</span>
+                  </div>
+                  <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
+                    আমাদের পরিষেবা বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার, কাকদ্বীপ, নামখানা, বকখালি ও সাগরদ্বীপ) উপলব্ধ।
+                  </p>
+                </div>
+              )}
+
+              {/* Uber Toto Vehicle Card */}
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
                     🛺
                   </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
-                      <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
-                      {isDropOutOfService && (
-                        <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
-                          পরিষেবা বাইরে
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
+                      {fareResult.isNight && (
+                        <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                          <Moon className="w-2.5 h-2.5" />
+                          <span>+₹{fareResult.nightCharge}</span>
                         </span>
                       )}
                     </div>
-                    <span className="text-[10.5px] text-slate-500 font-bold truncate block">
-                      {pickupInputValue.slice(0, 12)} ➔ {dropInputValue.slice(0, 12)} • {distanceKm} কিমি
-                    </span>
+                    <p className="text-[11px] font-semibold mt-0.5">
+                      {nearbyDrivers.length > 0 ? (
+                        <span className="text-emerald-700 font-bold">
+                          ⚡ ~{nearestDriverInfo?.etaMin || 3} মিনিটে পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি দূর)
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-bold">
+                          ⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই
+                        </span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
+                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                      <span>ভেরিফায়েড চালক • নন-স্টপ</span>
+                    </div>
                   </div>
+                </div>
+
+                <div className="text-right shrink-0">
+                  <div className="text-2xl font-black text-emerald-700 font-mono">
+                    ₹{fareResult.totalFare}.০০
+                  </div>
+                  <span className="text-[9.5px] font-bold text-slate-500 block">
+                    {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২/কিমি, ৫ জন +₹৪/কিমি, ৬ জন +₹৬/কিমি) */}
+              <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>যাত্রী সংখ্যা (Passenger Count):</span>
+                  </div>
+                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                    ৩ জনের পর প্রতি জন +₹২/কিমি
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
+                    { cnt: 4, label: "৪ জন", tag: "+২/কিমি" },
+                    { cnt: 5, label: "৫ জন", tag: "+৪/কিমি" },
+                    { cnt: 6, label: "৬ জন", tag: "+৬/কিমি" },
+                  ].map((item) => {
+                    const isSelected = passengerCount === item.cnt;
+                    return (
+                      <button
+                        key={item.cnt}
+                        type="button"
+                        onClick={() => setPassengerCount(item.cnt)}
+                        className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
+                            : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
+                        }`}
+                      >
+                        <span className="text-xs font-black leading-tight">{item.label}</span>
+                        <span
+                          className={`text-[9px] font-bold leading-tight mt-0.5 ${
+                            isSelected ? "text-emerald-100" : "text-emerald-700"
+                          }`}
+                        >
+                          {item.tag}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Payment Mode */}
+              <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
+                <span className="flex items-center gap-1 font-bold text-slate-700">
+                  <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
+                </span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  ✓ সঠিক মিটার ভাড়া
+                </span>
+              </div>
+
+              {/* Uber Confirm Booking CTA Button */}
+              <Button
+                size="lg"
+                disabled={isBlocked || isDropOutOfService}
+                onClick={handleConfirmClick}
+                className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                  isBlocked || isDropOutOfService
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
+                    : !hasValidPickup
+                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
+                    : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
+                }`}
+              >
+                <span>
+                  {isBlocked
+                    ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
+                    : isDropOutOfService
+                    ? "🚫 পরিষেবা উপলব্ধ নয় (শুধুমাত্র দক্ষিণ সুন্দরবন ও ডায়মন্ড হারবার)"
+                    : !hasValidPickup
+                    ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
+                    : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
+                </span>
+              </Button>
+            </div>
+          )
+        ) : (
+          /* ============================================================ */
+          /* STATE B: NO DESTINATION SELECTED                             */
+          /* ============================================================ */
+          !sheetExpanded ? (
+            /* Minimized Search Shortcut Pill */
+            <div
+              onClick={() => setSheetExpanded(true)}
+              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-2xl bg-white/98 backdrop-blur-xl border border-slate-200 shadow-lg p-3 flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all select-none"
+            >
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <span className="text-emerald-600 font-black text-base">🛺</span>
+                <span>কোথায় যেতে চান? গন্তব্য নির্বাচন করুন</span>
+              </div>
+              <span className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
+                খুলুন ⌃
+              </span>
+            </div>
+          ) : (
+            /* Expanded Greeting & Fast Search */
+            <div
+              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 max-h-64 overflow-hidden select-none animate-in slide-in-from-bottom-2"
+              style={{
+                transform: sheetDragDelta > 0 ? `translateY(${sheetDragDelta}px)` : undefined,
+                transition: isSheetDragging ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+              }}
+            >
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSheetExpanded(false)}
+                  className="flex-1 py-1 flex items-center gap-2 cursor-pointer select-none group"
+                >
+                  <div className="w-10 h-1.5 bg-slate-300 group-hover:bg-slate-400 rounded-full transition-colors" />
+                  <span className="text-[10.5px] font-bold text-slate-500">ম্যাপ দেখতে নিচে নামান</span>
                 </div>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSheetExpanded(true);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  onClick={() => setSheetExpanded(false)}
+                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold cursor-pointer"
                 >
-                  <span>বুকিং ⌃</span>
+                  মিনিমাইজ ⌄
                 </button>
               </div>
-            ) : (
-              /* Full Expanded Sheet */
-              <>
-                {/* Route Summary Pill */}
-                <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
-                      }`}
-                    />
-                    <span className="truncate">
-                      {hasValidPickup && pickupInputValue
-                        ? pickupInputValue.slice(0, 14)
-                        : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
-                    </span>
-                    <span>➔</span>
-                    <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
-                  </div>
-                  <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
-                    {isCalculatingRoute
-                      ? "রুট গণনা হচ্ছে..."
-                      : distanceKm > 0
-                      ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
-                      : "রোড রুট"}
-                  </span>
-                </div>
 
-                {/* Service Territory Warning inside sheet if outside */}
-                {isDropOutOfService && (
-                  <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-1 animate-in fade-in">
-                    <div className="flex items-center gap-2 text-rose-700 font-black">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                      <span>নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়</span>
-                    </div>
-                    <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
-                      আমাদের পরিষেবা বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার, কাকদ্বীপ, নামখানা, বকখালি ও সাগরদ্বীপ) উপলব্ধ।
-                    </p>
-                  </div>
-                )}
-
-                {/* Uber Toto Vehicle Card */}
-                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
-                      🛺
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
-                        {fareResult.isNight && (
-                          <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                            <Moon className="w-2.5 h-2.5" />
-                            <span>+₹{fareResult.nightCharge}</span>
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] font-semibold mt-0.5">
-                        {nearbyDrivers.length > 0 ? (
-                          <span className="text-emerald-700 font-bold">
-                            ⚡ ~{nearestDriverInfo?.etaMin || 3} মিনিটে পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি দূর)
-                          </span>
-                        ) : (
-                          <span className="text-amber-700 font-bold">
-                            ⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
-                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                        <span>ভেরিফায়েড চালক • নন-স্টপ</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="text-2xl font-black text-emerald-700 font-mono">
-                      ₹{fareResult.totalFare}.০০
-                    </div>
-                    <span className="text-[9.5px] font-bold text-slate-500 block">
-                      {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২/কিমি, ৫ জন +₹৪/কিমি, ৬ জন +₹৬/কিমি) */}
-                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>যাত্রী সংখ্যা (Passenger Count):</span>
-                    </div>
-                    <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                      ৩ জনের পর প্রতি জন +₹২/কিমি
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
-                      { cnt: 4, label: "৪ জন", tag: "+২/কিমি" },
-                      { cnt: 5, label: "৫ জন", tag: "+৪/কিমি" },
-                      { cnt: 6, label: "৬ জন", tag: "+৬/কিমি" },
-                    ].map((item) => {
-                      const isSelected = passengerCount === item.cnt;
-                      return (
-                        <button
-                          key={item.cnt}
-                          type="button"
-                          onClick={() => setPassengerCount(item.cnt)}
-                          className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
-                            isSelected
-                              ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
-                              : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
-                          }`}
-                        >
-                          <span className="text-xs font-black leading-tight">{item.label}</span>
-                          <span
-                            className={`text-[9px] font-bold leading-tight mt-0.5 ${
-                              isSelected ? "text-emerald-100" : "text-emerald-700"
-                            }`}
-                          >
-                            {item.tag}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Payment Mode */}
-                <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
-                  <span className="flex items-center gap-1 font-bold text-slate-700">
-                    <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
-                  </span>
-                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                    ✓ সঠিক মিটার ভাড়া
-                  </span>
-                </div>
-
-                {/* Uber Confirm Booking CTA Button with strict location safety */}
-                <Button
-                  size="lg"
-                  disabled={isBlocked || isDropOutOfService}
-                  onClick={handleConfirmClick}
-                  className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
-                    isBlocked || isDropOutOfService
-                      ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
-                      : !hasValidPickup
-                      ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
-                      : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
-                  }`}
-                >
-                  <span>
-                    {isBlocked
-                      ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
-                      : isDropOutOfService
-                      ? "🚫 পরিষেবা উপলব্ধ নয় (শুধুমাত্র দক্ষিণ সুন্দরবন ও ডায়মন্ড হারবার)"
-                      : !hasValidPickup
-                      ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
-                      : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
-                  </span>
-                </Button>
-              </>
-            )
-          ) : (
-            /* STATE B: NO DESTINATION SELECTED -> UBER GREETING & FAST SEARCH */
-            <div className="py-2 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-extrabold text-base text-slate-900 leading-tight">
@@ -1625,8 +1664,8 @@ export function InteractiveBookingMap({
                 <span className="text-slate-500 font-semibold">⚡ দ্রুত পিকআপ</span>
               </div>
             </div>
-          )}
-        </div>
+          )
+        )}
       </div>
     </div>
   );

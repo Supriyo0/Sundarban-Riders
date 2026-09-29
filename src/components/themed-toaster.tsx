@@ -38,12 +38,18 @@ export function ThemedToaster() {
   return (
     <Toaster
       theme={isClient ? mode : DEFAULT_MODE}
-      position="top-right"
+      position="top-center"
+      duration={2500}
+      closeButton={true}
+      visibleToasts={1}
       toastOptions={{
+        duration: 2500,
         style: {
           background: "var(--popover)",
           border: "1px solid var(--border)",
           color: "var(--popover-foreground)",
+          fontSize: "12px",
+          padding: "10px 14px",
         },
       }}
     />

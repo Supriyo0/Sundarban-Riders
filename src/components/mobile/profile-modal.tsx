@@ -354,7 +354,44 @@ export function MobileProfileModal({
             </div>
           )}
 
-          {/* 3. Action Buttons: Switch Role */}
+          {/* 3. Agreed Disclaimers & Legal Terms (1st Time User Agreement) */}
+          <div className="p-4 rounded-3xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <h4 className="font-extrabold text-xs text-slate-900">স্বীকৃত শর্তাবলী ও আইনি ডিসক্লেইমার</h4>
+              </div>
+              <span className="text-[9.5px] font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>প্রথম লগইনে অনুমোদিত ✓</span>
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+              আপনি প্রথমবার অ্যাপে প্রবেশের সময় সুন্দরবন রাইডার্স প্ল্যাটফর্মের নিম্নোক্ত সরকারি ও আইনি শর্তাবলীতে সম্মতি প্রদান করেছেন:
+            </p>
+
+            <div className="space-y-1.5 text-[11px] text-slate-700 font-medium">
+              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">১.</span>
+                <span><strong>ভাড়া ও যাত্রী নীতি:</strong> নির্ধারিত বেস ভাড়া ৩ জনের জন্য প্রযোজ্য। ৪, ৫ বা ৬ জনের ক্ষেত্রে প্রতি অতিরিক্ত যাত্রীর জন্য নির্ধারিত অতিরিক্ত ₹২ ধার্য হবে।</span>
+              </div>
+              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">২.</span>
+                <span><strong>প্ল্যাটফর্মের ভূমিকা ও দায়মুক্তি:</strong> সুন্দরবন রাইডার্স একটি ডিজিটাল প্রযুক্তি মাধ্যম। যাত্রী ও স্থানীয় স্বাধীন চালকদের মধ্যে সরাসরি ট্রিপ সংযোগ স্থাপিত হয়।</span>
+              </div>
+              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">৩.</span>
+                <span><strong>বাতিল নীতি ও ফেয়ারনেস:</strong> রাইড শুরু হওয়ার পর বাতিল নিষেধ। অযৌক্তিক বুকিং বাতিল করলে ৩টি স্ট্রাইকের পর অ্যাকাউন্ট সাময়িক স্থগিত হতে পারে।</span>
+              </div>
+              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
+                <span className="text-emerald-600 font-bold shrink-0">৪.</span>
+                <span><strong>জরুরি সুরক্ষা ও আচরণ বিধি:</strong> ট্রিপে ২৪×৭ হেল্পলাইন সক্রিয় থাকে। চালক ও যাত্রীদের মধ্যে পারস্পরিক সম্মান ও শালীনতা রক্ষা করা বাধ্যতামূলক।</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 4. Action Buttons: Switch Role */}
           {onSwitchRole && (
             <button
               type="button"

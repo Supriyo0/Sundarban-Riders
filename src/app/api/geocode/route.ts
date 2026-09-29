@@ -7,6 +7,69 @@ export async function GET(req: Request) {
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
     const query = searchParams.get("q") || searchParams.get("query");
+    const isIpRequest = searchParams.get("ip") === "true";
+
+    // -------------------------------------------------------------
+    // CASE 0: REAL IP-BASED GEOLOCATION (When Browser GPS Fails/Unavailable)
+    // -------------------------------------------------------------
+    if (isIpRequest) {
+      try {
+        const ipRes = await fetch("https://ipwho.is/", {
+          headers: { "User-Agent": "SundarbanRiders/1.0" },
+          cache: "no-store",
+        });
+        if (ipRes.ok) {
+          const ipData = await ipRes.json();
+          if (ipData.success && ipData.latitude && ipData.longitude) {
+            const cityName = ipData.city || ipData.region || "আপনার বর্তমান অবস্থান";
+            const fullAddr = [ipData.city, ipData.region, ipData.postal, ipData.country]
+              .filter(Boolean)
+              .join(", ");
+            return NextResponse.json({
+              name: cityName,
+              full_address: fullAddr || cityName,
+              lat: Number(ipData.latitude),
+              lng: Number(ipData.longitude),
+              source: "ip_geolocation",
+              ip: ipData.ip,
+            });
+          }
+        }
+      } catch (ipErr) {
+        console.warn("[geocode] ipwho.is failed, trying ipapi:", ipErr);
+      }
+
+      // Secondary IP fallback
+      try {
+        const ipapiRes = await fetch("https://ipapi.co/json/", {
+          headers: { "User-Agent": "SundarbanRiders/1.0" },
+          cache: "no-store",
+        });
+        if (ipapiRes.ok) {
+          const apiData = await ipapiRes.json();
+          if (apiData.latitude && apiData.longitude) {
+            const cityName = apiData.city || apiData.region || "আপনার অবস্থান";
+            return NextResponse.json({
+              name: cityName,
+              full_address: `${cityName}, ${apiData.region || ""}, ${apiData.country_name || "India"}`,
+              lat: Number(apiData.latitude),
+              lng: Number(apiData.longitude),
+              source: "ipapi",
+            });
+          }
+        }
+      } catch (err2) {
+        console.warn("[geocode] All IP geolocations failed:", err2);
+      }
+
+      return NextResponse.json({
+        name: "কাকদ্বীপ স্টেশন (সেন্ট্রাল হাব)",
+        full_address: "কাকদ্বীপ স্টেশন রোড, দক্ষিণ ২৪ পরগনা",
+        lat: 21.876,
+        lng: 88.192,
+        source: "default_hub",
+      });
+    }
 
     // -------------------------------------------------------------
     // CASE 1: FORWARD SEARCH (Live Real Places Suggestions)
@@ -22,29 +85,14 @@ export async function GET(req: Request) {
         source?: string;
       }> = [];
 
-      // If empty query or 1 char, return popular landmarks immediately
+      // If empty query or single character, return empty suggestions list (no hardcoded defaults)
       if (!cleanQ || cleanQ.length < 2) {
-        SUNDARBAN_LANDMARKS.slice(0, 8).forEach((lm) => {
-          suggestions.push({
-            name: lm.name,
-            full_address: `${lm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
-            lat: lm.lat,
-            lng: lm.lng,
-            isHub: true,
-            source: "popular",
-          });
-        });
-
         return NextResponse.json({
-          name: suggestions[0]?.name || "কাকদ্বীপ স্টেশন",
-          full_address: suggestions[0]?.full_address || "সুন্দরবন",
-          lat: suggestions[0]?.lat || 21.876,
-          lng: suggestions[0]?.lng || 88.192,
-          suggestions,
+          suggestions: [],
         });
       }
 
-      // 1. Check matching local landmarks
+      // 1. Check matching local landmarks ONLY if genuinely matched
       const matchedLandmarks = SUNDARBAN_LANDMARKS.filter((lm) => {
         const nameMatch = lm.name.toLowerCase().includes(cleanQ);
         const aliasMatch = lm.aliases?.some(
@@ -56,7 +104,7 @@ export async function GET(req: Request) {
       matchedLandmarks.forEach((lm) => {
         suggestions.push({
           name: lm.name,
-          full_address: `${lm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
+          full_address: `${lm.name}, দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`,
           lat: lm.lat,
           lng: lm.lng,
           isHub: true,
@@ -70,7 +118,7 @@ export async function GET(req: Request) {
         try {
           const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
             query + ", West Bengal, India"
-          )}&bounds=21.3,88.0|22.8,89.2&key=${googleKey}`;
+          )}&key=${googleKey}`;
           const gRes = await fetch(url);
           const gData = await gRes.json();
           if (gData.status === "OK" && gData.results?.length) {
@@ -92,11 +140,69 @@ export async function GET(req: Request) {
         }
       }
 
-      // 3. Query Photon Geocoder (Fast, Live Real Map Data tailored to Bengal/Sundarbans)
+      // 3. Query OpenStreetMap Nominatim with address details (Real, Full Google Maps-style addresses)
+      try {
+        const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          query
+        )}&format=json&addressdetails=1&countrycodes=in&limit=8`;
+        const nRes = await fetch(nUrl, {
+          headers: {
+            "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
+            "Accept-Language": "en,bn;q=0.8",
+          },
+        });
+        if (nRes.ok) {
+          const nData = await nRes.json();
+          if (Array.isArray(nData)) {
+            nData.forEach((item: any) => {
+              const addr = item.address || {};
+              const mainName =
+                addr.amenity ||
+                addr.tourism ||
+                addr.railway ||
+                addr.shop ||
+                addr.road ||
+                item.name ||
+                item.display_name.split(",")[0];
+
+              const addrParts = [
+                mainName,
+                addr.suburb || addr.neighbourhood || addr.village,
+                addr.city || addr.town || addr.county || addr.state_district,
+                addr.state,
+                addr.postcode,
+              ].filter(Boolean);
+
+              const fullAddress = addrParts.length > 2 ? addrParts.join(", ") : item.display_name;
+
+              const isDuplicate = suggestions.some(
+                (s) =>
+                  s.name.toLowerCase() === mainName.toLowerCase() ||
+                  (Math.abs(s.lat - parseFloat(item.lat)) < 0.001 &&
+                    Math.abs(s.lng - parseFloat(item.lon)) < 0.001)
+              );
+
+              if (!isDuplicate) {
+                suggestions.push({
+                  name: mainName,
+                  full_address: fullAddress,
+                  lat: parseFloat(item.lat),
+                  lng: parseFloat(item.lon),
+                  source: "osm_nominatim",
+                });
+              }
+            });
+          }
+        }
+      } catch (nErr) {
+        console.warn("[geocode] Nominatim search error:", nErr);
+      }
+
+      // 4. Query Photon Geocoder (Fast Real Map Data without bounding box)
       try {
         const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
           query
-        )}&lat=21.876&lon=88.192&bbox=87.0,21.0,89.5,23.5&limit=8`;
+        )}&limit=8`;
         const pRes = await fetch(photonUrl);
         if (pRes.ok) {
           const pData = await pRes.json();
@@ -107,7 +213,10 @@ export async function GET(req: Request) {
               props.name,
               props.street,
               props.district || props.county,
-              props.state || "West Bengal",
+              props.city,
+              props.state,
+              props.postcode,
+              props.country || "India",
             ]
               .filter(Boolean)
               .join(", ");
@@ -134,64 +243,11 @@ export async function GET(req: Request) {
         console.warn("[geocode] Photon search error:", pErr);
       }
 
-      // 4. Fallback to Nominatim OpenStreetMap if suggestions are still sparse
-      if (suggestions.length < 4) {
-        try {
-          const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-            query + ", West Bengal, India"
-          )}&format=json&limit=6`;
-          const nRes = await fetch(nUrl, {
-            headers: {
-              "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
-              "Accept-Language": "bn,en;q=0.8",
-            },
-          });
-          if (nRes.ok) {
-            const nData = await nRes.json();
-            if (Array.isArray(nData)) {
-              nData.forEach((item: any) => {
-                const pName = item.display_name.split(",")[0];
-                if (!suggestions.some((s) => s.name.toLowerCase() === pName.toLowerCase())) {
-                  suggestions.push({
-                    name: pName,
-                    full_address: item.display_name,
-                    lat: parseFloat(item.lat),
-                    lng: parseFloat(item.lon),
-                    source: "osm",
-                  });
-                }
-              });
-            }
-          }
-        } catch {}
-      }
-
-      // If still empty, supply the closest landmark as default
-      if (suggestions.length === 0) {
-        SUNDARBAN_LANDMARKS.slice(0, 5).forEach((lm) => {
-          suggestions.push({
-            name: lm.name,
-            full_address: `${lm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
-            lat: lm.lat,
-            lng: lm.lng,
-            isHub: true,
-            source: "popular",
-          });
-        });
-      }
-
-      const top = suggestions[0] || {
-        name: query,
-        full_address: `${query}, কাকদ্বীপ অঞ্চল`,
-        lat: 21.876,
-        lng: 88.192,
-      };
-
       return NextResponse.json({
-        name: top.name,
-        full_address: top.full_address,
-        lat: top.lat,
-        lng: top.lng,
+        name: suggestions[0]?.name || query,
+        full_address: suggestions[0]?.full_address || query,
+        lat: suggestions[0]?.lat || 0,
+        lng: suggestions[0]?.lng || 0,
         suggestions: suggestions.slice(0, 8),
       });
     }
@@ -246,7 +302,31 @@ export async function GET(req: Request) {
       }
     } catch {}
 
-    // 2. Check if coords are close to one of our regional hubs (< 1.5 km) as high-confidence fallback
+    // 2. Secondary Reverse Geocode (BigDataCloud client geocode for real city/locality anywhere in India)
+    try {
+      const bRes = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
+        { cache: "no-store" }
+      );
+      if (bRes.ok) {
+        const bData = await bRes.json();
+        const cityLocality = bData.locality || bData.city || bData.principalSubdivision;
+        if (cityLocality) {
+          const fullAddr = [bData.locality, bData.city, bData.principalSubdivision, bData.countryName]
+            .filter(Boolean)
+            .join(", ");
+          return NextResponse.json({
+            name: cityLocality,
+            full_address: fullAddr,
+            lat: latitude,
+            lng: longitude,
+            source: "bigdatacloud",
+          });
+        }
+      }
+    } catch {}
+
+    // 3. Check if coords are genuinely close to one of our regional hubs (< 2.5 km)
     let closestLm: (typeof SUNDARBAN_LANDMARKS)[0] | null = null;
     let minD = 9999;
     for (const lm of SUNDARBAN_LANDMARKS) {
@@ -257,10 +337,10 @@ export async function GET(req: Request) {
       }
     }
 
-    if (closestLm && minD < 1.5) {
+    if (closestLm && minD < 2.5) {
       return NextResponse.json({
         name: closestLm.name,
-        full_address: `${closestLm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
+        full_address: `${closestLm.name}, দক্ষিণ ২৪ পরগনা`,
         lat: latitude,
         lng: longitude,
         isHub: true,
@@ -268,17 +348,9 @@ export async function GET(req: Request) {
       });
     }
 
-    if (closestLm) {
-      return NextResponse.json({
-        name: `${closestLm.name} সংলগ্ন`,
-        full_address: `${closestLm.name} সংলগ্ন এলাকা, সুন্দরবন`,
-        lat: latitude,
-        lng: longitude,
-      });
-    }
-
     return NextResponse.json({
-      name: `লোকেশন (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+      name: `বর্তমান অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
+      full_address: `জিপিএস অবস্থান: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
       lat: latitude,
       lng: longitude,
     });

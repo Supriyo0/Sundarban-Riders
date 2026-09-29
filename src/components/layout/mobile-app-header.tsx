@@ -76,19 +76,6 @@ export function MobileAppHeader({
           </button>
         )}
 
-        {/* SOS Button */}
-        {onSosClick && (
-          <button
-            type="button"
-            onClick={onSosClick}
-            title="জরুরি SOS হেল্পলাইন"
-            className="h-8 px-2 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center gap-1 text-[11px] font-black shadow-xs active:scale-95 transition-all cursor-pointer"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>SOS</span>
-          </button>
-        )}
-
         {/* Uber Profile Avatar Button */}
         {onOpenProfile && (
           <button

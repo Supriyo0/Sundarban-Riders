@@ -61,16 +61,6 @@ interface PlaceSuggestion {
 const DEFAULT_REGION_HUB: [number, number] = [21.585, 88.251];
 const DEFAULT_REGION_NAME = "ফ্রেজারগঞ্জ বাসস্ট্যান্ড (লোকাল হাব)";
 
-const POPULAR_DESTINATIONS = [
-  { name: "বকখালি সৈকত", label: "🏖️ বকখালি সৈকত", lat: 21.5645, lng: 88.257 },
-  { name: "ফ্রেজারগঞ্জ হারবার", label: "⚓ ফ্রেজারগঞ্জ হারবার", lat: 21.585, lng: 88.251 },
-  { name: "হেনরি আইল্যান্ড", label: "🏝️ হেনরি আইল্যান্ড", lat: 21.5765, lng: 88.293 },
-  { name: "বেনু বন ছায়া (বকখালি)", label: "🏛️ বেনু বন ছায়া", lat: 21.571, lng: 88.259 },
-  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", label: "🌾 নামখানা বাসস্ট্যান্ড", lat: 21.7674, lng: 88.2325 },
-  { name: "কাকদ্বীপ স্টেশন রোড", label: "🚉 কাকদ্বীপ স্টেশন", lat: 21.876, lng: 88.192 },
-  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", label: "🚢 লট ৮ ঘাট", lat: 21.868, lng: 88.163 },
-];
-
 interface InteractiveBookingMapProps {
   initialPickup?: string;
   initialDrop?: string;
@@ -135,6 +125,35 @@ export function InteractiveBookingMap({
   const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Draggable Bottom Slider Sheet State
+  const [sheetExpanded, setSheetExpanded] = useState(true);
+  const dragStartYRef = useRef<number | null>(null);
+  const [sheetDragDelta, setSheetDragDelta] = useState(0);
+
+  const onDragStart = (clientY: number) => {
+    dragStartYRef.current = clientY;
+  };
+  const onDragMove = (clientY: number) => {
+    if (dragStartYRef.current === null) return;
+    const delta = clientY - dragStartYRef.current;
+    if (sheetExpanded && delta > 0) {
+      setSheetDragDelta(delta);
+    } else if (!sheetExpanded && delta < 0) {
+      setSheetDragDelta(delta);
+    }
+  };
+  const onDragEnd = () => {
+    if (dragStartYRef.current !== null) {
+      if (sheetExpanded && sheetDragDelta > 30) {
+        setSheetExpanded(false);
+      } else if (!sheetExpanded && sheetDragDelta < -20) {
+        setSheetExpanded(true);
+      }
+    }
+    dragStartYRef.current = null;
+    setSheetDragDelta(0);
+  };
 
   // Synchronization Refs (Prevents infinite render loops)
   const pickupCoordsRef = useRef(pickupCoords);
@@ -412,9 +431,9 @@ export function InteractiveBookingMap({
 
         if (options?.fitBounds !== false) {
           if (hasValidP) {
-            map.flyTo(pCoords, 16, { duration: 1.0 });
+            map.flyTo(pCoords, 18, { duration: 1.2 });
           } else if (hasValidD) {
-            map.flyTo(dCoords, 15, { duration: 1.0 });
+            map.flyTo(dCoords, 16, { duration: 1.0 });
           }
         }
       }
@@ -511,21 +530,14 @@ export function InteractiveBookingMap({
     });
   }, [realDrivers]);
 
-  // Real GPS Geolocation Fetcher
+  // Real GPS Geolocation Fetcher with Automatic Real IP Fallback
   const fetchCurrentLocation = useCallback(
     (userInitiated = false) => {
-      if (typeof window === "undefined" || !navigator.geolocation) {
-        const msg = "আপনার ডিভাইসে GPS সমর্থিত নয়। দয়া করে পিকআপ স্থান ম্যানুয়ালি লিখুন।";
-        setLocationError(msg);
-        if (userInitiated) toast.error(msg);
-        return;
-      }
-
       if (isLocatingRef.current && !userInitiated) return;
       isLocatingRef.current = true;
       setIsLocating(true);
 
-      const handleSuccess = async (latitude: number, longitude: number) => {
+      const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
         const newPickup: [number, number] = [latitude, longitude];
         setPickupCoords(newPickup);
@@ -534,7 +546,7 @@ export function InteractiveBookingMap({
         setPermissionState("granted");
         setLocationError(null);
 
-        const detectedName = await resolveLocationAddress(latitude, longitude);
+        const detectedName = preResolvedName || (await resolveLocationAddress(latitude, longitude));
         setPickupInputValue(detectedName);
 
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
@@ -542,19 +554,42 @@ export function InteractiveBookingMap({
           flyDuration: 1.2,
         });
 
+        // Exact zoom-in like Uber when pickup is detected
+        if (mapInstanceRef.current && (!dropCoordsRef.current || dropCoordsRef.current[0] === 0)) {
+          try {
+            mapInstanceRef.current.flyTo(newPickup, 18, { duration: 1.2 });
+          } catch {}
+        }
+
         setIsLocating(false);
         if (userInitiated) toast.success(`📍 বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
       };
 
-      const handleFail = (err: GeolocationPositionError) => {
+      const fallbackToIp = async () => {
+        try {
+          const res = await fetch("/api/geocode?ip=true");
+          const ipData = await res.json();
+          if (ipData && ipData.lat && ipData.lng && ipData.lat !== 0) {
+            await handleSuccess(ipData.lat, ipData.lng, ipData.name || ipData.full_address);
+            return true;
+          }
+        } catch {}
+        return false;
+      };
+
+      const handleFail = async (err?: GeolocationPositionError) => {
+        // Automatically attempt real IP geolocation fallback
+        const ipSuccess = await fallbackToIp();
+        if (ipSuccess) return;
+
         isLocatingRef.current = false;
         setIsLocating(false);
         setGpsDetected(false);
         setHasValidPickup(false);
-        setPermissionState(err.code === 1 ? "denied" : "prompt");
+        setPermissionState(err?.code === 1 ? "denied" : "prompt");
 
         const msg =
-          err.code === 1
+          err?.code === 1
             ? "⚠️ লোকেশন পারমিশন অফ রয়েছে। সঠিক অবস্থান পেতে ফোনের লোকেশন অন করুন অথবা ওপরে পিকআপ লিখুন।"
             : "⚠️ জিপিএস অবস্থান সনাক্ত করা সম্ভব হয়নি। অনুগ্রহ করে পিকআপ স্থান ম্যানুয়ালি লিখুন।";
         setLocationError(msg);
@@ -566,6 +601,13 @@ export function InteractiveBookingMap({
 
       if (userInitiated) {
         toast.info("📍 জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
+      }
+
+      if (typeof window === "undefined" || !navigator.geolocation) {
+        fallbackToIp().then((ok) => {
+          if (!ok) handleFail();
+        });
+        return;
       }
 
       navigator.geolocation.getCurrentPosition(
@@ -770,6 +812,13 @@ export function InteractiveBookingMap({
         flyDuration: 1.2,
       });
 
+      // Zoom in to level 18 on pickup location like Uber
+      if (mapInstanceRef.current && (!dropCoords || dropCoords[0] === 0 || !dropInputValue)) {
+        try {
+          mapInstanceRef.current.flyTo(coords, 18, { duration: 1.2 });
+        } catch {}
+      }
+
       toast.success(`🟢 পিকআপ নির্বাচিত: ${place.name}`);
     } else {
       // User is selecting Drop!
@@ -798,36 +847,6 @@ export function InteractiveBookingMap({
 
       toast.success(`🏁 গন্তব্য নির্বাচিত: ${place.name}`);
     }
-  };
-
-  // Quick Select Landmark as Drop (Popular Destinations Bar)
-  const handleQuickSelect = async (landmark: (typeof POPULAR_DESTINATIONS)[0]) => {
-    const landmarkCoords: [number, number] = [landmark.lat, landmark.lng];
-
-    // Determine pickup: keep if valid, or auto-fallback to local hub
-    let activePCoords = pickupCoords;
-    let activePText = pickupInputValue;
-
-    if (!hasValidPickup || activePCoords[0] === 0 || !activePText.trim()) {
-      activePCoords = DEFAULT_REGION_HUB;
-      activePText = DEFAULT_REGION_NAME;
-      setPickupCoords(DEFAULT_REGION_HUB);
-      setPickupInputValue(DEFAULT_REGION_NAME);
-      setHasValidPickup(true);
-      setLocationError(null);
-    }
-
-    setDropInputValue(landmark.name);
-    setDropCoords(landmarkCoords);
-    setActiveSearchField(null);
-    setPlaceSuggestions([]);
-
-    await syncMapRouteAndPins(activePCoords, landmarkCoords, activePText, landmark.name, {
-      fitBounds: true,
-      flyDuration: 1.2,
-    });
-
-    toast.success(`🏁 গন্তব্য নির্ধারিত: ${landmark.name}`);
   };
 
   // Swap pickup and drop
@@ -1018,21 +1037,7 @@ export function InteractiveBookingMap({
             </div>
           </div>
 
-          {/* Quick Destination Shortcut Pills (Horizontal Scroll) */}
-          {!activeSearchField && (
-            <div className="pt-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
-              {POPULAR_DESTINATIONS.map((lm, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleQuickSelect(lm)}
-                  className="shrink-0 text-[10.5px] font-bold px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border border-slate-200/80 transition-all flex items-center gap-1 cursor-pointer active:scale-95"
-                >
-                  <span>{lm.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
+
 
           {/* Live Auto-Suggest Places Dropdown */}
           {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
@@ -1140,149 +1145,209 @@ export function InteractiveBookingMap({
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-        <div className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-4 space-y-3 animate-in slide-in-from-bottom-6 duration-300 max-h-[75dvh] overflow-y-auto">
-          {/* Drag Handle Capsule */}
-          <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto" />
+        <div
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ${
+            sheetExpanded ? "max-h-[75dvh] overflow-y-auto" : "max-h-24 overflow-hidden"
+          }`}
+          style={{
+            transform: sheetDragDelta !== 0 ? `translateY(${sheetDragDelta}px)` : undefined,
+          }}
+        >
+          {/* Interactive Drag Handle Area (Manual Move / Drag / Tap Toggle) */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setSheetExpanded((prev) => !prev)}
+            onTouchStart={(e) => onDragStart(e.touches[0].clientY)}
+            onTouchMove={(e) => onDragMove(e.touches[0].clientY)}
+            onTouchEnd={onDragEnd}
+            onPointerDown={(e) => onDragStart(e.clientY)}
+            onPointerMove={(e) => onDragMove(e.clientY)}
+            onPointerUp={onDragEnd}
+            className="w-full py-1 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1 select-none group"
+            title="স্লাইডার উপরে বা নিচে টানুন (Drag sheet up or down)"
+          >
+            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-400 rounded-full transition-colors" />
+            {dropInputValue && (
+              <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
+                <span>{sheetExpanded ? "মানচিত্র দেখতে নিচে টানুন ⌄" : "বুকিং দেখতে উপরে টানুন ⌃"}</span>
+              </span>
+            )}
+          </div>
 
           {dropInputValue && dropInputValue.trim() ? (
             /* STATE A: DESTINATION SELECTED -> UBER VEHICLE SELECTION */
-            <>
-              {/* Route Summary Pill */}
-              <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
-                <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
-                    }`}
-                  />
-                  <span className="truncate">
-                    {hasValidPickup && pickupInputValue
-                      ? pickupInputValue.slice(0, 14)
-                      : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
-                  </span>
-                  <span>➔</span>
-                  <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
-                </div>
-                <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
-                  {isCalculatingRoute
-                    ? "রুট গণনা হচ্ছে..."
-                    : distanceKm > 0
-                    ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
-                    : "রোড রুট"}
-                </span>
-              </div>
-
-              {/* Uber Toto Vehicle Card */}
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
+            !sheetExpanded ? (
+              /* Minimized Peek Mode (allows full map viewing while keeping fare accessible) */
+              <div
+                onClick={() => setSheetExpanded(true)}
+                className="flex items-center justify-between p-2 rounded-2xl bg-emerald-50/90 border border-emerald-200 cursor-pointer shadow-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0">
                     🛺
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
-                      {fareResult.isNight && (
-                        <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                          <Moon className="w-2.5 h-2.5" />
-                          <span>+₹{fareResult.nightCharge}</span>
-                        </span>
-                      )}
+                      <span className="font-black text-xs text-slate-900">সুন্দরবন স্মার্ট টোটো</span>
+                      <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
                     </div>
-                    <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
-                      {nearestDriverInfo ? `⚡ ~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "⚡ ২-৩ মিনিটে পিকআপ"}
-                    </p>
-                    <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                      <span>ভেরিফায়েড চালক • নন-স্টপ</span>
-                    </div>
+                    <span className="text-[10.5px] text-slate-500 font-bold truncate block">
+                      {pickupInputValue.slice(0, 10)} ➔ {dropInputValue.slice(0, 10)} • {distanceKm} কিমি
+                    </span>
                   </div>
                 </div>
-
-                <div className="text-right shrink-0">
-                  <div className="text-2xl font-black text-emerald-700 font-mono">
-                    ₹{fareResult.totalFare}.০০
-                  </div>
-                  <span className="text-[9.5px] font-bold text-slate-500 block">
-                    {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSheetExpanded(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1"
+                >
+                  <span>বুকিং ⌃</span>
+                </button>
               </div>
-
-              {/* Passenger Selector (৩ জন বেস, ৪, ৫, ৬ জন) */}
-              <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>যাত্রী সংখ্যা (Passenger Count):</span>
+            ) : (
+              /* Full Expanded Sheet */
+              <>
+                {/* Route Summary Pill */}
+                <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
+                      }`}
+                    />
+                    <span className="truncate">
+                      {hasValidPickup && pickupInputValue
+                        ? pickupInputValue.slice(0, 14)
+                        : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
+                    </span>
+                    <span>➔</span>
+                    <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                    ৩ জনের জন্য বেস রেট
+                  <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
+                    {isCalculatingRoute
+                      ? "রুট গণনা হচ্ছে..."
+                      : distanceKm > 0
+                      ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
+                      : "রোড রুট"}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[
-                    { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
-                    { cnt: 4, label: "৪ জন", tag: "+১ অতিরিক্ত" },
-                    { cnt: 5, label: "৫ জন", tag: "+২ অতিরিক্ত" },
-                    { cnt: 6, label: "৬ জন", tag: "+৩ অতিরিক্ত" },
-                  ].map((item) => {
-                    const isSelected = passengerCount === item.cnt;
-                    return (
-                      <button
-                        key={item.cnt}
-                        type="button"
-                        onClick={() => setPassengerCount(item.cnt)}
-                        className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
-                            : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
-                        }`}
-                      >
-                        <span className="text-xs font-black leading-tight">{item.label}</span>
-                        <span
-                          className={`text-[9px] font-medium leading-tight mt-0.5 ${
-                            isSelected ? "text-emerald-100" : "text-slate-400"
+                {/* Uber Toto Vehicle Card */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
+                      🛺
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
+                        {fareResult.isNight && (
+                          <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                            <Moon className="w-2.5 h-2.5" />
+                            <span>+₹{fareResult.nightCharge}</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
+                        {nearestDriverInfo ? `⚡ ~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "⚡ ২-৩ মিনিটে পিকআপ"}
+                      </p>
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                        <span>ভেরিফায়েড চালক • নন-স্টপ</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="text-2xl font-black text-emerald-700 font-mono">
+                      ₹{fareResult.totalFare}.০০
+                    </div>
+                    <span className="text-[9.5px] font-bold text-slate-500 block">
+                      {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২, ৫ জন +₹৪, ৬ জন +₹৬) */}
+                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>যাত্রী সংখ্যা (Passenger Count):</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                      ৩ জনের পর প্রতি জন +₹২
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
+                      { cnt: 4, label: "৪ জন", tag: "+২ টাকা" },
+                      { cnt: 5, label: "৫ জন", tag: "+৪ টাকা" },
+                      { cnt: 6, label: "৬ জন", tag: "+৬ টাকা" },
+                    ].map((item) => {
+                      const isSelected = passengerCount === item.cnt;
+                      return (
+                        <button
+                          key={item.cnt}
+                          type="button"
+                          onClick={() => setPassengerCount(item.cnt)}
+                          className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
+                              : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
                           }`}
                         >
-                          {item.tag}
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <span className="text-xs font-black leading-tight">{item.label}</span>
+                          <span
+                            className={`text-[9px] font-bold leading-tight mt-0.5 ${
+                              isSelected ? "text-emerald-100" : "text-emerald-700"
+                            }`}
+                          >
+                            {item.tag}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              {/* Payment Mode & Government Rate Disclaimer */}
-              <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
-                <span className="flex items-center gap-1 font-bold text-slate-700">
-                  <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
-                </span>
-                <span className="text-slate-400 font-medium">সরকারি রেট চার্ট</span>
-              </div>
+                {/* Payment Mode & Government Rate Disclaimer */}
+                <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
+                  <span className="flex items-center gap-1 font-bold text-slate-700">
+                    <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
+                  </span>
+                  <span className="text-slate-400 font-medium">সরকারি রেট চার্ট</span>
+                </div>
 
-              {/* Uber Confirm Booking CTA Button with strict location safety */}
-              <Button
-                size="lg"
-                disabled={isBlocked}
-                onClick={handleConfirmClick}
-                className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
-                  isBlocked
-                    ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
-                    : !hasValidPickup
-                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
-                    : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
-                }`}
-              >
-                <span>
-                  {isBlocked
-                    ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
-                    : !hasValidPickup
-                    ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
-                    : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
-                </span>
-              </Button>
-            </>
+                {/* Uber Confirm Booking CTA Button with strict location safety */}
+                <Button
+                  size="lg"
+                  disabled={isBlocked}
+                  onClick={handleConfirmClick}
+                  className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                    isBlocked
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
+                      : !hasValidPickup
+                      ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
+                      : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
+                  }`}
+                >
+                  <span>
+                    {isBlocked
+                      ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
+                      : !hasValidPickup
+                      ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
+                      : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
+                  </span>
+                </Button>
+              </>
+            )
           ) : (
             /* STATE B: NO DESTINATION SELECTED -> UBER GREETING & FAST SEARCH */
             <div className="py-2 space-y-2.5">

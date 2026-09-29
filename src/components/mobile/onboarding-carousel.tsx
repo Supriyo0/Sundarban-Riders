@@ -49,7 +49,7 @@ const SLIDES: SlideItem[] = [
   },
   {
     id: "action-page",
-    image: "/onboarding/driver-captain.jpg",
+    image: "/onboarding/sundarban-river-driver.jpg",
     badge: "🛺 সুন্দরবন রাইডার্সে স্বাগতম",
     title: "শুরু করুন আপনার যাত্রা",
     titleBengali: "যাত্রী বুকিং ও চালক পার্টনার",
@@ -141,34 +141,15 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
         ))}
       </div>
 
-      {/* Top Floating Header Bar */}
-      <div className="relative z-20 pt-4 px-4 flex items-center justify-between">
-        {/* Brand Badge */}
-        <div className="flex items-center gap-2.5 bg-black/45 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 shadow-lg">
-          <div className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-amber-400 bg-white flex items-center justify-center shrink-0 shadow-md">
-            <img
-              src="/sundarban-logo.png"
-              alt="Sundarban Riders"
-              className="w-full h-full object-cover scale-110"
-            />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-black tracking-wider text-white leading-none">
-              SUNDARBAN RIDERS
-            </span>
-            <span className="text-[10px] font-bold text-amber-400 mt-0.5 leading-none">
-              অনলাইন স্মার্ট টোটো বুকিং
-            </span>
-          </div>
-        </div>
-
+      {/* Top Centered Header Bar (Logo in middle, name & tagline below) */}
+      <div className="relative z-20 pt-4 px-4 flex flex-col items-center justify-center text-center">
         {/* Top-Right: Skip or Page Counter */}
-        <div className="flex items-center gap-2">
+        <div className="absolute right-4 top-4 flex items-center gap-2">
           {!isLastSlide ? (
             <button
               type="button"
               onClick={handleSkip}
-              className="px-3 py-1 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur-md border border-white/20 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer"
+              className="px-3 py-1 rounded-full bg-black/45 hover:bg-black/65 backdrop-blur-md border border-white/20 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer shadow-sm"
             >
               Skip
             </button>
@@ -177,6 +158,23 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
               4 of 4
             </div>
           )}
+        </div>
+
+        {/* Brand in Center: Logo -> SUNDARBAN RIDERS -> অনলাইন স্মার্ট টোটো বুকিং */}
+        <div className="flex flex-col items-center justify-center animate-in fade-in duration-300">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden ring-2 ring-amber-400 bg-white/95 p-0.5 flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.6)]">
+            <img
+              src="/sundarban-logo.png"
+              alt="Sundarban Riders Logo"
+              className="w-full h-full object-cover scale-110"
+            />
+          </div>
+          <span className="text-xs sm:text-sm font-black tracking-widest text-white mt-1.5 drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+            SUNDARBAN RIDERS
+          </span>
+          <span className="text-[10px] sm:text-[11px] font-bold text-amber-300 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] mt-0.5">
+            অনলাইন স্মার্ট টোটো বুকিং
+          </span>
         </div>
       </div>
 
@@ -228,51 +226,53 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
           ))}
         </div>
 
-        {/* Floating Card Frame */}
+        {/* Floating Card Frame (Compact & Sleek to give background room) */}
         <div
-          className="rounded-[28px] p-5 sm:p-6 text-center space-y-3.5 border border-white/40 shadow-2xl transition-all"
+          className="rounded-3xl p-3.5 sm:p-4 text-center space-y-2 border border-white/50 shadow-2xl transition-all"
           style={{
-            background: "rgba(255, 255, 255, 0.96)",
+            background: "rgba(255, 255, 255, 0.95)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
-            boxShadow: "0 20px 45px rgba(0,0,0,0.45)",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.4)",
           }}
         >
           {/* Badge Tag */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+          <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold">
+            <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
             <span>{slide.badge}</span>
           </div>
 
           {/* Titles & Headings */}
-          <div className="space-y-1">
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
-              {slide.title}
-            </h2>
-            {slide.titleBengali && (
-              <h3 className="text-base sm:text-lg font-bold text-emerald-800 leading-snug">
-                {slide.titleBengali}
-              </h3>
-            )}
-            <p className="text-xs text-slate-600 font-medium leading-relaxed max-w-xs mx-auto pt-0.5">
+          <div className="space-y-0.5">
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight">
+                {slide.title}
+              </h2>
+              {slide.titleBengali && (
+                <span className="text-xs sm:text-sm font-extrabold text-emerald-800 leading-tight">
+                  • {slide.titleBengali}
+                </span>
+              )}
+            </div>
+            <p className="text-[10.5px] text-slate-600 font-medium leading-tight max-w-xs mx-auto">
               {slide.subtitle}
             </p>
           </div>
 
           {/* DYNAMIC ACTION BUTTONS */}
-          <div className="space-y-2.5 pt-1">
+          <div className="space-y-1.5 pt-0.5">
             {!isLastSlide ? (
-              /* SLIDES 1, 2, 3: Pure informative walkthrough with Next -> Button */
-              <div className="space-y-2">
+              /* SLIDES 1, 2, 3: Informative walkthrough with Next -> Button */
+              <div className="space-y-1.5">
                 <Button
-                  size="lg"
-                  className="w-full h-13 rounded-2xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-base shadow-lg shadow-amber-400/30 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  size="sm"
+                  className="w-full h-10 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs shadow-md shadow-amber-400/25 active:scale-98 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   onClick={handleNext}
                 >
                   <span>পরবর্তী ধাপ (Next)</span>
-                  <ArrowRight className="w-4 h-4 stroke-[3]" />
+                  <ArrowRight className="w-3.5 h-3.5 stroke-[3]" />
                 </Button>
-                <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400 font-semibold pt-0.5">
+                <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-semibold">
                   <span>ধাপ {currentIdx + 1} / {SLIDES.length}</span>
                   <span>•</span>
                   <button
@@ -286,29 +286,29 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
               </div>
             ) : (
               /* SLIDE 4 (LAST PAGE): Action Screen -> Rider Login & Book Toto */
-              <div className="space-y-3">
+              <div className="space-y-1.5">
                 {/* 1. Book Toto Button (Passenger Cab Booking) */}
                 <button
                   type="button"
                   id="btn-book-toto-main"
                   onClick={() => onSelectRole("passenger")}
-                  className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 shadow-xl shadow-amber-400/35 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-amber-300 text-left"
+                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 text-slate-950 shadow-md shadow-amber-400/20 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-amber-300 text-left"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-white/90 shadow-sm flex items-center justify-center text-2xl shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-white/95 shadow-2xs flex items-center justify-center text-lg shrink-0">
                       🛺
                     </div>
-                    <div>
-                      <div className="text-base font-black text-slate-950 tracking-tight leading-snug flex items-center gap-1.5">
-                        <span>টোটো বুক করুন (Book Toto)</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-slate-950 tracking-tight leading-tight">
+                        টোটো বুক করুন (Book Toto)
                       </div>
-                      <span className="text-[11px] font-bold text-slate-800">
+                      <span className="text-[10px] font-bold text-slate-800 block truncate">
                         যাত্রী মোড • ম্যাপে ৫ মিনিটে ক্যাব
                       </span>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0">
-                    <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                  <div className="w-6 h-6 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0 ml-2">
+                    <ArrowRight className="w-3 h-3 stroke-[2.5]" />
                   </div>
                 </button>
 
@@ -317,34 +317,63 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
                   type="button"
                   id="btn-rider-login-main"
                   onClick={() => onSelectRole("rider")}
-                  className="w-full p-3.5 rounded-2xl bg-white hover:bg-emerald-50/50 text-slate-900 shadow-md shadow-slate-200/50 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border-2 border-emerald-500/40 text-left"
+                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-emerald-50/60 text-slate-900 shadow-2xs active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-emerald-500/40 text-left"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-                      <Image
-                        src="/driver-captain.png"
-                        alt="ক্যাপ্টেন / চালক"
-                        width={44}
-                        height={44}
-                        className="w-full h-full object-cover object-top"
-                      />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-base shrink-0 shadow-2xs">
+                      👨‍✈️
                     </div>
-                    <div>
-                      <div className="text-sm font-black text-slate-900 tracking-tight leading-snug">
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-slate-900 tracking-tight leading-tight">
                         ক্যাপ্টেন / চালক লগইন (Rider Login)
                       </div>
-                      <span className="text-[11px] font-bold text-emerald-700">
+                      <span className="text-[10px] font-bold text-emerald-700 block truncate">
                         উপার্জন শুরু করুন • চালক পার্টনার হাব
                       </span>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-emerald-600" />
+                  <ChevronRight className="w-4 h-4 text-emerald-600 shrink-0 ml-2" />
                 </button>
               </div>
             )}
 
+            {/* Official Registration & Contact Details Mentioned in Little */}
+            <div className="pt-1.5 border-t border-slate-200/80 text-center space-y-0.5 select-text">
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[9.5px] text-slate-600 font-semibold">
+                <span className="flex items-center gap-0.5">
+                  <span className="text-slate-400">Licence No :</span>
+                  <span className="font-bold text-slate-800 font-mono">1554</span>
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="flex items-center gap-0.5">
+                  <span className="text-slate-400">Reg. No :</span>
+                  <span className="font-bold text-slate-800 font-mono">WB-18-0208526</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[9.5px] text-slate-600 font-semibold">
+                <a
+                  href="mailto:sr.rider122@gmail.com"
+                  className="text-slate-700 hover:text-emerald-700 transition-colors flex items-center gap-0.5"
+                >
+                  <span className="text-slate-400">Email :</span>
+                  <span className="font-medium underline decoration-slate-300">sr.rider122@gmail.com</span>
+                </a>
+                <span className="text-slate-300">•</span>
+                <a
+                  href="https://wa.me/918348122122"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-700 hover:text-emerald-800 font-bold transition-colors flex items-center gap-0.5"
+                >
+                  <span className="text-slate-400">Help :</span>
+                  <span className="font-mono text-emerald-800 font-bold">8348122122</span>
+                  <span className="text-[8.5px] bg-emerald-100 text-emerald-800 px-1 py-0.2 rounded font-black">WhatsApp</span>
+                </a>
+              </div>
+            </div>
+
             {/* Terms and Privacy policy disclaimer */}
-            <p className="text-[10px] text-slate-400 font-medium pt-1">
+            <p className="text-[9px] text-slate-400 font-medium">
               By continuing you agree to Terms & Privacy Policy • Sundarban Riders
             </p>
           </div>

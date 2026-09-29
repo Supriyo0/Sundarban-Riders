@@ -15,10 +15,12 @@ import {
   ExternalLink,
   Save,
   HelpCircle,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { DisclaimerViewerModal } from "@/components/mobile/disclaimer-screen";
 
 interface MobileProfileModalProps {
   isOpen: boolean;
@@ -60,6 +62,7 @@ export function MobileProfileModal({
   const [editedName, setEditedName] = useState(userName);
   const [currentPhoto, setCurrentPhoto] = useState(userPhoto || "");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [showDisclaimerViewer, setShowDisclaimerViewer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -354,41 +357,52 @@ export function MobileProfileModal({
             </div>
           )}
 
-          {/* 3. Agreed Disclaimers & Legal Terms (1st Time User Agreement) */}
-          <div className="p-4 rounded-3xl bg-slate-50 border border-slate-200/80 space-y-2.5">
-            <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+          {/* 3. First-Time Disclaimer Agreement (Tick Accepted by User) */}
+          <div className="p-4 rounded-3xl bg-slate-50 border border-slate-200/90 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
               <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-emerald-600" />
-                <h4 className="font-extrabold text-xs text-slate-900">স্বীকৃত শর্তাবলী ও আইনি ডিসক্লেইমার</h4>
+                <span className="text-base">📜</span>
+                <h4 className="font-extrabold text-xs text-slate-900">আইনি ডিসক্লেইমার ও সম্মতি</h4>
               </div>
-              <span className="text-[9.5px] font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                <span>প্রথম লগইনে অনুমোদিত ✓</span>
+              <span className="text-[10px] font-black text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>প্রথম লগইনে টিক দিয়ে গৃহীত</span>
               </span>
             </div>
 
-            <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
-              আপনি প্রথমবার অ্যাপে প্রবেশের সময় সুন্দরবন রাইডার্স প্ল্যাটফর্মের নিম্নোক্ত সরকারি ও আইনি শর্তাবলীতে সম্মতি প্রদান করেছেন:
-            </p>
-
-            <div className="space-y-1.5 text-[11px] text-slate-700 font-medium">
-              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">১.</span>
-                <span><strong>ভাড়া ও যাত্রী নীতি:</strong> নির্ধারিত বেস ভাড়া ৩ জনের জন্য প্রযোজ্য। ৪, ৫ বা ৬ জনের ক্ষেত্রে প্রতি অতিরিক্ত যাত্রীর জন্য নির্ধারিত অতিরিক্ত ₹২ ধার্য হবে।</span>
+            {/* The First-Time Tick Agreement Box */}
+            <div className="p-3.5 rounded-2xl bg-white border-2 border-emerald-500 shadow-xs flex items-start gap-3">
+              <div className="w-5 h-5 rounded-md bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <CheckCircle2 className="w-4 h-4 stroke-[3]" />
               </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">২.</span>
-                <span><strong>প্ল্যাটফর্মের ভূমিকা ও দায়মুক্তি:</strong> সুন্দরবন রাইডার্স একটি ডিজিটাল প্রযুক্তি মাধ্যম। যাত্রী ও স্থানীয় স্বাধীন চালকদের মধ্যে সরাসরি ট্রিপ সংযোগ স্থাপিত হয়।</span>
-              </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">৩.</span>
-                <span><strong>বাতিল নীতি ও ফেয়ারনেস:</strong> রাইড শুরু হওয়ার পর বাতিল নিষেধ। অযৌক্তিক বুকিং বাতিল করলে ৩টি স্ট্রাইকের পর অ্যাকাউন্ট সাময়িক স্থগিত হতে পারে।</span>
-              </div>
-              <div className="p-2 rounded-xl bg-white border border-slate-200/70 flex items-start gap-2">
-                <span className="text-emerald-600 font-bold shrink-0">৪.</span>
-                <span><strong>জরুরি সুরক্ষা ও আচরণ বিধি:</strong> ট্রিপে ২৪×৭ হেল্পলাইন সক্রিয় থাকে। চালক ও যাত্রীদের মধ্যে পারস্পরিক সম্মান ও শালীনতা রক্ষা করা বাধ্যতামূলক।</span>
+              <div className="space-y-1">
+                <p className="text-xs font-black text-slate-900 leading-snug">
+                  {role === "rider"
+                    ? "আমি সমস্ত শর্তাবলি, নিয়মাবলী ও আইনি দায়মুক্তি পড়েছি এবং এতে পূর্ণ সম্মতি দিচ্ছি"
+                    : "আমি সমস্ত শর্তাবলি ও নিয়মাবলী পড়েছি এবং এতে পূর্ণ সম্মতি দিচ্ছি"}
+                </p>
+                <p className="text-[10.5px] text-emerald-700 font-bold flex items-center gap-1">
+                  <span>✓</span>
+                  <span>প্রথমবার লগইনকালে আপনি এই বাক্সে টিক চিহ্ন দিয়ে সম্মতি দিয়েছেন</span>
+                </p>
               </div>
             </div>
+
+            {/* View Full Disclaimers & Download PDF Button */}
+            <button
+              type="button"
+              onClick={() => setShowDisclaimerViewer(true)}
+              className="w-full py-2.5 px-3 rounded-2xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center justify-between transition-all cursor-pointer shadow-2xs active:scale-98"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                <span>অফিসিয়াল ডিসক্লেইমার ও নিয়মাবলী দেখুন</span>
+              </div>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-0.5">
+                <span>ধারাসমূহ</span>
+                <ChevronRight className="w-3 h-3" />
+              </span>
+            </button>
           </div>
 
           {/* 4. Action Buttons: Switch Role */}
@@ -420,7 +434,7 @@ export function MobileProfileModal({
             </button>
           )}
 
-          {/* 4. Logout Button */}
+          {/* 5. Logout Button */}
           {onLogout && (
             <Button
               type="button"
@@ -436,6 +450,13 @@ export function MobileProfileModal({
           )}
         </div>
       </div>
+
+      {/* Official Disclaimer Viewer Modal */}
+      <DisclaimerViewerModal
+        isOpen={showDisclaimerViewer}
+        onClose={() => setShowDisclaimerViewer(false)}
+        defaultRole={role}
+      />
     </div>
   );
 }

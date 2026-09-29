@@ -209,6 +209,46 @@ export const SUNDARBAN_LANDMARKS = [
     lat: 22.0010,
     lng: 88.4350,
   },
+
+  // Sagar Island & Gangasagar Hubs
+  {
+    name: "কচুবেড়িয়া ফেরিঘাট (সাগরদ্বীপ প্রবেশদ্বার)",
+    aliases: ["কচুবেড়িয়া", "kachuberia", "কচুবেড়িয়া", "kachuberia ghat"],
+    lat: 21.8610,
+    lng: 88.1320,
+  },
+  {
+    name: "গঙ্গাসাগর কপিল মুনি মন্দির ও মেলা গ্রাউন্ড",
+    aliases: ["গঙ্গাসাগর", "gangasagar", "কপিল মুনি মন্দির", "gangasagar beach", "সাগর মেলা"],
+    lat: 21.6460,
+    lng: 88.0730,
+  },
+  {
+    name: "রুদ্রনগর বাজার (সাগর বিডিও অফিস)",
+    aliases: ["রুদ্রনগর", "rudranagar", "সাগর বিডিও", "rudranagar bazar"],
+    lat: 21.7330,
+    lng: 88.1150,
+  },
+  {
+    name: "চেমাগুড়ি বাসস্ট্যান্ড ও জেটিঘাট",
+    aliases: ["চেমাগুড়ি", "chemaguri", "বেনুবন", "চেমাগুড়ি"],
+    lat: 21.6880,
+    lng: 88.0820,
+  },
+
+  // Patharpratima Hubs
+  {
+    name: "পাথরপ্রতিমা বাজার ও ফেরিঘাট",
+    aliases: ["পাথরপ্রতিমা", "patharpratima", "পাথরপ্রতিমা ঘাট", "রামগঙ্গা"],
+    lat: 21.7920,
+    lng: 88.3560,
+  },
+  {
+    name: "রামগঙ্গা হাসপাতাল মোড়",
+    aliases: ["রামগঙ্গা", "ramganga", "রামগঙ্গা ঘাট"],
+    lat: 21.8480,
+    lng: 88.3850,
+  },
 ];
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

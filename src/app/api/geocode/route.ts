@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { SUNDARBAN_LANDMARKS, calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
+import {
+  isLocationInServiceArea,
+  DEFAULT_CENTRAL_HUB,
+  SERVICE_UNAVAILABLE_MESSAGE,
+} from "@/lib/pricing/service-area";
 
 export async function GET(req: Request) {
   try {
@@ -20,7 +25,10 @@ export async function GET(req: Request) {
         });
         if (ipRes.ok) {
           const ipData = await ipRes.json();
-          if (ipData.success && ipData.latitude && ipData.longitude) {
+          const ipLat = Number(ipData?.latitude);
+          const ipLng = Number(ipData?.longitude);
+          // STRICT SERVICE AREA VALIDATION: Never accept foreign (e.g. Washington/USA) or out-of-service IPs
+          if (ipData.success && ipLat && ipLng && isLocationInServiceArea(ipLat, ipLng)) {
             const cityName = ipData.city || ipData.region || "আপনার বর্তমান অবস্থান";
             const fullAddr = [ipData.city, ipData.region, ipData.postal, ipData.country]
               .filter(Boolean)
@@ -28,9 +36,10 @@ export async function GET(req: Request) {
             return NextResponse.json({
               name: cityName,
               full_address: fullAddr || cityName,
-              lat: Number(ipData.latitude),
-              lng: Number(ipData.longitude),
+              lat: ipLat,
+              lng: ipLng,
               source: "ip_geolocation",
+              isInServiceArea: true,
               ip: ipData.ip,
             });
           }
@@ -47,14 +56,17 @@ export async function GET(req: Request) {
         });
         if (ipapiRes.ok) {
           const apiData = await ipapiRes.json();
-          if (apiData.latitude && apiData.longitude) {
+          const ipLat = Number(apiData?.latitude);
+          const ipLng = Number(apiData?.longitude);
+          if (ipLat && ipLng && isLocationInServiceArea(ipLat, ipLng)) {
             const cityName = apiData.city || apiData.region || "আপনার অবস্থান";
             return NextResponse.json({
               name: cityName,
               full_address: `${cityName}, ${apiData.region || ""}, ${apiData.country_name || "India"}`,
-              lat: Number(apiData.latitude),
-              lng: Number(apiData.longitude),
+              lat: ipLat,
+              lng: ipLng,
               source: "ipapi",
+              isInServiceArea: true,
             });
           }
         }
@@ -62,12 +74,16 @@ export async function GET(req: Request) {
         console.warn("[geocode] All IP geolocations failed:", err2);
       }
 
+      // If IP was outside service area (like Vercel cloud datacenter in Washington) or failed,
+      // return Central South 24 Parganas Hub: Kakdwip Station Road
       return NextResponse.json({
-        name: "কাকদ্বীপ স্টেশন (সেন্ট্রাল হাব)",
-        full_address: "কাকদ্বীপ স্টেশন রোড, দক্ষিণ ২৪ পরগনা",
-        lat: 21.876,
-        lng: 88.192,
+        name: DEFAULT_CENTRAL_HUB.name,
+        full_address: DEFAULT_CENTRAL_HUB.full_address,
+        lat: DEFAULT_CENTRAL_HUB.lat,
+        lng: DEFAULT_CENTRAL_HUB.lng,
         source: "default_hub",
+        isInServiceArea: true,
+        note: "service_territory_default",
       });
     }
 
@@ -243,12 +259,26 @@ export async function GET(req: Request) {
         console.warn("[geocode] Photon search error:", pErr);
       }
 
+      // Tag each suggestion with isInServiceArea
+      const taggedSuggestions = suggestions.map((s) => ({
+        ...s,
+        isInServiceArea: isLocationInServiceArea(s.lat, s.lng),
+      }));
+
+      // Sort: local service territory suggestions come first
+      taggedSuggestions.sort((a, b) => {
+        if (a.isInServiceArea && !b.isInServiceArea) return -1;
+        if (!a.isInServiceArea && b.isInServiceArea) return 1;
+        return 0;
+      });
+
       return NextResponse.json({
-        name: suggestions[0]?.name || query,
-        full_address: suggestions[0]?.full_address || query,
-        lat: suggestions[0]?.lat || 0,
-        lng: suggestions[0]?.lng || 0,
-        suggestions: suggestions.slice(0, 8),
+        name: taggedSuggestions[0]?.name || query,
+        full_address: taggedSuggestions[0]?.full_address || query,
+        lat: taggedSuggestions[0]?.lat || 0,
+        lng: taggedSuggestions[0]?.lng || 0,
+        isInServiceArea: taggedSuggestions[0] ? taggedSuggestions[0].isInServiceArea : false,
+        suggestions: taggedSuggestions.slice(0, 8),
       });
     }
 
@@ -261,6 +291,7 @@ export async function GET(req: Request) {
 
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
+    const isInTerritory = isLocationInServiceArea(latitude, longitude);
 
     // 1. First attempt OpenStreetMap Nominatim reverse geocode for real street/road/village
     try {
@@ -297,6 +328,7 @@ export async function GET(req: Request) {
             full_address: data.display_name,
             lat: latitude,
             lng: longitude,
+            isInServiceArea: isInTerritory,
           });
         }
       }
@@ -321,6 +353,7 @@ export async function GET(req: Request) {
             lat: latitude,
             lng: longitude,
             source: "bigdatacloud",
+            isInServiceArea: isInTerritory,
           });
         }
       }
@@ -345,6 +378,7 @@ export async function GET(req: Request) {
         lng: longitude,
         isHub: true,
         distanceKm: minD,
+        isInServiceArea: true,
       });
     }
 
@@ -353,6 +387,7 @@ export async function GET(req: Request) {
       full_address: `জিপিএস অবস্থান: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
       lat: latitude,
       lng: longitude,
+      isInServiceArea: isInTerritory,
     });
   } catch (err: unknown) {
     return NextResponse.json({

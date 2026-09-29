@@ -13,6 +13,8 @@ import {
   Moon,
   Layers,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   AlertTriangle,
   Plus,
   Minus,
@@ -27,6 +29,12 @@ import {
   TotoPricingConfig,
   calculateTotoFare,
 } from "@/lib/pricing/fare-calculator";
+import {
+  isLocationInServiceArea,
+  DEFAULT_CENTRAL_HUB,
+  SERVICE_UNAVAILABLE_MESSAGE,
+  SERVICE_COVERED_ZONES,
+} from "@/lib/pricing/service-area";
 
 // Safely resolve Leaflet ES module in Next.js
 async function getLeaflet() {
@@ -55,11 +63,12 @@ interface PlaceSuggestion {
   full_address: string;
   lat: number;
   lng: number;
+  isInServiceArea?: boolean;
 }
 
-// Regional Default Hub (Fraserganj Bus Stand / Hub in South 24 Parganas)
-const DEFAULT_REGION_HUB: [number, number] = [21.585, 88.251];
-const DEFAULT_REGION_NAME = "ফ্রেজারগঞ্জ বাসস্ট্যান্ড (লোকাল হাব)";
+// Regional Default Hub (Kakdwip Central Hub in South 24 Parganas)
+const DEFAULT_REGION_HUB: [number, number] = DEFAULT_CENTRAL_HUB.coords;
+const DEFAULT_REGION_NAME = DEFAULT_CENTRAL_HUB.name;
 
 interface InteractiveBookingMapProps {
   initialPickup?: string;
@@ -106,11 +115,14 @@ export function InteractiveBookingMap({
   const [hasValidPickup, setHasValidPickup] = useState(isInitialValid);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Coordinates
+  // Service territory tracking
+  const [isDropOutOfService, setIsDropOutOfService] = useState(false);
+
+  // Coordinates (Only set when valid; never auto-fill random coordinates)
   const [pickupCoords, setPickupCoords] = useState<[number, number]>(
-    isInitialValid ? [21.585, 88.251] : [0, 0]
+    isInitialValid ? DEFAULT_CENTRAL_HUB.coords : [0, 0]
   );
-  const [dropCoords, setDropCoords] = useState<[number, number]>([21.5645, 88.257]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([0, 0]);
 
   // Input states
   const [pickupInputValue, setPickupInputValue] = useState(isInitialValid ? initialPickup : "");
@@ -126,26 +138,31 @@ export function InteractiveBookingMap({
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  // Draggable Bottom Slider Sheet State
+  // Draggable Bottom Slider Sheet State (Robust drag + tap handling)
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const dragStartYRef = useRef<number | null>(null);
+  const isDraggingRef = useRef(false);
   const [sheetDragDelta, setSheetDragDelta] = useState(0);
 
   const onDragStart = (clientY: number) => {
     dragStartYRef.current = clientY;
+    isDraggingRef.current = false;
   };
   const onDragMove = (clientY: number) => {
     if (dragStartYRef.current === null) return;
     const delta = clientY - dragStartYRef.current;
+    if (Math.abs(delta) > 6) {
+      isDraggingRef.current = true;
+    }
     if (sheetExpanded && delta > 0) {
-      setSheetDragDelta(delta);
+      setSheetDragDelta(Math.min(delta, 250));
     } else if (!sheetExpanded && delta < 0) {
-      setSheetDragDelta(delta);
+      setSheetDragDelta(Math.max(delta, -250));
     }
   };
   const onDragEnd = () => {
     if (dragStartYRef.current !== null) {
-      if (sheetExpanded && sheetDragDelta > 30) {
+      if (sheetExpanded && sheetDragDelta > 25) {
         setSheetExpanded(false);
       } else if (!sheetExpanded && sheetDragDelta < -20) {
         setSheetExpanded(true);
@@ -153,6 +170,15 @@ export function InteractiveBookingMap({
     }
     dragStartYRef.current = null;
     setSheetDragDelta(0);
+    // Suppress click immediately following drag
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 120);
+  };
+
+  const handleHandleClick = () => {
+    if (isDraggingRef.current) return;
+    setSheetExpanded((prev) => !prev);
   };
 
   // Synchronization Refs (Prevents infinite render loops)
@@ -203,32 +229,35 @@ export function InteractiveBookingMap({
     return calculateTotoFare(d, passengerCount, pricingConfig);
   }, [distanceKm, passengerCount, pricingConfig]);
 
-  // Nearest Driver Proximity
-  const nearestDriverInfo = useMemo(() => {
-    if (realDrivers.length === 0 || !hasValidPickup || pickupCoords[0] === 0) return null;
-    let minKm = 9999;
-    let closestDriver: any = null;
-
-    realDrivers.forEach((d) => {
-      const lat = Number(d.latitude);
-      const lng = Number(d.longitude);
-      if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
-        const dKm = calculateDistanceKm(pickupCoords[0], pickupCoords[1], lat, lng);
-        if (dKm < minKm) {
-          minKm = dKm;
-          closestDriver = d;
-        }
-      }
-    });
-
-    if (minKm === 9999) return null;
-    const etaMin = Math.max(2, Math.round(minKm * 2.5 + 1));
-    return {
-      distanceKm: minKm,
-      etaMin,
-      driverName: closestDriver?.name || "টোটো চালক",
-    };
+  // STRICT 5 KM DRIVER FILTER: Only drivers within 5 km of user's pickup
+  const nearbyDrivers = useMemo(() => {
+    if (!hasValidPickup || pickupCoords[0] === 0) return [];
+    return realDrivers
+      .map((d) => {
+        const lat = Number(d.latitude);
+        const lng = Number(d.longitude);
+        if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return null;
+        const distKm = calculateDistanceKm(pickupCoords[0], pickupCoords[1], lat, lng);
+        return {
+          ...d,
+          distanceKm: distKm,
+        };
+      })
+      .filter((d): d is any => d !== null && d.distanceKm <= 5.0)
+      .sort((a, b) => a.distanceKm - b.distanceKm);
   }, [realDrivers, pickupCoords, hasValidPickup]);
+
+  // Nearest Driver Proximity (Strictly based on nearbyDrivers within 5 km)
+  const nearestDriverInfo = useMemo(() => {
+    if (nearbyDrivers.length === 0) return null;
+    const closest = nearbyDrivers[0];
+    const etaMin = Math.max(2, Math.round(closest.distanceKm * 2.5 + 1));
+    return {
+      distanceKm: closest.distanceKm,
+      etaMin,
+      driverName: closest.name || "টোটো চালক",
+    };
+  }, [nearbyDrivers]);
 
   // Reverse Geocoding helper
   const resolveLocationAddress = useCallback(async (lat: number, lng: number): Promise<string> => {
@@ -492,7 +521,7 @@ export function InteractiveBookingMap({
     return () => clearInterval(interval);
   }, []);
 
-  // Update Driver Markers on Map
+  // Update Driver Markers on Map (Strictly within 5 km of user's pickup)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -500,8 +529,8 @@ export function InteractiveBookingMap({
       driverMarkersRef.current.forEach((m) => m.remove());
       driverMarkersRef.current = [];
 
-      if (realDrivers.length > 0 && mapInstanceRef.current) {
-        realDrivers.forEach((driver) => {
+      if (nearbyDrivers.length > 0 && mapInstanceRef.current) {
+        nearbyDrivers.forEach((driver) => {
           const lat = Number(driver.latitude);
           const lng = Number(driver.longitude);
           if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
@@ -510,8 +539,8 @@ export function InteractiveBookingMap({
             className: "toto-real-driver-icon",
             html: `
               <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-                <div style="background: white; border: 1px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 2px 6px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                  🛺 ${driver.name || "টোটো চালক"}
+                <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9.5px; padding: 2px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
+                  🛺 ${driver.name || "টোটো চালক"} (${driver.distanceKm.toFixed(1)} কিমি)
                 </div>
                 <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">
                   🛺
@@ -528,17 +557,45 @@ export function InteractiveBookingMap({
         });
       }
     });
-  }, [realDrivers]);
+  }, [nearbyDrivers]);
 
-  // Real GPS Geolocation Fetcher with Automatic Real IP Fallback
+  // Real GPS Geolocation Fetcher with NO Random Fallback (Strict Error if not detected)
   const fetchCurrentLocation = useCallback(
     (userInitiated = false) => {
       if (isLocatingRef.current && !userInitiated) return;
       isLocatingRef.current = true;
       setIsLocating(true);
 
+      const handleFail = (msg?: string, isDenied = false) => {
+        isLocatingRef.current = false;
+        setIsLocating(false);
+        setGpsDetected(false);
+        setHasValidPickup(false);
+        setPickupCoords([0, 0]);
+        setPickupInputValue("");
+        setPermissionState(isDenied ? "denied" : "prompt");
+
+        const errorMsg =
+          msg ||
+          (isDenied
+            ? "⚠️ লোকেশন পারমিশন বন্ধ রয়েছে! ফোনের GPS লোকেশন অন করুন অথবা ওপরে পিকআপ স্থান টাইপ করুন।"
+            : "⚠️ লোকেশন সনাক্ত করা যায়নি! অনুগ্রহ করে ফোনের GPS অন করুন অথবা ওপরে পিকআপ স্থান লিখুন।");
+
+        setLocationError(errorMsg);
+        toast.error(errorMsg, { duration: 5000 });
+      };
+
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
+
+        // Strict Service Area Boundary Check: Never accept foreign, Washington, or out-of-territory points
+        if (!isLocationInServiceArea(latitude, longitude)) {
+          handleFail(
+            "⚠️ আপনার বর্তমান অবস্থানটি সুন্দরবন পরিষেবা এলাকার (ডায়মন্ড হারবার থেকে বকখালি ও সাগর) বাইরে! পরিষেবা পেতে ওপরে অনুমোদিত পিকআপ স্থান টাইপ করুন。"
+          );
+          return;
+        }
+
         const newPickup: [number, number] = [latitude, longitude];
         setPickupCoords(newPickup);
         setGpsDetected(true);
@@ -565,48 +622,12 @@ export function InteractiveBookingMap({
         if (userInitiated) toast.success(`📍 বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
       };
 
-      const fallbackToIp = async () => {
-        try {
-          const res = await fetch("/api/geocode?ip=true");
-          const ipData = await res.json();
-          if (ipData && ipData.lat && ipData.lng && ipData.lat !== 0) {
-            await handleSuccess(ipData.lat, ipData.lng, ipData.name || ipData.full_address);
-            return true;
-          }
-        } catch {}
-        return false;
-      };
-
-      const handleFail = async (err?: GeolocationPositionError) => {
-        // Automatically attempt real IP geolocation fallback
-        const ipSuccess = await fallbackToIp();
-        if (ipSuccess) return;
-
-        isLocatingRef.current = false;
-        setIsLocating(false);
-        setGpsDetected(false);
-        setHasValidPickup(false);
-        setPermissionState(err?.code === 1 ? "denied" : "prompt");
-
-        const msg =
-          err?.code === 1
-            ? "⚠️ লোকেশন পারমিশন অফ রয়েছে। সঠিক অবস্থান পেতে ফোনের লোকেশন অন করুন অথবা ওপরে পিকআপ লিখুন।"
-            : "⚠️ জিপিএস অবস্থান সনাক্ত করা সম্ভব হয়নি। অনুগ্রহ করে পিকআপ স্থান ম্যানুয়ালি লিখুন।";
-        setLocationError(msg);
-
-        if (userInitiated) {
-          toast.error(msg, { duration: 5000 });
-        }
-      };
-
       if (userInitiated) {
         toast.info("📍 জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
       }
 
       if (typeof window === "undefined" || !navigator.geolocation) {
-        fallbackToIp().then((ok) => {
-          if (!ok) handleFail();
-        });
+        handleFail("⚠️ আপনার ব্রাউজারে লোকেশন পরিষেবা সমর্থিত নয়। অনুগ্রহ করে পিকআপ স্থান টাইপ করুন।");
         return;
       }
 
@@ -615,11 +636,11 @@ export function InteractiveBookingMap({
         (err) => {
           navigator.geolocation.getCurrentPosition(
             (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-            (fallbackErr) => handleFail(fallbackErr),
+            (fallbackErr) => handleFail(undefined, fallbackErr?.code === 1 || err?.code === 1),
             { enableHighAccuracy: false, timeout: 8000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -710,9 +731,18 @@ export function InteractiveBookingMap({
             });
             toast.success(`🟢 পিকআপ নির্বাচিত: ${resolved}`);
           } else {
+            const inService = isLocationInServiceArea(clickedCoords[0], clickedCoords[1]);
+            setIsDropOutOfService(!inService);
+            if (!inService) {
+              toast.error(
+                "⚠️ সুন্দরবন রাইডার্স পরিষেবা এই এলাকায় উপলব্ধ নয় (কেবল ডায়মন্ড হারবার থেকে বকখালি ও সাগর অঞ্চলে প্রযোজ্য)"
+              );
+            }
+
             setDropCoords(clickedCoords);
             setDropInputValue(resolved);
             setActiveSearchField(null);
+            setSheetExpanded(true);
 
             await syncMapRouteAndPins(pickupCoords, clickedCoords, pickupInputValue, resolved, {
               fitBounds: true,
@@ -798,8 +828,12 @@ export function InteractiveBookingMap({
   // Select Place Suggestion
   const handleSelectSuggestion = async (place: PlaceSuggestion) => {
     const coords: [number, number] = [place.lat, place.lng];
+    const inTerritory = place.isInServiceArea ?? isLocationInServiceArea(place.lat, place.lng);
 
     if (activeSearchField === "pickup") {
+      if (!inTerritory) {
+        toast.error("⚠️ সুন্দরবন রাইডার্স পরিষেবা বর্তমানে ডায়মন্ড হারবার থেকে বকখালি ও সাগর অঞ্চলে প্রযোজ্য। পিকআপটি সার্ভিস এলাকার বাইরে!");
+      }
       setPickupInputValue(place.name);
       setPickupCoords(coords);
       setHasValidPickup(true);
@@ -822,30 +856,40 @@ export function InteractiveBookingMap({
       toast.success(`🟢 পিকআপ নির্বাচিত: ${place.name}`);
     } else {
       // User is selecting Drop!
-      // If user hasn't set pickup yet, auto-set to Fraserganj Hub (or GPS if present)
-      let activePCoords = pickupCoords;
-      let activePText = pickupInputValue;
-
-      if (!hasValidPickup || activePCoords[0] === 0 || !activePText.trim()) {
-        activePCoords = DEFAULT_REGION_HUB;
-        activePText = DEFAULT_REGION_NAME;
-        setPickupCoords(DEFAULT_REGION_HUB);
-        setPickupInputValue(DEFAULT_REGION_NAME);
-        setHasValidPickup(true);
-        setLocationError(null);
+      if (!inTerritory) {
+        setIsDropOutOfService(true);
+        toast.error("⚠️ এই গন্তব্যে পরিষেবা উপলব্ধ নয়! (কেবল ডায়মন্ড হারবার থেকে কাকদ্বীপ, নামখানা, বকখালি ও সাগর অঞ্চলে প্রযোজ্য)");
+      } else {
+        setIsDropOutOfService(false);
       }
 
       setDropInputValue(place.name);
       setDropCoords(coords);
       setActiveSearchField(null);
       setPlaceSuggestions([]);
+      setSheetExpanded(true);
 
-      await syncMapRouteAndPins(activePCoords, coords, activePText, place.name, {
-        fitBounds: true,
-        flyDuration: 1.2,
-      });
-
-      toast.success(`🏁 গন্তব্য নির্বাচিত: ${place.name}`);
+      if (!hasValidPickup || pickupCoords[0] === 0 || !pickupInputValue.trim()) {
+        // User hasn't set pickup yet: do NOT auto-fill a random place!
+        // Show drop marker and prompt user to enter pickup
+        await syncMapRouteAndPins([0, 0], coords, "", place.name, {
+          fitBounds: false,
+          flyDuration: 1.2,
+        });
+        if (mapInstanceRef.current) {
+          try {
+            mapInstanceRef.current.flyTo(coords, 16, { duration: 1.2 });
+          } catch {}
+        }
+        toast.info("🏁 গন্তব্য নির্ধারিত হয়েছে! এবার ওপরে আপনার পিকআপ স্থান লিখুন বা জিপিএস দিন।");
+        setActiveSearchField("pickup");
+      } else {
+        await syncMapRouteAndPins(pickupCoords, coords, pickupInputValue, place.name, {
+          fitBounds: true,
+          flyDuration: 1.2,
+        });
+        toast.success(`🏁 গন্তব্য নির্বাচিত: ${place.name}`);
+      }
     }
   };
 
@@ -862,6 +906,9 @@ export function InteractiveBookingMap({
     setPickupCoords(nextPickupCoords);
     setDropCoords(nextDropCoords);
     setHasValidPickup(Boolean(nextPickup.trim() && nextPickupCoords[0] !== 0));
+
+    const inTerritory = isLocationInServiceArea(nextDropCoords[0], nextDropCoords[1]);
+    setIsDropOutOfService(!inTerritory);
 
     await syncMapRouteAndPins(nextPickupCoords, nextDropCoords, nextPickup, nextDrop, {
       fitBounds: true,
@@ -886,6 +933,14 @@ export function InteractiveBookingMap({
     if (!dropInputValue || !dropInputValue.trim()) {
       toast.error("⚠️ অনুগ্রহ করে আপনার গন্তব্য স্থান (Drop Location) নির্বাচন করুন।");
       setActiveSearchField("drop");
+      return;
+    }
+
+    if (isDropOutOfService || !isLocationInServiceArea(dropCoords[0], dropCoords[1])) {
+      toast.error(
+        "🚫 দুঃখিত! নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়। সুন্দরবন রাইডার্স বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে কাকদ্বীপ, নামখানা, সাগর ও বকখালি) উপলব্ধ।",
+        { duration: 6000 }
+      );
       return;
     }
 
@@ -928,6 +983,27 @@ export function InteractiveBookingMap({
                 {isLocating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
                 <span>অনুমতি দিন</span>
               </button>
+            </div>
+          )}
+
+          {/* Out of Service Territory Error Banner */}
+          {isDropOutOfService && (
+            <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 shadow-md space-y-1.5 animate-in fade-in">
+              <div className="flex items-center gap-2 text-rose-700 font-black text-xs">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>⚠️ এই অঞ্চলে সুন্দরবন রাইডার্স পরিষেবা উপলব্ধ নয়</span>
+              </div>
+              <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
+                সুন্দরবন রাইডার্স পরিষেবা বর্তমানে কেবলমাত্র দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে লক্ষ্মীকান্তপুর, কুলপি, কাকদ্বীপ, নামখানা, সাগরদ্বীপ ও বকখালি অঞ্চলে) উপলব্ধ।
+              </p>
+              <div className="text-[10px] text-rose-600 font-bold flex flex-wrap gap-1 pt-0.5">
+                <span>উপলব্ধ অঞ্চল:</span>
+                <span className="bg-rose-100 px-1.5 py-0.5 rounded">ডায়মন্ড হারবার</span>
+                <span className="bg-rose-100 px-1.5 py-0.5 rounded">কাকদ্বীপ</span>
+                <span className="bg-rose-100 px-1.5 py-0.5 rounded">নামখানা</span>
+                <span className="bg-rose-100 px-1.5 py-0.5 rounded">সাগরদ্বীপ</span>
+                <span className="bg-rose-100 px-1.5 py-0.5 rounded">বকখালি</span>
+              </div>
             </div>
           )}
 
@@ -1009,7 +1085,11 @@ export function InteractiveBookingMap({
                 value={dropInputValue}
                 onChange={(e) => handleQueryPlaces(e.target.value, "drop")}
                 onFocus={() => handleQueryPlaces(dropInputValue, "drop")}
-                className="h-10 pl-9 pr-14 bg-slate-50/90 border-slate-200/80 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all"
+                className={`h-10 pl-9 pr-14 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all ${
+                  isDropOutOfService
+                    ? "border-rose-400 bg-rose-50/50 text-rose-900"
+                    : "border-slate-200/80"
+                }`}
               />
               <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
                 <button
@@ -1025,6 +1105,7 @@ export function InteractiveBookingMap({
                     type="button"
                     onClick={() => {
                       setDropInputValue("");
+                      setIsDropOutOfService(false);
                       setPlaceSuggestions([]);
                       syncMapRouteAndPins(pickupCoords, [0, 0], pickupInputValue, "", { fitBounds: false });
                     }}
@@ -1036,8 +1117,6 @@ export function InteractiveBookingMap({
               </div>
             </div>
           </div>
-
-
 
           {/* Live Auto-Suggest Places Dropdown */}
           {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
@@ -1056,22 +1135,40 @@ export function InteractiveBookingMap({
                 </button>
               </div>
 
-              {placeSuggestions.map((place, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleSelectSuggestion(place)}
-                  className="w-full p-2 rounded-xl hover:bg-emerald-50 text-left transition-all flex items-center gap-2.5 cursor-pointer bg-white border border-slate-100 shadow-2xs"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                    <MapPin className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="overflow-hidden flex-1">
-                    <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
-                    <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
-                  </div>
-                </button>
-              ))}
+              {placeSuggestions.map((place, idx) => {
+                const inZone = place.isInServiceArea ?? isLocationInServiceArea(place.lat, place.lng);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelectSuggestion(place)}
+                    className={`w-full p-2 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border shadow-2xs ${
+                      inZone
+                        ? "hover:bg-emerald-50 bg-white border-slate-100"
+                        : "hover:bg-rose-50 bg-rose-50/50 border-rose-200 opacity-90"
+                    }`}
+                  >
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        inZone ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                      }`}
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="overflow-hidden flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
+                        {!inZone && (
+                          <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-full shrink-0">
+                            পরিষেবা বাইরে
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1080,11 +1177,13 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 3. FLOATING MAP ON-SCREEN CONTROLS                             */}
       {/* ------------------------------------------------------------- */}
-      {/* Active Driver Radar Indicator (Top Left) */}
+      {/* Active Driver Radar Indicator (Top Left - Strictly 5 KM) */}
       <div className="absolute top-44 left-3.5 z-20 pointer-events-auto bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200/80 flex items-center gap-2 animate-in fade-in duration-300">
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
         <span className="text-[11px] font-bold text-slate-800">
-          {realDrivers.length > 0 ? `🛺 ${realDrivers.length}টি সক্রিয় টোটো` : "🛺 সুন্দরবন রাইডার্স"}
+          {nearbyDrivers.length > 0
+            ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমি)`
+            : "🛺 ৫ কিমিতে কোনো টোটো নেই"}
         </span>
       </div>
 
@@ -1146,8 +1245,12 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ${
-            sheetExpanded ? "max-h-[75dvh] overflow-y-auto" : "max-h-24 overflow-hidden"
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ${
+            sheetExpanded
+              ? "max-h-[75dvh] overflow-y-auto"
+              : dropInputValue && dropInputValue.trim()
+              ? "max-h-24 overflow-hidden"
+              : "max-h-60 overflow-hidden"
           }`}
           style={{
             transform: sheetDragDelta !== 0 ? `translateY(${sheetDragDelta}px)` : undefined,
@@ -1157,22 +1260,27 @@ export function InteractiveBookingMap({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => setSheetExpanded((prev) => !prev)}
+            onClick={handleHandleClick}
             onTouchStart={(e) => onDragStart(e.touches[0].clientY)}
             onTouchMove={(e) => onDragMove(e.touches[0].clientY)}
             onTouchEnd={onDragEnd}
-            onPointerDown={(e) => onDragStart(e.clientY)}
-            onPointerMove={(e) => onDragMove(e.clientY)}
-            onPointerUp={onDragEnd}
-            className="w-full py-1 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1 select-none group"
-            title="স্লাইডার উপরে বা নিচে টানুন (Drag sheet up or down)"
+            className="w-full py-1.5 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1 select-none group touch-none"
+            title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag sheet up or down)"
           >
             <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-400 rounded-full transition-colors" />
-            {dropInputValue && (
-              <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
-                <span>{sheetExpanded ? "মানচিত্র দেখতে নিচে টানুন ⌄" : "বুকিং দেখতে উপরে টানুন ⌃"}</span>
-              </span>
-            )}
+            <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-500 hover:text-slate-800 transition-colors">
+              {sheetExpanded ? (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span>মানচিত্র দেখতে নিচে নামান</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
+                  <span className="text-emerald-700">বুকিং ও ভাড়া দেখতে ট্যাপ করুন</span>
+                </>
+              )}
+            </div>
           </div>
 
           {dropInputValue && dropInputValue.trim() ? (
@@ -1181,19 +1289,24 @@ export function InteractiveBookingMap({
               /* Minimized Peek Mode (allows full map viewing while keeping fare accessible) */
               <div
                 onClick={() => setSheetExpanded(true)}
-                className="flex items-center justify-between p-2 rounded-2xl bg-emerald-50/90 border border-emerald-200 cursor-pointer shadow-xs"
+                className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/95 border border-emerald-200 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
                     🛺
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-black text-xs text-slate-900">সুন্দরবন স্মার্ট টোটো</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
                       <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
+                      {isDropOutOfService && (
+                        <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                          পরিষেবা বাইরে
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10.5px] text-slate-500 font-bold truncate block">
-                      {pickupInputValue.slice(0, 10)} ➔ {dropInputValue.slice(0, 10)} • {distanceKm} কিমি
+                      {pickupInputValue.slice(0, 12)} ➔ {dropInputValue.slice(0, 12)} • {distanceKm} কিমি
                     </span>
                   </div>
                 </div>
@@ -1203,7 +1316,7 @@ export function InteractiveBookingMap({
                     e.stopPropagation();
                     setSheetExpanded(true);
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all"
                 >
                   <span>বুকিং ⌃</span>
                 </button>
@@ -1236,6 +1349,19 @@ export function InteractiveBookingMap({
                   </span>
                 </div>
 
+                {/* Service Territory Warning inside sheet if outside */}
+                {isDropOutOfService && (
+                  <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-1 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-700 font-black">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
+                      আমাদের পরিষেবা বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার, কাকদ্বীপ, নামখানা, বকখালি ও সাগরদ্বীপ) উপলব্ধ।
+                    </p>
+                  </div>
+                )}
+
                 {/* Uber Toto Vehicle Card */}
                 <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -1252,8 +1378,16 @@ export function InteractiveBookingMap({
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-600 font-semibold mt-0.5">
-                        {nearestDriverInfo ? `⚡ ~${nearestDriverInfo.etaMin} মিনিটে পিকআপ` : "⚡ ২-৩ মিনিটে পিকআপ"}
+                      <p className="text-[11px] font-semibold mt-0.5">
+                        {nearbyDrivers.length > 0 ? (
+                          <span className="text-emerald-700 font-bold">
+                            ⚡ ~{nearestDriverInfo?.etaMin || 3} মিনিটে পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি দূর)
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 font-bold">
+                            ⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই
+                          </span>
+                        )}
                       </p>
                       <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
                         <ShieldCheck className="w-3 h-3 text-emerald-600" />
@@ -1328,10 +1462,10 @@ export function InteractiveBookingMap({
                 {/* Uber Confirm Booking CTA Button with strict location safety */}
                 <Button
                   size="lg"
-                  disabled={isBlocked}
+                  disabled={isBlocked || isDropOutOfService}
                   onClick={handleConfirmClick}
                   className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
-                    isBlocked
+                    isBlocked || isDropOutOfService
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
                       : !hasValidPickup
                       ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
@@ -1341,6 +1475,8 @@ export function InteractiveBookingMap({
                   <span>
                     {isBlocked
                       ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
+                      : isDropOutOfService
+                      ? "🚫 পরিষেবা উপলব্ধ নয় (শুধুমাত্র দক্ষিণ সুন্দরবন ও ডায়মন্ড হারবার)"
                       : !hasValidPickup
                       ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
                       : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
@@ -1383,7 +1519,11 @@ export function InteractiveBookingMap({
               <div className="flex items-center justify-between text-[11px] text-emerald-800 font-bold pt-1 px-1">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>{realDrivers.length > 0 ? `${realDrivers.length}টি টোটো আশেপাশে প্রস্তুত` : "টোটো চালক প্রস্তুত"}</span>
+                  <span>
+                    {nearbyDrivers.length > 0
+                      ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমির মধ্যে)`
+                      : "⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই"}
+                  </span>
                 </span>
                 <span className="text-slate-500 font-semibold">⚡ দ্রুত পিকআপ</span>
               </div>

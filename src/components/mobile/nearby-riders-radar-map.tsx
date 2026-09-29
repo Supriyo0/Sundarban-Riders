@@ -161,7 +161,7 @@ export function NearbyRidersRadarMap({
     };
   }, [pickupCoords, dropCoords]);
 
-  // 2. Dynamically Update Driver Markers on existing map without recreating map
+  // 2. Dynamically Update Driver Markers on existing map without recreating map (5 KM Filter)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -170,18 +170,39 @@ export function NearbyRidersRadarMap({
       driverMarkersRef.current.forEach((m) => m.remove());
       driverMarkersRef.current = [];
 
-      if (realDrivers.length > 0) {
-        realDrivers.forEach((driver) => {
+      function getDistKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+        const R = 6371;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) *
+            Math.cos((lat2 * Math.PI) / 180) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return Math.round(R * c * 10) / 10;
+      }
+
+      const nearby = realDrivers.filter((driver) => {
+        const lat = Number(driver.latitude);
+        const lng = Number(driver.longitude);
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return false;
+        return getDistKm(pickupCoords[0], pickupCoords[1], lat, lng) <= 5.0;
+      });
+
+      if (nearby.length > 0) {
+        nearby.forEach((driver) => {
           const lat = Number(driver.latitude);
           const lng = Number(driver.longitude);
-          if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+          const dist = getDistKm(pickupCoords[0], pickupCoords[1], lat, lng);
 
           const totoDriverIcon = L.divIcon({
             className: "toto-real-driver-icon",
             html: `
               <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
                 <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9px; padding: 2px 7px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                  🛺 ${driver.name || "টোটো চালক"} (${driver.unique_id || driver.toto_number || "SR-DRV"})
+                  🛺 ${driver.name || "টোটো চালক"} (${dist} কিমি)
                 </div>
                 <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">
                   🛺
@@ -196,7 +217,24 @@ export function NearbyRidersRadarMap({
         });
       }
     });
-  }, [realDrivers]);
+  }, [realDrivers, pickupCoords]);
+
+  const nearbyDriverCount = realDrivers.filter((d) => {
+    const lat = Number(d.latitude);
+    const lng = Number(d.longitude);
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) return false;
+    const R = 6371;
+    const dLat = ((lat - pickupCoords[0]) * Math.PI) / 180;
+    const dLon = ((lng - pickupCoords[1]) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((pickupCoords[0] * Math.PI) / 180) *
+        Math.cos((lat * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const dist = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    return dist <= 5.0;
+  }).length;
 
   return (
     <div className="space-y-3">
@@ -248,9 +286,9 @@ export function NearbyRidersRadarMap({
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
               </span>
               <span className="text-xs font-bold text-slate-800">
-                {realDrivers.length > 0
-                  ? `${realDrivers.length} জন নিবন্ধিত চালক অনলাইনে নজরদারি করা হচ্ছে`
-                  : "৫ কিমি রেডিয়াসে লাইভ রাডার স্ক্যান চলছে..."}
+                {nearbyDriverCount > 0
+                  ? `${nearbyDriverCount} জন সক্রিয় চালক ৫ কিমির মধ্যে রয়েছে`
+                  : "৫ কিমি রেডিয়াসে কোনো চালক পাওয়া যায়নি"}
               </span>
             </div>
           </div>

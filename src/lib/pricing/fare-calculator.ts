@@ -126,9 +126,10 @@ export function calculateTotoFare(
       (d - 20) * config.ratePerKm20to25;
   }
 
-  // 3. Extra Passengers Charge (flat ₹2 per extra person above 3: 4 people = +₹2, 5 = +₹4, 6 = +₹6)
+  // 3. Extra Passengers Charge (₹2/km per extra person above 3: 4 people = +₹2/km, 5 = +₹4/km, 6 = +₹6/km)
   const extraPassengerCount = Math.max(0, p - (config.includedPassengers || 3));
-  const extraPassengerFare = extraPassengerCount * 2;
+  const ratePerKm = config.extraPassengerRatePerKm ?? 2;
+  const extraPassengerFare = extraPassengerCount * ratePerKm * d;
 
   // 4. Night Charge
   const isNight = isNightTime(rideTime, config.nightStartTime, config.nightEndTime);
@@ -152,7 +153,7 @@ export function calculateTotoFare(
   parts.push(`দূরত্ব (${d} কিমি): ₹${Math.round(distanceFare)}`);
   if (extraPassengerCount > 0) {
     parts.push(
-      `অতিরিক্ত যাত্রী (${extraPassengerCount} জন x ₹2): ₹${Math.round(extraPassengerFare)}`
+      `অতিরিক্ত যাত্রী (${extraPassengerCount} জন x ₹${ratePerKm}/কিমি): ₹${Math.round(extraPassengerFare)}`
     );
   }
   if (isNight) {

@@ -1406,7 +1406,7 @@ export function InteractiveBookingMap({
                   </div>
                 </div>
 
-                {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২, ৫ জন +₹৪, ৬ জন +₹৬) */}
+                {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২/কিমি, ৫ জন +₹৪/কিমি, ৬ জন +₹৬/কিমি) */}
                 <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <div className="flex items-center gap-1.5">
@@ -1414,16 +1414,16 @@ export function InteractiveBookingMap({
                       <span>যাত্রী সংখ্যা (Passenger Count):</span>
                     </div>
                     <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                      ৩ জনের পর প্রতি জন +₹২
+                      ৩ জনের পর প্রতি জন +₹২/কিমি
                     </span>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
                       { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
-                      { cnt: 4, label: "৪ জন", tag: "+২ টাকা" },
-                      { cnt: 5, label: "৫ জন", tag: "+৪ টাকা" },
-                      { cnt: 6, label: "৬ জন", tag: "+৬ টাকা" },
+                      { cnt: 4, label: "৪ জন", tag: "+২/কিমি" },
+                      { cnt: 5, label: "৫ জন", tag: "+৪/কিমি" },
+                      { cnt: 6, label: "৬ জন", tag: "+৬/কিমি" },
                     ].map((item) => {
                       const isSelected = passengerCount === item.cnt;
                       return (
@@ -1451,12 +1451,14 @@ export function InteractiveBookingMap({
                   </div>
                 </div>
 
-                {/* Payment Mode & Government Rate Disclaimer */}
+                {/* Payment Mode */}
                 <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
                   <span className="flex items-center gap-1 font-bold text-slate-700">
                     <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
                   </span>
-                  <span className="text-slate-400 font-medium">সরকারি রেট চার্ট</span>
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    ✓ সঠিক মিটার ভাড়া
+                  </span>
                 </div>
 
                 {/* Uber Confirm Booking CTA Button with strict location safety */}

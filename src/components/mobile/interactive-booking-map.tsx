@@ -138,47 +138,91 @@ export function InteractiveBookingMap({
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  // Draggable Bottom Slider Sheet State (Robust drag + tap handling)
+  // Draggable Bottom Slider Sheet State (Universal Pointer & Touch with zero-lag physics)
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const dragStartYRef = useRef<number | null>(null);
-  const isDraggingRef = useRef(false);
   const [sheetDragDelta, setSheetDragDelta] = useState(0);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  const dragStartYRef = useRef<number | null>(null);
+  const dragDeltaRef = useRef<number>(0);
+  const hasMovedRef = useRef<boolean>(false);
 
-  const onDragStart = (clientY: number) => {
+  const startDrag = (clientY: number) => {
     dragStartYRef.current = clientY;
-    isDraggingRef.current = false;
+    dragDeltaRef.current = 0;
+    hasMovedRef.current = false;
+    setIsSheetDragging(true);
   };
-  const onDragMove = (clientY: number) => {
+
+  const moveDrag = (clientY: number) => {
     if (dragStartYRef.current === null) return;
     const delta = clientY - dragStartYRef.current;
-    if (Math.abs(delta) > 6) {
-      isDraggingRef.current = true;
+    if (Math.abs(delta) > 5) {
+      hasMovedRef.current = true;
     }
-    if (sheetExpanded && delta > 0) {
-      setSheetDragDelta(Math.min(delta, 250));
-    } else if (!sheetExpanded && delta < 0) {
-      setSheetDragDelta(Math.max(delta, -250));
+    // Clamping:
+    // If expanded, pulling down (delta > 0) closes the sheet.
+    // If collapsed, pulling up (delta < 0) opens the sheet.
+    if (sheetExpanded) {
+      const clamped = Math.max(-20, Math.min(delta, 280));
+      dragDeltaRef.current = clamped;
+      setSheetDragDelta(clamped);
+    } else {
+      const clamped = Math.min(20, Math.max(delta, -280));
+      dragDeltaRef.current = clamped;
+      setSheetDragDelta(clamped);
     }
   };
-  const onDragEnd = () => {
-    if (dragStartYRef.current !== null) {
-      if (sheetExpanded && sheetDragDelta > 25) {
+
+  const endDrag = () => {
+    if (dragStartYRef.current === null) return;
+    const finalDelta = dragDeltaRef.current;
+    const moved = hasMovedRef.current;
+    dragStartYRef.current = null;
+    dragDeltaRef.current = 0;
+    setIsSheetDragging(false);
+    setSheetDragDelta(0);
+
+    if (moved) {
+      // Threshold to trigger state change
+      if (sheetExpanded && finalDelta > 30) {
         setSheetExpanded(false);
-      } else if (!sheetExpanded && sheetDragDelta < -20) {
+      } else if (!sheetExpanded && finalDelta < -25) {
         setSheetExpanded(true);
       }
     }
-    dragStartYRef.current = null;
-    setSheetDragDelta(0);
-    // Suppress click immediately following drag
-    setTimeout(() => {
-      isDraggingRef.current = false;
-    }, 120);
   };
 
-  const handleHandleClick = () => {
-    if (isDraggingRef.current) return;
+  const toggleSheet = () => {
+    if (hasMovedRef.current) return;
     setSheetExpanded((prev) => !prev);
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return; // Only primary mouse button or touch
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    startDrag(e.clientY);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (dragStartYRef.current !== null) {
+      moveDrag(e.clientY);
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    endDrag();
+  };
+
+  const onPointerCancel = (e: React.PointerEvent) => {
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    endDrag();
   };
 
   // Synchronization Refs (Prevents infinite render loops)
@@ -1245,39 +1289,45 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ${
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 ${
             sheetExpanded
               ? "max-h-[75dvh] overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
-              ? "max-h-24 overflow-hidden"
-              : "max-h-60 overflow-hidden"
+              ? "max-h-28 overflow-hidden"
+              : "max-h-64 overflow-hidden"
           }`}
           style={{
             transform: sheetDragDelta !== 0 ? `translateY(${sheetDragDelta}px)` : undefined,
+            transition: isSheetDragging ? "none" : "transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.28s ease",
+            willChange: isSheetDragging ? "transform" : "auto",
           }}
         >
           {/* Interactive Drag Handle Area (Manual Move / Drag / Tap Toggle) */}
           <div
             role="button"
             tabIndex={0}
-            onClick={handleHandleClick}
-            onTouchStart={(e) => onDragStart(e.touches[0].clientY)}
-            onTouchMove={(e) => onDragMove(e.touches[0].clientY)}
-            onTouchEnd={onDragEnd}
-            className="w-full py-1.5 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1 select-none group touch-none"
+            onClick={toggleSheet}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+            onTouchEnd={endDrag}
+            className="w-full py-2 cursor-grab active:cursor-grabbing flex flex-col items-center justify-center gap-1.5 select-none group touch-none"
             title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag sheet up or down)"
           >
-            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-400 rounded-full transition-colors" />
-            <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-500 hover:text-slate-800 transition-colors">
+            <div className="w-14 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+            <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-600 group-hover:text-slate-900 transition-colors">
               {sheetExpanded ? (
                 <>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  <span>মানচিত্র দেখতে নিচে নামান</span>
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                  <span>মানচিত্র দেখতে স্লাইডার নিচে নামান</span>
                 </>
               ) : (
                 <>
-                  <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
-                  <span className="text-emerald-700">বুকিং ও ভাড়া দেখতে ট্যাপ করুন</span>
+                  <ChevronUp className="w-4 h-4 text-emerald-600 animate-bounce" />
+                  <span className="text-emerald-700">বুকিং ও ভাড়া দেখতে স্লাইডার উপরে তুলুন ⌃</span>
                 </>
               )}
             </div>
@@ -1289,7 +1339,14 @@ export function InteractiveBookingMap({
               /* Minimized Peek Mode (allows full map viewing while keeping fare accessible) */
               <div
                 onClick={() => setSheetExpanded(true)}
-                className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/95 border border-emerald-200 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerCancel}
+                onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+                onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+                onTouchEnd={endDrag}
+                className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/95 border-2 border-emerald-300 cursor-pointer shadow-sm active:scale-[0.99] transition-transform touch-none"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
@@ -1316,7 +1373,7 @@ export function InteractiveBookingMap({
                     e.stopPropagation();
                     setSheetExpanded(true);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all"
+                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
                 >
                   <span>বুকিং ⌃</span>
                 </button>

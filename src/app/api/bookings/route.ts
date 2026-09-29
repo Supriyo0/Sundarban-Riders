@@ -670,10 +670,26 @@ export async function GET(request: Request) {
     }
 
     if (status === "pending") {
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+
+      // Automatically cancel any pending bookings older than 3 minutes so no rider sees stale rides
+      try {
+        await admin
+          .from("bookings")
+          .update({
+            status: "cancelled",
+            cancelled_by: "system_timeout",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("status", "pending")
+          .lt("created_at", threeMinutesAgo);
+      } catch {}
+
       const { data, error } = await admin
         .from("bookings")
         .select("*")
         .eq("status", "pending")
+        .gte("created_at", threeMinutesAgo)
         .order("created_at", { ascending: false })
         .limit(20);
 
@@ -1452,14 +1468,16 @@ export async function PATCH(request: Request) {
     // ACTION: CANCEL
     // -------------------------------------------------------------
     if (action === "cancel") {
+      const isSystemTimeout = Boolean(body.isSystemTimeout) || body.cancelReason === "3_min_timeout_expired";
       const isCancelledByDriver = Boolean(driverId);
-      const cancelledBy = isCancelledByDriver ? "driver" : "customer";
+      const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
 
       const { data: updated, error: updateErr } = await admin
         .from("bookings")
         .update({
           status: "cancelled",
           cancelled_by: cancelledBy,
+          notes: isSystemTimeout ? "Auto-cancelled: 3 minutes expired without driver accept" : undefined,
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
@@ -1470,11 +1488,12 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      // If customer cancelled: increment customer cancellation_count in customers table
+      // If customer cancelled manually: increment customer cancellation_count in customers table
+      // (System 3-minute timeouts are NEVER penalized!)
       let newCancels = 0;
       let isBlocked = false;
 
-      if (!isCancelledByDriver && booking.customer_phone) {
+      if (!isCancelledByDriver && !isSystemTimeout && booking.customer_phone) {
         const cleanCustPhone = booking.customer_phone.replace(/[^0-9]/g, "");
         if (cleanCustPhone) {
           const { data: cust } = await admin

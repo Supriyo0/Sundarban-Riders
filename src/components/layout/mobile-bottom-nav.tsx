@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { Car, MapPin, History, Shield, Compass } from "lucide-react";
+import { Car, History, Shield, User } from "lucide-react";
 
-export type MobileNavTab = "home" | "map" | "trips" | "safety";
+export type MobileNavTab = "home" | "trips" | "safety" | "profile" | "map";
 
 interface MobileBottomNavProps {
   activeTab: MobileNavTab;
@@ -26,14 +26,6 @@ export function MobileBottomNav({
       indicatorColor: "bg-emerald-600",
     },
     {
-      id: "map" as const,
-      label: "লাইভ ম্যাপ",
-      icon: Compass,
-      activeColor: "from-sky-500/20 to-blue-500/10",
-      textColor: "text-sky-700",
-      indicatorColor: "bg-sky-600",
-    },
-    {
       id: "trips" as const,
       label: "হিস্ট্রি",
       icon: History,
@@ -48,6 +40,14 @@ export function MobileBottomNav({
       activeColor: "from-rose-500/20 to-red-500/10",
       textColor: "text-red-600",
       indicatorColor: "bg-red-600",
+    },
+    {
+      id: "profile" as const,
+      label: "প্রোফাইল",
+      icon: User,
+      activeColor: "from-blue-500/20 to-indigo-500/10",
+      textColor: "text-blue-700",
+      indicatorColor: "bg-blue-600",
     },
   ];
 

@@ -314,13 +314,13 @@ export function DriverRadarPanel({
 
         const bRes = await fetch("/api/bookings?status=pending");
         const bJson = await bRes.json();
-        if (bJson.bookings && Array.isArray(bJson.bookings)) {
-          setPendingBookings(bJson.bookings);
-        } else if (bJson.booking) {
-          setPendingBookings([bJson.booking]);
-        } else {
-          setPendingBookings([]);
-        }
+        const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
+        // Strictly filter out any pending ride older than 3 minutes (180s)
+        const validPending = rawBookings.filter((b: any) => {
+          if (!b.created_at) return true;
+          return Date.now() - new Date(b.created_at).getTime() <= 180 * 1000;
+        });
+        setPendingBookings(validPending);
       } catch (err) {
         console.warn("Radar fetch error:", err);
       }

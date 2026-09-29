@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Compass,
   KeyRound,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -460,6 +461,7 @@ function MobileAppPageContent() {
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [selectedHistoryTrip, setSelectedHistoryTrip] = useState<any | null>(null);
 
   const handleUpdateProfile = useCallback((updates: { name?: string; photo?: string }) => {
     setSession((prev: any) => {
@@ -664,8 +666,28 @@ function MobileAppPageContent() {
         }, 1000);
       } else {
         // 3-minute timeout reached without acceptance!
+        // Totally cancel the booking in database so no rider will ever see it again
+        const expiredBookingId = activeBookingId;
+        if (expiredBookingId) {
+          fetch("/api/bookings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "cancel",
+              bookingId: expiredBookingId,
+              cancelReason: "3_min_timeout_expired",
+              isSystemTimeout: true,
+            }),
+          }).catch(() => {});
+        }
+
         setSearchStatus("unaccepted");
-        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি।");
+        setActiveBookingId(null);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("sr_active_booking_id");
+          localStorage.removeItem("sr_search_status");
+        }
+        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
       }
     }
     return () => clearTimeout(timer);
@@ -2679,6 +2701,7 @@ function MobileAppPageContent() {
             activeTab={bottomNavTab}
             onTabChange={(t) => {
               if (t === "safety") setShowSosModal(true);
+              else if (t === "profile") setShowProfileModal(true);
               else setBottomNavTab(t);
             }}
             role="rider"
@@ -3300,6 +3323,7 @@ function MobileAppPageContent() {
           activeTab={bottomNavTab}
           onTabChange={(t) => {
             if (t === "safety") setShowSosModal(true);
+            else if (t === "profile") setShowProfileModal(true);
             else setBottomNavTab(t);
           }}
           role="passenger"
@@ -3349,7 +3373,7 @@ function MobileAppPageContent() {
             </div>
           </div>
         ) : bottomNavTab === "trips" ? (
-          <div className="space-y-4 pb-4">
+          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 pb-36">
             {/* Active ride mini-banner when on trips history tab */}
             {passengerBooking && (
               <button
@@ -3444,7 +3468,8 @@ function MobileAppPageContent() {
                   return (
                     <div
                       key={trip.id || idx}
-                      className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md"
+                      onClick={() => setSelectedHistoryTrip(trip)}
+                      className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md cursor-pointer active:scale-[0.99] group"
                     >
                       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                         <div className="flex items-center gap-2">
@@ -3495,9 +3520,10 @@ function MobileAppPageContent() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            setPickupText(trip.pickup_location);
-                            setDropText(trip.drop_location);
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPickupText(trip.pickup_location || trip.pickup_name || "");
+                            setDropText(trip.drop_location || trip.drop_name || "");
                             setBottomNavTab("home");
                             toast.success("ট্রিপের তথ্য লোড হয়েছে! এবার কনফার্ম করুন");
                           }}
@@ -3505,6 +3531,15 @@ function MobileAppPageContent() {
                         >
                           🔄 পুনরায় বুক করুন
                         </Button>
+                      </div>
+
+                      {/* Explicit Receipt & Rider Info Pill */}
+                      <div className="flex items-center justify-between pt-1 text-[10.5px] text-emerald-700 font-bold border-t border-slate-100/80">
+                        <span className="flex items-center gap-1">
+                          <Receipt className="w-3.5 h-3.5" />
+                          <span>রসিদ ও চালকের তথ্য দেখতে ট্যাপ করুন</span>
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                       </div>
                     </div>
                   );
@@ -3711,10 +3746,17 @@ function MobileAppPageContent() {
                     <Button
                       size="lg"
                       className="w-full h-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                      onClick={() => handleConfirmBooking()}
+                      onClick={() => {
+                        setActiveBookingId(null);
+                        if (typeof window !== "undefined") {
+                          localStorage.removeItem("sr_active_booking_id");
+                          localStorage.removeItem("sr_search_status");
+                        }
+                        handleConfirmBooking();
+                      }}
                     >
                       <RefreshCw className="w-4 h-4" />
-                      <span>🔄 পুনরায় খুঁজুন (Find Again)</span>
+                      <span>🔄 পুনরায় বুক করুন (নতুন বুকিং)</span>
                     </Button>
 
                     <Button
@@ -3948,6 +3990,160 @@ function MobileAppPageContent() {
             >
               বাতিল করবেন না, রাইড চালিয়ে যান
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 📄 MODAL: TRIP RECEIPT & RIDER/DRIVER DETAILS */}
+      {selectedHistoryTrip && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in select-none">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-slate-200 max-h-[85vh] overflow-y-auto animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-sm">
+                <Receipt className="w-4 h-4 text-emerald-600" />
+                <span>ট্রিপ রসিদ ও চালকের বিবরণ</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedHistoryTrip(null)}
+                className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Receipt Summary Card */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-white border border-emerald-200 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-black text-slate-700">
+                  #{selectedHistoryTrip.booking_number || selectedHistoryTrip.id?.slice(0, 8)}
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                    selectedHistoryTrip.status === "completed"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                      : selectedHistoryTrip.status === "cancelled"
+                      ? "bg-rose-100 text-rose-800 border-rose-300"
+                      : "bg-blue-100 text-blue-800 border-blue-300"
+                  }`}
+                >
+                  {selectedHistoryTrip.status === "completed"
+                    ? "সম্পূর্ণ ✓"
+                    : selectedHistoryTrip.status === "cancelled"
+                    ? "বাতিল ✕"
+                    : "চলমান 🟢"}
+                </span>
+              </div>
+
+              <div className="text-2xl font-black text-emerald-800 font-mono">
+                ₹{selectedHistoryTrip.final_fare || selectedHistoryTrip.estimated_fare || 30}.০০
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-600 border-t border-emerald-200/60 pt-1.5 font-medium">
+                <span>
+                  তারিখ:{" "}
+                  {selectedHistoryTrip.created_at
+                    ? new Date(selectedHistoryTrip.created_at).toLocaleDateString("bn-BD", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "আজ"}
+                </span>
+                <span>নগদ / UPI পরিশোধ</span>
+              </div>
+            </div>
+
+            {/* Route Points */}
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+              <div className="flex items-start gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1 shrink-0 ring-2 ring-emerald-100" />
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">পিকআপ (Pickup)</span>
+                  <p className="font-bold text-slate-800 leading-snug">
+                    {selectedHistoryTrip.pickup_location || selectedHistoryTrip.pickup_name || "পিকআপ পয়েন্ট"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="w-0.5 h-3 bg-slate-200 ml-1" />
+
+              <div className="flex items-start gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-red-500 mt-1 shrink-0 ring-2 ring-red-100" />
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold block">গন্তব্য (Drop)</span>
+                  <p className="font-bold text-slate-800 leading-snug">
+                    {selectedHistoryTrip.drop_location || selectedHistoryTrip.drop_name || "গন্তব্য পয়েন্ট"}
+                  </p>
+                </div>
+              </div>
+
+              {(selectedHistoryTrip.actual_distance_km || selectedHistoryTrip.distance_km) && (
+                <div className="text-[10.5px] font-bold text-emerald-800 pt-1 border-t border-slate-200/60">
+                  মোট দূরত্ব: {selectedHistoryTrip.actual_distance_km || selectedHistoryTrip.distance_km} কিমি
+                </div>
+              )}
+            </div>
+
+            {/* Driver / Rider Details */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+              <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide block">
+                🛺 টোটো চালকের তথ্য (Rider Details)
+              </span>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                    🛺
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                      <span>{selectedHistoryTrip.driver_name || selectedHistoryTrip.drivers?.name || "সুন্দরবন চালক"}</span>
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    </h4>
+                    <span className="text-[11px] font-mono font-bold text-slate-500">
+                      {selectedHistoryTrip.toto_number || selectedHistoryTrip.drivers?.toto_number || "সুন্দরবন স্মার্ট টোটো"}
+                    </span>
+                  </div>
+                </div>
+
+                {(selectedHistoryTrip.driver_phone || selectedHistoryTrip.drivers?.phone) && (
+                  <a
+                    href={`tel:${selectedHistoryTrip.driver_phone || selectedHistoryTrip.drivers?.phone}`}
+                    className="p-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                    title="চালকের সাথে কথা বলুন"
+                  >
+                    <Phone className="w-3.5 h-3.5 fill-white" />
+                    <span>কল করুন</span>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-2 pt-1">
+              <Button
+                onClick={() => {
+                  setPickupText(selectedHistoryTrip.pickup_location || selectedHistoryTrip.pickup_name || "");
+                  setDropText(selectedHistoryTrip.drop_location || selectedHistoryTrip.drop_name || "");
+                  setSelectedHistoryTrip(null);
+                  setBottomNavTab("home");
+                  toast.success("পিকআপ ও গন্তব্য সেট করা হয়েছে! এবার রাইড বুক করুন।");
+                }}
+                className="w-full h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md cursor-pointer"
+              >
+                🔄 এই রুটে পুনরায় রাইড বুক করুন
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => setSelectedHistoryTrip(null)}
+                className="w-full h-10 rounded-2xl text-xs text-slate-600 border-slate-200 cursor-pointer"
+              >
+                বন্ধ করুন
+              </Button>
+            </div>
           </div>
         </div>
       )}

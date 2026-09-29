@@ -138,91 +138,77 @@ export function InteractiveBookingMap({
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
-  // Draggable Bottom Slider Sheet State (Universal Pointer & Touch with zero-lag physics)
+  // Top Floating Search Card Slider State
+  const [topCardExpanded, setTopCardExpanded] = useState(true);
+  const topDragStartYRef = useRef<number | null>(null);
+  const topHasMovedRef = useRef<boolean>(false);
+
+  const startTopDrag = (clientY: number) => {
+    topDragStartYRef.current = clientY;
+    topHasMovedRef.current = false;
+  };
+  const moveTopDrag = (clientY: number) => {
+    if (topDragStartYRef.current === null) return;
+    const delta = clientY - topDragStartYRef.current;
+    if (Math.abs(delta) > 8) {
+      topHasMovedRef.current = true;
+    }
+  };
+  const endTopDrag = (clientY: number) => {
+    if (topDragStartYRef.current !== null) {
+      const delta = clientY - topDragStartYRef.current;
+      if (topHasMovedRef.current) {
+        if (topCardExpanded && delta < -18) {
+          setTopCardExpanded(false);
+        } else if (!topCardExpanded && delta > 18) {
+          setTopCardExpanded(true);
+        }
+      }
+    }
+    topDragStartYRef.current = null;
+    setTimeout(() => {
+      topHasMovedRef.current = false;
+    }, 120);
+  };
+
+  // Draggable Bottom Slider Sheet State (Unified Smooth Card with Tap + Swipe)
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const [sheetDragDelta, setSheetDragDelta] = useState(0);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
   const dragStartYRef = useRef<number | null>(null);
-  const dragDeltaRef = useRef<number>(0);
   const hasMovedRef = useRef<boolean>(false);
 
   const startDrag = (clientY: number) => {
     dragStartYRef.current = clientY;
-    dragDeltaRef.current = 0;
     hasMovedRef.current = false;
-    setIsSheetDragging(true);
   };
 
   const moveDrag = (clientY: number) => {
     if (dragStartYRef.current === null) return;
     const delta = clientY - dragStartYRef.current;
-    if (Math.abs(delta) > 5) {
+    if (Math.abs(delta) > 8) {
       hasMovedRef.current = true;
-    }
-    // Clamping:
-    // If expanded, pulling down (delta > 0) closes the sheet.
-    // If collapsed, pulling up (delta < 0) opens the sheet.
-    if (sheetExpanded) {
-      const clamped = Math.max(-20, Math.min(delta, 280));
-      dragDeltaRef.current = clamped;
-      setSheetDragDelta(clamped);
-    } else {
-      const clamped = Math.min(20, Math.max(delta, -280));
-      dragDeltaRef.current = clamped;
-      setSheetDragDelta(clamped);
     }
   };
 
-  const endDrag = () => {
-    if (dragStartYRef.current === null) return;
-    const finalDelta = dragDeltaRef.current;
-    const moved = hasMovedRef.current;
-    dragStartYRef.current = null;
-    dragDeltaRef.current = 0;
-    setIsSheetDragging(false);
-    setSheetDragDelta(0);
-
-    if (moved) {
-      // Threshold to trigger state change
-      if (sheetExpanded && finalDelta > 30) {
-        setSheetExpanded(false);
-      } else if (!sheetExpanded && finalDelta < -25) {
-        setSheetExpanded(true);
+  const endDrag = (clientY?: number) => {
+    if (dragStartYRef.current !== null && clientY !== undefined) {
+      const delta = clientY - dragStartYRef.current;
+      if (hasMovedRef.current) {
+        if (sheetExpanded && delta > 20) {
+          setSheetExpanded(false);
+        } else if (!sheetExpanded && delta < -20) {
+          setSheetExpanded(true);
+        }
       }
     }
+    dragStartYRef.current = null;
+    setTimeout(() => {
+      hasMovedRef.current = false;
+    }, 120);
   };
 
   const toggleSheet = () => {
     if (hasMovedRef.current) return;
     setSheetExpanded((prev) => !prev);
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return; // Only primary mouse button or touch
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {}
-    startDrag(e.clientY);
-  };
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (dragStartYRef.current !== null) {
-      moveDrag(e.clientY);
-    }
-  };
-
-  const onPointerUp = (e: React.PointerEvent) => {
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-    endDrag();
-  };
-
-  const onPointerCancel = (e: React.PointerEvent) => {
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-    endDrag();
   };
 
   // Synchronization Refs (Prevents infinite render loops)
@@ -1041,216 +1027,292 @@ export function InteractiveBookingMap({
       <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
         <div
           ref={searchContainerRef}
-          className="pointer-events-auto rounded-3xl p-3 shadow-[0_12px_36px_rgba(0,0,0,0.14)] border border-slate-200/80 space-y-2 backdrop-blur-xl animate-in slide-in-from-top-3 duration-300"
+          className={`pointer-events-auto rounded-3xl p-3 shadow-[0_12px_36px_rgba(0,0,0,0.14)] border border-slate-200/80 space-y-2 backdrop-blur-xl transition-all duration-300 ${
+            topCardExpanded
+              ? "max-h-[70vh] overflow-y-auto"
+              : "max-h-24 overflow-hidden"
+          }`}
           style={{
             background: "linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(248,250,252,0.95) 100%)",
           }}
         >
-          {/* Explicit Location Error Banner if GPS Permission Fails */}
-          {locationError && (
-            <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-300/80 text-amber-950 shadow-sm flex items-center justify-between gap-2 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 min-w-0">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span className="text-[11px] font-bold leading-tight line-clamp-2">
-                  {locationError}
+          {!topCardExpanded ? (
+            /* Minimized Top Search Bar (Compact Peek Mode) */
+            <div
+              onClick={() => setTopCardExpanded(true)}
+              onTouchStart={(e) => startTopDrag(e.touches[0].clientY)}
+              onTouchMove={(e) => moveTopDrag(e.touches[0].clientY)}
+              onTouchEnd={(e) => endTopDrag(e.changedTouches[0]?.clientY)}
+              onMouseDown={(e) => startTopDrag(e.clientY)}
+              onMouseUp={(e) => endTopDrag(e.clientY)}
+              className="flex flex-col gap-1.5 cursor-pointer select-none"
+              title="পিকআপ ও গন্তব্য পরিবর্তন করতে ট্যাপ বা নিচে নামান"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-100" />
+                  <span className="text-xs font-black text-slate-900 truncate">
+                    {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"}
+                  </span>
+                  <span className="text-slate-400 text-xs">➔</span>
+                  <span className="w-2.5 h-2.5 rounded-sm bg-red-500 shrink-0 ring-2 ring-red-100" />
+                  <span className="text-xs font-black text-slate-900 truncate">
+                    {dropInputValue ? dropInputValue.slice(0, 16) : "গন্তব্য খুঁজুন"}
+                  </span>
+                </div>
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 text-[10.5px] font-black shrink-0 border border-emerald-200">
+                  পরিবর্তন ⌄
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => fetchCurrentLocation(true)}
-                disabled={isLocating}
-                className="shrink-0 text-[10.5px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
-              >
-                {isLocating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
-                <span>অনুমতি দিন</span>
-              </button>
-            </div>
-          )}
-
-          {/* Out of Service Territory Error Banner */}
-          {isDropOutOfService && (
-            <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 shadow-md space-y-1.5 animate-in fade-in">
-              <div className="flex items-center gap-2 text-rose-700 font-black text-xs">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>⚠️ এই অঞ্চলে সুন্দরবন রাইডার্স পরিষেবা উপলব্ধ নয়</span>
-              </div>
-              <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
-                সুন্দরবন রাইডার্স পরিষেবা বর্তমানে কেবলমাত্র দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে লক্ষ্মীকান্তপুর, কুলপি, কাকদ্বীপ, নামখানা, সাগরদ্বীপ ও বকখালি অঞ্চলে) উপলব্ধ।
-              </p>
-              <div className="text-[10px] text-rose-600 font-bold flex flex-wrap gap-1 pt-0.5">
-                <span>উপলব্ধ অঞ্চল:</span>
-                <span className="bg-rose-100 px-1.5 py-0.5 rounded">ডায়মন্ড হারবার</span>
-                <span className="bg-rose-100 px-1.5 py-0.5 rounded">কাকদ্বীপ</span>
-                <span className="bg-rose-100 px-1.5 py-0.5 rounded">নামখানা</span>
-                <span className="bg-rose-100 px-1.5 py-0.5 rounded">সাগরদ্বীপ</span>
-                <span className="bg-rose-100 px-1.5 py-0.5 rounded">বকখালি</span>
-              </div>
-            </div>
-          )}
-
-          {/* Pickup & Drop Inputs with Uber Connecting Line */}
-          <div className="relative flex flex-col gap-2">
-            {/* Visual Connecting Line */}
-            <div className="absolute left-[18px] top-6 bottom-6 w-0.5 bg-slate-300 pointer-events-none z-10" />
-
-            {/* Row 1: Pickup Input */}
-            <div className="relative flex items-center">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20">
-                <span
-                  className={`w-2.5 h-2.5 rounded-full block ring-4 ${
-                    hasValidPickup
-                      ? "bg-emerald-500 ring-emerald-100"
-                      : "bg-amber-500 ring-amber-100 animate-pulse"
-                  }`}
-                />
-              </div>
-              <Input
-                type="text"
-                placeholder={
-                  locationError
-                    ? "পিকআপ স্থান লিখুন (GPS মেলেনি)..."
-                    : "পিকআপ অবস্থান লিখুন বা জিপিএস দিন..."
-                }
-                value={pickupInputValue}
-                onChange={(e) => handleQueryPlaces(e.target.value, "pickup")}
-                onFocus={() => handleQueryPlaces(pickupInputValue, "pickup")}
-                className={`h-10 pl-9 pr-18 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500 transition-all ${
-                  !hasValidPickup && !pickupInputValue.trim()
-                    ? "border-amber-400 bg-amber-50/40 placeholder:text-amber-700"
-                    : "border-slate-200/80"
-                }`}
-              />
-              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
-                <button
-                  type="button"
-                  onClick={() => fetchCurrentLocation(true)}
-                  disabled={isLocating}
-                  title="আমার সঠিক GPS অবস্থান"
-                  className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
-                    hasValidPickup
-                      ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                      : "bg-amber-100 hover:bg-amber-200 text-amber-800"
-                  }`}
-                >
-                  {isLocating ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                  ) : (
-                    <LocateFixed className="w-3.5 h-3.5" />
-                  )}
-                </button>
-                {pickupInputValue && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPickupInputValue("");
-                      setHasValidPickup(false);
-                      setPlaceSuggestions([]);
-                      syncMapRouteAndPins([0, 0], dropCoords, "", dropInputValue, { fitBounds: false });
-                    }}
-                    className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Row 2: Drop Input (Where to?) */}
-            <div className="relative flex items-center">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20">
-                <span className="w-2.5 h-2.5 rounded-sm bg-red-500 block ring-4 ring-red-100" />
-              </div>
-              <Input
-                type="text"
-                placeholder="কোথায় যাবেন? (Where to? Search destination...)"
-                value={dropInputValue}
-                onChange={(e) => handleQueryPlaces(e.target.value, "drop")}
-                onFocus={() => handleQueryPlaces(dropInputValue, "drop")}
-                className={`h-10 pl-9 pr-14 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all ${
-                  isDropOutOfService
-                    ? "border-rose-400 bg-rose-50/50 text-rose-900"
-                    : "border-slate-200/80"
-                }`}
-              />
-              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
-                <button
-                  type="button"
-                  onClick={handleSwap}
-                  title="পিকআপ ও গন্তব্য অদল-বদল"
-                  className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                </button>
-                {dropInputValue && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDropInputValue("");
-                      setIsDropOutOfService(false);
-                      setPlaceSuggestions([]);
-                      syncMapRouteAndPins(pickupCoords, [0, 0], pickupInputValue, "", { fitBounds: false });
-                    }}
-                    className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Live Auto-Suggest Places Dropdown */}
-          {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
-            <div className="pt-2 border-t border-slate-200/80 max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="px-1 pb-1 flex items-center justify-between text-[10.5px] font-bold text-slate-600">
-                <span className="flex items-center gap-1.5 text-emerald-800">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {activeSearchField === "drop" ? "Google Map Destination Suggestions" : "Google Map Pickup Suggestions"}
+              <div className="w-full pt-1 flex flex-col items-center justify-center gap-0.5">
+                <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+                <span className="text-[10px] font-bold text-emerald-700 animate-bounce">
+                  পিকআপ ও ড্রপ পরিবর্তন করতে নিচে নামান ⌄
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveSearchField(null)}
-                  className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-1.5 py-0.5 rounded bg-slate-100 cursor-pointer"
-                >
-                  ✕ বন্ধ
-                </button>
               </div>
-
-              {placeSuggestions.map((place, idx) => {
-                const inZone = place.isInServiceArea ?? isLocationInServiceArea(place.lat, place.lng);
-                return (
+            </div>
+          ) : (
+            /* Full Expanded Search Inputs */
+            <>
+              {/* Explicit Location Error Banner if GPS Permission Fails */}
+              {locationError && (
+                <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-300/80 text-amber-950 shadow-sm flex items-center justify-between gap-2 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-[11px] font-bold leading-tight line-clamp-2">
+                      {locationError}
+                    </span>
+                  </div>
                   <button
-                    key={idx}
                     type="button"
-                    onClick={() => handleSelectSuggestion(place)}
-                    className={`w-full p-2 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border shadow-2xs ${
-                      inZone
-                        ? "hover:bg-emerald-50 bg-white border-slate-100"
-                        : "hover:bg-rose-50 bg-rose-50/50 border-rose-200 opacity-90"
+                    onClick={() => fetchCurrentLocation(true)}
+                    disabled={isLocating}
+                    className="shrink-0 text-[10.5px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
+                  >
+                    {isLocating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
+                    <span>অনুমতি দিন</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Out of Service Territory Error Banner */}
+              {isDropOutOfService && (
+                <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 shadow-md space-y-1.5 animate-in fade-in">
+                  <div className="flex items-center gap-2 text-rose-700 font-black text-xs">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>⚠️ এই অঞ্চলে সুন্দরবন রাইডার্স পরিষেবা উপলব্ধ নয়</span>
+                  </div>
+                  <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
+                    সুন্দরবন রাইডার্স পরিষেবা বর্তমানে কেবলমাত্র দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে লক্ষ্মীকান্তপুর, কুলপি, কাকদ্বীপ, নামখানা, সাগরদ্বীপ ও বকখালি অঞ্চলে) উপলব্ধ।
+                  </p>
+                  <div className="text-[10px] text-rose-600 font-bold flex flex-wrap gap-1 pt-0.5">
+                    <span>উপলব্ধ অঞ্চল:</span>
+                    <span className="bg-rose-100 px-1.5 py-0.5 rounded">ডায়মন্ড হারবার</span>
+                    <span className="bg-rose-100 px-1.5 py-0.5 rounded">কাকদ্বীপ</span>
+                    <span className="bg-rose-100 px-1.5 py-0.5 rounded">নামখানা</span>
+                    <span className="bg-rose-100 px-1.5 py-0.5 rounded">সাগরদ্বীপ</span>
+                    <span className="bg-rose-100 px-1.5 py-0.5 rounded">বকখালি</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Pickup & Drop Inputs with Uber Connecting Line */}
+              <div className="relative flex flex-col gap-2">
+                {/* Visual Connecting Line */}
+                <div className="absolute left-[18px] top-6 bottom-6 w-0.5 bg-slate-300 pointer-events-none z-10" />
+
+                {/* Row 1: Pickup Input */}
+                <div className="relative flex items-center">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20">
+                    <span
+                      className={`w-2.5 h-2.5 rounded-full block ring-4 ${
+                        hasValidPickup
+                          ? "bg-emerald-500 ring-emerald-100"
+                          : "bg-amber-500 ring-amber-100 animate-pulse"
+                      }`}
+                    />
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder={
+                      locationError
+                        ? "পিকআপ স্থান লিখুন (GPS মেলেনি)..."
+                        : "পিকআপ অবস্থান লিখুন বা জিপিএস দিন..."
+                    }
+                    value={pickupInputValue}
+                    onChange={(e) => {
+                      setTopCardExpanded(true);
+                      handleQueryPlaces(e.target.value, "pickup");
+                    }}
+                    onFocus={() => {
+                      setTopCardExpanded(true);
+                      handleQueryPlaces(pickupInputValue, "pickup");
+                    }}
+                    className={`h-10 pl-9 pr-18 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500 transition-all ${
+                      !hasValidPickup && !pickupInputValue.trim()
+                        ? "border-amber-400 bg-amber-50/40 placeholder:text-amber-700"
+                        : "border-slate-200/80"
                     }`}
-                  >
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        inZone ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                  />
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
+                    <button
+                      type="button"
+                      onClick={() => fetchCurrentLocation(true)}
+                      disabled={isLocating}
+                      title="আমার সঠিক GPS অবস্থান"
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                        hasValidPickup
+                          ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
+                          : "bg-amber-100 hover:bg-amber-200 text-amber-800"
                       }`}
                     >
-                      <MapPin className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="overflow-hidden flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
-                        {!inZone && (
-                          <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-full shrink-0">
-                            Out of Service Area
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      {isLocating ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      ) : (
+                        <LocateFixed className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                    {pickupInputValue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPickupInputValue("");
+                          setHasValidPickup(false);
+                          setPlaceSuggestions([]);
+                          syncMapRouteAndPins([0, 0], dropCoords, "", dropInputValue, { fitBounds: false });
+                        }}
+                        className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Row 2: Drop Input (Where to?) */}
+                <div className="relative flex items-center">
+                  <div className="absolute left-3.5 top-1/2 -translate-y-1/2 z-20">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-red-500 block ring-4 ring-red-100" />
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="কোথায় যাবেন? (Where to? Search destination...)"
+                    value={dropInputValue}
+                    onChange={(e) => {
+                      setTopCardExpanded(true);
+                      handleQueryPlaces(e.target.value, "drop");
+                    }}
+                    onFocus={() => {
+                      setTopCardExpanded(true);
+                      handleQueryPlaces(dropInputValue, "drop");
+                    }}
+                    className={`h-10 pl-9 pr-14 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all ${
+                      isDropOutOfService
+                        ? "border-rose-400 bg-rose-50/50 text-rose-900"
+                        : "border-slate-200/80"
+                    }`}
+                  />
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
+                    <button
+                      type="button"
+                      onClick={handleSwap}
+                      title="পিকআপ ও গন্তব্য অদল-বদল"
+                      className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                    </button>
+                    {dropInputValue && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDropInputValue("");
+                          setIsDropOutOfService(false);
+                          setPlaceSuggestions([]);
+                          syncMapRouteAndPins(pickupCoords, [0, 0], pickupInputValue, "", { fitBounds: false });
+                        }}
+                        className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Auto-Suggest Places Dropdown */}
+              {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
+                <div className="pt-2 border-t border-slate-200/80 max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="px-1 pb-1 flex items-center justify-between text-[10.5px] font-bold text-slate-600">
+                    <span className="flex items-center gap-1.5 text-emerald-800">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      {activeSearchField === "drop" ? "Google Map Destination Suggestions" : "Google Map Pickup Suggestions"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSearchField(null)}
+                      className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-1.5 py-0.5 rounded bg-slate-100 cursor-pointer"
+                    >
+                      ✕ বন্ধ
+                    </button>
+                  </div>
+
+                  {placeSuggestions.map((place, idx) => {
+                    const inZone = place.isInServiceArea ?? isLocationInServiceArea(place.lat, place.lng);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(place)}
+                        className={`w-full p-2 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border shadow-2xs ${
+                          inZone
+                            ? "hover:bg-emerald-50 bg-white border-slate-100"
+                            : "hover:bg-rose-50 bg-rose-50/50 border-rose-200 opacity-90"
+                        }`}
+                      >
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                            inZone ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                          }`}
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="overflow-hidden flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
+                            {!inZone && (
+                              <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                Out of Service Area
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Top Card Slider Handle (Tap / Swipe Up to Minimize) */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setTopCardExpanded(false)}
+                onTouchStart={(e) => startTopDrag(e.touches[0].clientY)}
+                onTouchMove={(e) => moveTopDrag(e.touches[0].clientY)}
+                onTouchEnd={(e) => endTopDrag(e.changedTouches[0]?.clientY)}
+                onMouseDown={(e) => startTopDrag(e.clientY)}
+                onMouseUp={(e) => endTopDrag(e.clientY)}
+                className="w-full pt-2 pb-0.5 flex flex-col items-center justify-center gap-1 cursor-pointer select-none group border-t border-slate-100/90"
+                title="মানচিত্র বড় করে দেখতে উপরে তুলুন"
+              >
+                <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
+                <div className="flex items-center gap-1 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                  <span>মানচিত্র দেখতে উপরে তুলুন (Swipe up / Tap to minimize)</span>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -1324,348 +1386,317 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
-      {/* ------------------------------------------------------------- */}
-      {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
-      {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-        {dropInputValue && dropInputValue.trim() ? (
-          /* ============================================================ */
-          /* STATE A: DESTINATION SELECTED                                 */
-          /* ============================================================ */
-          !sheetExpanded ? (
-            /* Minimized Peek Mode: Crisp, Un-squished Floating Bar */
-            <div
-              onClick={() => setSheetExpanded(true)}
-              onTouchStart={(e) => startDrag(e.touches[0].clientY)}
-              onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
-              onTouchEnd={endDrag}
-              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-2xl bg-white/98 backdrop-blur-xl border-2 border-emerald-400 shadow-[0_8px_30px_rgba(0,0,0,0.18)] p-3 flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all animate-in slide-in-from-bottom-2 select-none"
-              title="বুকিং ও ভাড়া দেখতে ট্যাপ বা উপরে টানুন"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl shrink-0 shadow-xs">
-                  🛺
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
-                    <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
-                    {isDropOutOfService && (
-                      <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
-                        পরিষেবা বাইরে
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10.5px] text-slate-500 font-bold truncate block">
-                    {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"} ➔ {dropInputValue.slice(0, 14)} • {distanceKm} কিমি
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSheetExpanded(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-              >
-                <span>বুকিং ও ভাড়া ⌃</span>
-              </button>
-            </div>
-          ) : (
-            /* Full Expanded Sheet: Complete Ride Configuration */
-            <div
-              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 max-h-[75dvh] overflow-y-auto animate-in slide-in-from-bottom-3 duration-250 select-none"
-              style={{
-                transform: sheetDragDelta > 0 ? `translateY(${sheetDragDelta}px)` : undefined,
-                transition: isSheetDragging ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-            >
-              {/* Header with Drag Handle & Quick Minimize Button */}
-              <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                  onPointerCancel={onPointerCancel}
-                  onTouchStart={(e) => startDrag(e.touches[0].clientY)}
-                  onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
-                  onTouchEnd={endDrag}
-                  onClick={() => setSheetExpanded(false)}
-                  className="flex-1 py-1.5 flex items-center gap-2 cursor-pointer select-none group touch-none"
-                  title="মানচিত্র দেখতে নিচে নামান বা ট্যাপ করুন"
-                >
-                  <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
-                  <span className="text-[11px] font-bold text-slate-500 group-hover:text-slate-800 flex items-center gap-1">
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                    <span>মানচিত্র দেখতে নিচে নামান</span>
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSheetExpanded(false)}
-                  className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10.5px] font-black flex items-center gap-1 transition-all active:scale-95 cursor-pointer shrink-0"
-                  title="ম্যাপ দেখতে প্যানেল মিনিমাইজ করুন"
-                >
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                  <span>মিনিমাইজ</span>
-                </button>
-              </div>
-
-              {/* Route Summary Pill */}
-              <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
-                <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
-                    }`}
-                  />
-                  <span className="truncate">
-                    {hasValidPickup && pickupInputValue
-                      ? pickupInputValue.slice(0, 14)
-                      : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
-                  </span>
-                  <span>➔</span>
-                  <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
-                </div>
-                <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
-                  {isCalculatingRoute
-                    ? "রুট গণনা..."
-                    : distanceKm > 0
-                    ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
-                    : "রোড রুট"}
-                </span>
-              </div>
-
-              {/* Service Territory Warning */}
-              {isDropOutOfService && (
-                <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-1 animate-in fade-in">
-                  <div className="flex items-center gap-2 text-rose-700 font-black">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়</span>
-                  </div>
-                  <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
-                    আমাদের পরিষেবা বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার, কাকদ্বীপ, নামখানা, বকখালি ও সাগরদ্বীপ) উপলব্ধ।
-                  </p>
-                </div>
+        <div
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
+            sheetExpanded
+              ? "max-h-[75dvh] overflow-y-auto"
+              : dropInputValue && dropInputValue.trim()
+              ? "max-h-26 overflow-hidden"
+              : "max-h-20 overflow-hidden"
+          }`}
+        >
+          {/* Interactive Drag / Tap Handle */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={toggleSheet}
+            onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+            onTouchEnd={(e) => endDrag(e.changedTouches[0]?.clientY)}
+            onMouseDown={(e) => startDrag(e.clientY)}
+            onMouseUp={(e) => endDrag(e.clientY)}
+            className="w-full py-1 cursor-pointer flex flex-col items-center justify-center gap-1 select-none group touch-none"
+            title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag or tap to toggle)"
+          >
+            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+            <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
+              {sheetExpanded ? (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span>মানচিত্র দেখতে নিচে নামান (Tap to minimize)</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
+                  <span className="text-emerald-700 font-black">বুকিং ও ভাড়া দেখতে ট্যাপ বা উপরে তুলুন ⌃</span>
+                </>
               )}
+            </div>
+          </div>
 
-              {/* Uber Toto Vehicle Card */}
-              <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
+          {dropInputValue && dropInputValue.trim() ? (
+            /* ============================================================ */
+            /* STATE A: DESTINATION SELECTED                                 */
+            /* ============================================================ */
+            !sheetExpanded ? (
+              /* Minimized Peek Mode */
+              <div
+                onClick={() => setSheetExpanded(true)}
+                className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
+                title="সম্পূর্ণ বুকিং দেখতে ট্যাপ করুন"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
                     🛺
                   </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
-                      {fareResult.isNight && (
-                        <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                          <Moon className="w-2.5 h-2.5" />
-                          <span>+₹{fareResult.nightCharge}</span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
+                      <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
+                      {isDropOutOfService && (
+                        <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
+                          পরিষেবা বাইরে
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] font-semibold mt-0.5">
-                      {nearbyDrivers.length > 0 ? (
-                        <span className="text-emerald-700 font-bold">
-                          ⚡ ~{nearestDriverInfo?.etaMin || 3} মিনিটে পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি দূর)
-                        </span>
-                      ) : (
-                        <span className="text-amber-700 font-bold">
-                          ⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই
-                        </span>
-                      )}
-                    </p>
-                    <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
-                      <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                      <span>ভেরিফায়েড চালক • নন-স্টপ</span>
-                    </div>
+                    <span className="text-[10px] text-slate-500 font-bold truncate block">
+                      {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"} ➔ {dropInputValue.slice(0, 14)} • {distanceKm} কিমি
+                    </span>
                   </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <div className="text-2xl font-black text-emerald-700 font-mono">
-                    ₹{fareResult.totalFare}.০০
-                  </div>
-                  <span className="text-[9.5px] font-bold text-slate-500 block">
-                    {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
-                  </span>
-                </div>
-              </div>
-
-              {/* Passenger Selector (৩ জন বেস, ৪ জন +₹২/কিমি, ৫ জন +₹৪/কিমি, ৬ জন +₹৬/কিমি) */}
-              <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                  <div className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>যাত্রী সংখ্যা (Passenger Count):</span>
-                  </div>
-                  <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                    ৩ জনের পর প্রতি জন +₹২/কিমি
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[
-                    { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
-                    { cnt: 4, label: "৪ জন", tag: "+২/কিমি" },
-                    { cnt: 5, label: "৫ জন", tag: "+৪/কিমি" },
-                    { cnt: 6, label: "৬ জন", tag: "+৬/কিমি" },
-                  ].map((item) => {
-                    const isSelected = passengerCount === item.cnt;
-                    return (
-                      <button
-                        key={item.cnt}
-                        type="button"
-                        onClick={() => setPassengerCount(item.cnt)}
-                        className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
-                          isSelected
-                            ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
-                            : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
-                        }`}
-                      >
-                        <span className="text-xs font-black leading-tight">{item.label}</span>
-                        <span
-                          className={`text-[9px] font-bold leading-tight mt-0.5 ${
-                            isSelected ? "text-emerald-100" : "text-emerald-700"
-                          }`}
-                        >
-                          {item.tag}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Payment Mode */}
-              <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
-                <span className="flex items-center gap-1 font-bold text-slate-700">
-                  <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
-                </span>
-                <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                  ✓ সঠিক মিটার ভাড়া
-                </span>
-              </div>
-
-              {/* Uber Confirm Booking CTA Button */}
-              <Button
-                size="lg"
-                disabled={isBlocked || isDropOutOfService}
-                onClick={handleConfirmClick}
-                className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
-                  isBlocked || isDropOutOfService
-                    ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
-                    : !hasValidPickup
-                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
-                    : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
-                }`}
-              >
-                <span>
-                  {isBlocked
-                    ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
-                    : isDropOutOfService
-                    ? "🚫 পরিষেবা উপলব্ধ নয় (শুধুমাত্র দক্ষিণ সুন্দরবন ও ডায়মন্ড হারবার)"
-                    : !hasValidPickup
-                    ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
-                    : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
-                </span>
-              </Button>
-            </div>
-          )
-        ) : (
-          /* ============================================================ */
-          /* STATE B: NO DESTINATION SELECTED                             */
-          /* ============================================================ */
-          !sheetExpanded ? (
-            /* Minimized Search Shortcut Pill */
-            <div
-              onClick={() => setSheetExpanded(true)}
-              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-2xl bg-white/98 backdrop-blur-xl border border-slate-200 shadow-lg p-3 flex items-center justify-between cursor-pointer active:scale-[0.99] transition-all select-none"
-            >
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                <span className="text-emerald-600 font-black text-base">🛺</span>
-                <span>কোথায় যেতে চান? গন্তব্য নির্বাচন করুন</span>
-              </div>
-              <span className="text-emerald-700 font-bold text-xs bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                খুলুন ⌃
-              </span>
-            </div>
-          ) : (
-            /* Expanded Greeting & Fast Search */
-            <div
-              className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 max-h-64 overflow-hidden select-none animate-in slide-in-from-bottom-2"
-              style={{
-                transform: sheetDragDelta > 0 ? `translateY(${sheetDragDelta}px)` : undefined,
-                transition: isSheetDragging ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-            >
-              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSheetExpanded(false)}
-                  className="flex-1 py-1 flex items-center gap-2 cursor-pointer select-none group"
-                >
-                  <div className="w-10 h-1.5 bg-slate-300 group-hover:bg-slate-400 rounded-full transition-colors" />
-                  <span className="text-[10.5px] font-bold text-slate-500">ম্যাপ দেখতে নিচে নামান</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setSheetExpanded(false)}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSheetExpanded(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
                 >
-                  মিনিমাইজ ⌄
+                  <span>বুকিং ⌃</span>
                 </button>
               </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-extrabold text-base text-slate-900 leading-tight">
-                    👋 নমস্কার! কোথায় যেতে চান?
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {hasValidPickup
-                      ? `পিকআপ: ${pickupInputValue.slice(0, 20)}`
-                      : "ওপরে গন্তব্য লিখুন অথবা নিচের শর্টকাটে ট্যাপ করুন"}
-                  </p>
-                </div>
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
-                  🛺
-                </div>
-              </div>
-
-              {/* Tap to search shortcut bar */}
-              <button
-                type="button"
-                onClick={() => setActiveSearchField("drop")}
-                className="w-full p-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-left text-xs font-bold text-slate-600 flex items-center justify-between transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Search className="w-4 h-4 text-emerald-600" />
-                  <span>গন্তব্য নির্বাচন করুন... (Search destination)</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
-
-              <div className="flex items-center justify-between text-[11px] text-emerald-800 font-bold pt-1 px-1">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>
-                    {nearbyDrivers.length > 0
-                      ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমির মধ্যে)`
-                      : "⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই"}
+            ) : (
+              /* Full Expanded Sheet */
+              <>
+                {/* Route Summary Pill */}
+                <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
+                      }`}
+                    />
+                    <span className="truncate">
+                      {hasValidPickup && pickupInputValue
+                        ? pickupInputValue.slice(0, 14)
+                        : "⚠️ পিকআপ স্থান নির্বাচন করুন"}
+                    </span>
+                    <span>➔</span>
+                    <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
+                  </div>
+                  <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
+                    {isCalculatingRoute
+                      ? "রুট গণনা..."
+                      : distanceKm > 0
+                      ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
+                      : "রোড রুট"}
                   </span>
+                </div>
+
+                {/* Service Territory Warning */}
+                {isDropOutOfService && (
+                  <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-1 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-rose-700 font-black">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>নির্বাচিত গন্তব্যে রাইড বুকিং সম্ভব নয়</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 font-semibold leading-relaxed">
+                      আমাদের পরিষেবা বর্তমানে কেবল দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার, কাকদ্বীপ, নামখানা, বকখালি ও সাগরদ্বীপ) উপলব্ধ।
+                    </p>
+                  </div>
+                )}
+
+                {/* Uber Toto Vehicle Card */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
+                      🛺
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="font-black text-sm text-slate-900">সুন্দরবন স্মার্ট টোটো</h4>
+                        {fareResult.isNight && (
+                          <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                            <Moon className="w-2.5 h-2.5" />
+                            <span>+₹{fareResult.nightCharge}</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-semibold mt-0.5">
+                        {nearbyDrivers.length > 0 ? (
+                          <span className="text-emerald-700 font-bold">
+                            ⚡ ~{nearestDriverInfo?.etaMin || 3} মিনিটে পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি দূর)
+                          </span>
+                        ) : (
+                          <span className="text-amber-700 font-bold">
+                            ⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                        <span>ভেরিফায়েড চালক • নন-স্টপ</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <div className="text-2xl font-black text-emerald-700 font-mono">
+                      ₹{fareResult.totalFare}.০০
+                    </div>
+                    <span className="text-[9.5px] font-bold text-slate-500 block">
+                      {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Passenger Selector */}
+                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>যাত্রী সংখ্যা (Passenger Count):</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                      ৩ জনের পর প্রতি জন +₹২/কিমি
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { cnt: 3, label: "৩ জন", tag: "বেস ভাড়া" },
+                      { cnt: 4, label: "৪ জন", tag: "+২/কিমি" },
+                      { cnt: 5, label: "৫ জন", tag: "+৪/কিমি" },
+                      { cnt: 6, label: "৬ জন", tag: "+৬/কিমি" },
+                    ].map((item) => {
+                      const isSelected = passengerCount === item.cnt;
+                      return (
+                        <button
+                          key={item.cnt}
+                          type="button"
+                          onClick={() => setPassengerCount(item.cnt)}
+                          className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
+                              : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
+                          }`}
+                        >
+                          <span className="text-xs font-black leading-tight">{item.label}</span>
+                          <span
+                            className={`text-[9px] font-bold leading-tight mt-0.5 ${
+                              isSelected ? "text-emerald-100" : "text-emerald-700"
+                            }`}
+                          >
+                            {item.tag}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Payment Mode */}
+                <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
+                  <span className="flex items-center gap-1 font-bold text-slate-700">
+                    <span>💵 পেমেন্ট:</span> ট্রিপ শেষে নগদ / UPI ক্যাশ
+                  </span>
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    ✓ সঠিক মিটার ভাড়া
+                  </span>
+                </div>
+
+                {/* Confirm CTA */}
+                <Button
+                  size="lg"
+                  disabled={isBlocked || isDropOutOfService}
+                  onClick={handleConfirmClick}
+                  className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                    isBlocked || isDropOutOfService
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
+                      : !hasValidPickup
+                      ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
+                      : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
+                  }`}
+                >
+                  <span>
+                    {isBlocked
+                      ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
+                      : isDropOutOfService
+                      ? "🚫 পরিষেবা উপলব্ধ নয় (শুধুমাত্র দক্ষিণ সুন্দরবন ও ডায়মন্ড হারবার)"
+                      : !hasValidPickup
+                      ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
+                      : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}
+                  </span>
+                </Button>
+              </>
+            )
+          ) : (
+            /* ============================================================ */
+            /* STATE B: NO DESTINATION SELECTED                             */
+            /* ============================================================ */
+            !sheetExpanded ? (
+              <div
+                onClick={() => setSheetExpanded(true)}
+                className="flex items-center justify-between p-2 rounded-2xl bg-emerald-50/70 border border-emerald-200 cursor-pointer shadow-xs select-none"
+              >
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                  <span className="text-emerald-600 font-black text-sm">🛺</span>
+                  <span>কোথায় যেতে চান? গন্তব্য নির্বাচন করুন</span>
+                </div>
+                <span className="text-emerald-700 font-bold text-xs bg-white px-2 py-0.5 rounded-lg border border-emerald-200">
+                  খুলুন ⌃
                 </span>
-                <span className="text-slate-500 font-semibold">⚡ দ্রুত পিকআপ</span>
               </div>
-            </div>
-          )
-        )}
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-extrabold text-base text-slate-900 leading-tight">
+                      👋 নমস্কার! কোথায় যেতে চান?
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {hasValidPickup
+                        ? `পিকআপ: ${pickupInputValue.slice(0, 20)}`
+                        : "ওপরে গন্তব্য লিখুন অথবা নিচের শর্টকাটে ট্যাপ করুন"}
+                    </p>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+                    🛺
+                  </div>
+                </div>
+
+                {/* Tap to search shortcut bar */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTopCardExpanded(true);
+                    setActiveSearchField("drop");
+                  }}
+                  className="w-full p-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 text-left text-xs font-bold text-slate-600 flex items-center justify-between transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <Search className="w-4 h-4 text-emerald-600" />
+                    <span>গন্তব্য নির্বাচন করুন... (Search destination)</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </button>
+
+                <div className="flex items-center justify-between text-[11px] text-emerald-800 font-bold pt-1 px-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>
+                      {nearbyDrivers.length > 0
+                        ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমির মধ্যে)`
+                        : "⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই"}
+                    </span>
+                  </span>
+                  <span className="text-slate-500 font-semibold">⚡ দ্রুত পিকআপ</span>
+                </div>
+              </>
+            )
+          )}
+        </div>
       </div>
     </div>
   );

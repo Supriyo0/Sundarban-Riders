@@ -10,31 +10,30 @@ import {
   Navigation,
   CheckCircle2,
   AlertCircle,
-  Eye,
   ShieldCheck,
   Radio,
   ArrowRight,
-  History,
   TrendingUp,
   Receipt,
   Clock,
   Calendar,
   X,
   IndianRupee,
+  Layers,
   ChevronRight,
-  Filter,
-  Smartphone,
-  Globe,
-  ExternalLink,
+  AlertTriangle,
+  Star,
+  LogOut,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import "leaflet/dist/leaflet.css";
 
 function cleanLocation(text?: string | null): string {
   if (!text) return "নির্দিষ্ট করা হয়নি";
   return text.replace(/\s*\(GPS:[^)]*\)/i, "").trim();
 }
-import { toast } from "sonner";
-import "leaflet/dist/leaflet.css";
 
 // Calculate Haversine distance in km
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -62,6 +61,8 @@ interface DriverRadarPanelProps {
   } | null;
   isOnline: boolean;
   onAcceptRide: (booking: any) => void;
+  onToggleOnline?: (nextState: boolean) => void;
+  onLogout?: () => void;
   initialTab?: "radar" | "trips";
 }
 
@@ -69,38 +70,37 @@ export function DriverRadarPanel({
   driverSession,
   isOnline,
   onAcceptRide,
-  initialTab,
+  onToggleOnline,
+  onLogout,
+  initialTab = "radar",
 }: DriverRadarPanelProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const tileLayerRef = useRef<any>(null);
   const myMarkerRef = useRef<any>(null);
-  const otherDriversMarkersRef = useRef<any[]>([]);
   const customerMarkersRef = useRef<any[]>([]);
 
-  // 2 Map Options: Inbuilt vs Google Maps
-  const [mapViewOption, setMapViewOption] = useState<"inbuilt" | "google">("inbuilt");
-
-  // Navigation Tab between Radar & Trip History
-  const [activeTab, setActiveTab] = useState<"radar" | "trips">(initialTab || "radar");
+  // Tab between Radar & Trip History
+  const [activeTab, setActiveTab] = useState<"radar" | "trips">(initialTab);
 
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
+    if (initialTab) setActiveTab(initialTab);
   }, [initialTab]);
 
-  // Driver's own current GPS location
-  const [driverCoords, setDriverCoords] = useState<[number, number]>([21.8760, 88.1920]);
-  const [driverLocationName, setDriverLocationName] = useState<string>("আপনার লাইভ অবস্থান খুঁজছে...");
-  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
-  const [lastUpdatedTime, setLastUpdatedTime] = useState<string>("এইমাত্র");
+  // Map Tile Mode
+  const [mapLayer, setMapLayer] = useState<"streets" | "satellite">("streets");
+
+  // Driver GPS Location (Strict: null/0 if permission denied, no fake Kakdwip)
+  const [driverCoords, setDriverCoords] = useState<[number, number]>([0, 0]);
+  const [driverLocationName, setDriverLocationName] = useState<string>("");
+  const [hasValidLocation, setHasValidLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
 
   // Entities around driver
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
-  const [filterMode, setFilterMode] = useState<"all" | "customers" | "drivers">("all");
-  const [selectedEntity, setSelectedEntity] = useState<any | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
 
   // Trip History State
   const [driverTrips, setDriverTrips] = useState<any[]>([]);
@@ -118,65 +118,47 @@ export function DriverRadarPanel({
     todayEarnings: 0,
   });
   const [loadingTrips, setLoadingTrips] = useState(false);
-  const [tripFilter, setTripFilter] = useState<"all" | "completed" | "cancelled">("all");
   const [selectedTripDetail, setSelectedTripDetail] = useState<any | null>(null);
 
-  // 1. Fetch & update Driver's own real-time GPS location (Dual-stage: fast coarse + accurate GPS)
-  const updateDriverLocation = useCallback(async (userInitiated: any = false) => {
-    const isUserTap = userInitiated === true;
+  // 1. Fetch & update Driver's own real-time GPS location
+  const updateDriverLocation = useCallback(async (userInitiated = false) => {
     if (typeof window === "undefined" || !navigator.geolocation) {
-      if (isUserTap) toast.error("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়");
+      const msg = "আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়";
+      setLocationError(msg);
+      if (userInitiated) toast.error(msg);
       return;
     }
 
     setIsUpdatingLocation(true);
 
-    const handleDriverPosition = async (latitude: number, longitude: number, accuracy = 20) => {
+    const handleDriverPosition = async (latitude: number, longitude: number) => {
       const newCoords: [number, number] = [latitude, longitude];
       setDriverCoords(newCoords);
-      setGpsAccuracy(Math.round(accuracy));
-      setLastUpdatedTime(new Date().toLocaleTimeString("bn-BD", { hour: "2-digit", minute: "2-digit" }));
+      setHasValidLocation(true);
+      setLocationError(null);
 
-      // Center map to driver
+      // Center map & update driver Toto marker
       if (myMarkerRef.current) {
         myMarkerRef.current.setLatLng(newCoords);
       }
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo(newCoords, 15, { duration: 1.0 });
+        mapInstanceRef.current.flyTo(newCoords, 16, { duration: 1.0 });
       }
 
-      // Reverse geocode driver address (client fast fallback -> server)
+      // Reverse geocode driver address
       let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
       try {
-        const bgRes = await fetch(
-          `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=bn`
-        );
-        if (bgRes.ok) {
-          const bgData = await bgRes.json();
-          const place = [
-            bgData.locality || bgData.localityInfo?.administrative?.[3]?.name,
-            bgData.city || bgData.principalSubdivision,
-          ]
-            .filter(Boolean)
-            .join(", ");
-          if (place) resolvedName = place;
+        const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
+        const data = await res.json();
+        if (data && data.name) {
+          resolvedName = data.name;
         }
       } catch {}
-
-      if (resolvedName.startsWith("অবস্থান")) {
-        try {
-          const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
-          const data = await res.json();
-          if (data && data.name) {
-            resolvedName = data.name;
-          }
-        } catch {}
-      }
 
       setDriverLocationName(resolvedName);
       setIsUpdatingLocation(false);
       if (userInitiated) {
-        toast.success(`📍 আপনার বর্তমান অবস্থান আপডেট হয়েছে: ${resolvedName}`);
+        toast.success(`📍 আপনার অবস্থান আপডেট হয়েছে: ${resolvedName}`);
       }
 
       // Persist real location to driver record in database
@@ -197,26 +179,29 @@ export function DriverRadarPanel({
       }
     };
 
-    // Request precise satellite GPS with maximumAge: 0
+    const handleFail = (err: GeolocationPositionError) => {
+      setIsUpdatingLocation(false);
+      setHasValidLocation(false);
+      const msg =
+        err.code === 1
+          ? "⚠️ চালকের GPS পারমিশন বন্ধ আছে। রাইড পেতে ফোনের লোকেশন অন করুন।"
+          : "⚠️ GPS সিগন্যাল পাওয়া যাচ্ছে না। অনুগ্রহ করে ফোনের লোকেশন/GPS অন করুন।";
+      setLocationError(msg);
+      setDriverLocationName("লোকেশন বন্ধ");
+      // Do NOT set a fake random coordinate!
+      setDriverCoords([0, 0]);
+
+      if (userInitiated) {
+        toast.error(msg, { duration: 5000 });
+      }
+    };
+
     navigator.geolocation.getCurrentPosition(
-      (accuratePos) => {
-        handleDriverPosition(accuratePos.coords.latitude, accuratePos.coords.longitude, accuratePos.coords.accuracy);
-      },
+      (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude),
       (err) => {
-        // Fallback to coarse if high accuracy satellite timed out
         navigator.geolocation.getCurrentPosition(
-          (fallbackPos) => {
-            handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude, fallbackPos.coords.accuracy);
-          },
-          (finalErr) => {
-            setIsUpdatingLocation(false);
-            console.warn("Driver GPS warning:", finalErr.message);
-            if (finalErr.code === 1) {
-              if (userInitiated) toast.error("ব্রাউজারে লোকেশন অনুমতি (Allow) দিন যাতে আপনার বর্তমান অবস্থান স্বয়ংক্রিয়ভাবে পাওয়া যায়।");
-            } else if (userInitiated) {
-              toast.info("GPS সিগন্যাল দুর্বল, ডিভাইসের লোকেশন/GPS অন করুন।");
-            }
-          },
+          (fallbackPos) => handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
+          (fallbackErr) => handleFail(fallbackErr),
           { enableHighAccuracy: false, timeout: 8000 }
         );
       },
@@ -224,12 +209,56 @@ export function DriverRadarPanel({
     );
   }, [driverSession?.driverId, isOnline]);
 
-  // Proactively fetch driver GPS on component load
   useEffect(() => {
-    updateDriverLocation();
-  }, [updateDriverLocation]);
+    updateDriverLocation(false);
 
-  // 2. Fetch Driver Trip History
+    if (typeof window === "undefined" || !navigator.geolocation) return;
+
+    // Continuous real live location tracking for driver radar
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        if (latitude && longitude && latitude !== 0) {
+          const newCoords: [number, number] = [latitude, longitude];
+          setDriverCoords(newCoords);
+          setHasValidLocation(true);
+          setLocationError(null);
+
+          if (myMarkerRef.current) {
+            myMarkerRef.current.setLatLng(newCoords);
+          }
+
+          // Persist real live coordinates to database periodically
+          if (driverSession?.driverId && isOnline) {
+            fetch("/api/drivers", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: driverSession.driverId,
+                latitude,
+                longitude,
+                is_active: true,
+              }),
+            }).catch(() => {});
+          }
+        }
+      },
+      (err) => {
+        console.warn("[DriverRadar] Continuous GPS watch notice:", err.message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 4000,
+        timeout: 10000,
+      }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [updateDriverLocation, driverSession?.driverId, isOnline]);
+
+  // 2. Fetch Driver Trip History & Today's Earnings
   const fetchDriverTrips = useCallback(async () => {
     try {
       setLoadingTrips(true);
@@ -257,19 +286,12 @@ export function DriverRadarPanel({
     fetchDriverTrips();
   }, [fetchDriverTrips]);
 
-  useEffect(() => {
-    if (activeTab === "trips") {
-      fetchDriverTrips();
-    }
-  }, [activeTab, fetchDriverTrips]);
-
-  // 3. Poll for other active drivers & waiting customers
+  // 3. Poll for active drivers & waiting customers
   useEffect(() => {
     let pollTimer: NodeJS.Timeout;
 
     const fetchRadarEntities = async () => {
       try {
-        // Fetch real registered drivers
         const dRes = await fetch("/api/drivers");
         const dJson = await dRes.json();
         if (dJson.drivers && Array.isArray(dJson.drivers)) {
@@ -290,7 +312,6 @@ export function DriverRadarPanel({
           setOtherDrivers(others);
         }
 
-        // Fetch pending waiting customer bookings
         const bRes = await fetch("/api/bookings?status=pending");
         const bJson = await bRes.json();
         if (bJson.bookings && Array.isArray(bJson.bookings)) {
@@ -306,35 +327,75 @@ export function DriverRadarPanel({
     };
 
     fetchRadarEntities();
-    pollTimer = setInterval(fetchRadarEntities, 4000);
+    pollTimer = setInterval(fetchRadarEntities, 3500);
 
     return () => clearInterval(pollTimer);
   }, [driverSession?.driverId]);
 
-  // 4A. Initialize Leaflet Map ONCE
+  // 4. Initialize Full-Screen Leaflet Map
   useEffect(() => {
     let isMounted = true;
     if (activeTab !== "radar") return;
 
     async function initDriverMap() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
-      if (mapInstanceRef.current) return;
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.invalidateSize();
+        } catch {}
+        return;
+      }
 
-      const L = await import("leaflet");
+      const L = (await import("leaflet")).default || (await import("leaflet"));
+
+      if (mapContainerRef.current) {
+        (mapContainerRef.current as any)._leaflet_id = null;
+      }
+
+      const initialCenter: [number, number] = hasValidLocation && driverCoords[0] !== 0
+        ? driverCoords
+        : [21.585, 88.251]; // Fraserganj region overview
 
       const map = L.map(mapContainerRef.current, {
-        center: driverCoords,
-        zoom: 14,
+        center: initialCenter,
+        zoom: 16,
         zoomControl: false,
-        scrollWheelZoom: false,
       });
 
-      L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
+      const streetUrl = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+      const tiles = L.tileLayer(streetUrl, {
         maxZoom: 20,
         attribution: "© Google Maps",
       }).addTo(map);
+      tileLayerRef.current = tiles;
 
-      mapInstanceRef.current = map;
+      // Driver's Live Toto Marker (Only added if valid GPS coordinates)
+      if (hasValidLocation && driverCoords[0] !== 0) {
+        const driverTotoIcon = L.divIcon({
+          className: "custom-driver-toto-pin",
+          html: `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+              <div style="position: absolute; width: 48px; height: 48px; background: rgba(16,185,129,0.25); border-radius: 50%; animation: ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
+              <div style="width: 36px; height: 36px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 14px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 18px; color: white;">
+                🛺
+              </div>
+            </div>
+          `,
+          iconSize: [0, 0],
+        });
+        const dMarker = L.marker(driverCoords, { icon: driverTotoIcon }).addTo(map);
+        myMarkerRef.current = dMarker;
+      }
+
+      if (isMounted) {
+        mapInstanceRef.current = map;
+      }
+
+      setTimeout(() => {
+        try {
+          map.invalidateSize();
+        } catch {}
+      }, 200);
     }
 
     initDriverMap();
@@ -349,807 +410,404 @@ export function DriverRadarPanel({
     };
   }, [activeTab]);
 
-  // 4B. Dynamically update Markers on Map without destroying/flickering the map
+  // Update Pending Customer Requests on Map
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
+    if (!mapInstanceRef.current || activeTab !== "radar") return;
 
-    import("leaflet").then((L) => {
-      // Driver's own vehicle marker
-      if (!myMarkerRef.current) {
-        const myVehicleIcon = L.divIcon({
-          className: "driver-my-vehicle-pin",
+    import("leaflet").then((mod) => {
+      const L = (mod as any).default || mod;
+
+      customerMarkersRef.current.forEach((m) => m.remove());
+      customerMarkersRef.current = [];
+
+      pendingBookings.forEach((b) => {
+        const lat = Number(b.pickup_lat);
+        const lng = Number(b.pickup_lng);
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
+        const dist = hasValidLocation && driverCoords[0] !== 0
+          ? calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng)
+          : null;
+
+        const customerPin = L.divIcon({
+          className: "custom-customer-pin",
           html: `
-            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-              <div style="background: #047857; color: white; font-weight: 800; font-size: 10px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 6px rgba(0,0,0,0.25); white-space: nowrap; margin-bottom: 2px; border: 1.5px solid white;">
-                ⭐ আমার টোটো (${driverSession?.totoNumber || "আমি"})
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: pointer;">
+              <div style="background: #0f172a; color: white; font-weight: 800; font-size: 10.5px; padding: 3px 8px; border-radius: 9999px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; margin-bottom: 2px; border: 1.5px solid #f59e0b; display: flex; align-items: center; gap: 3px;">
+                <span>👤 ₹${b.estimated_fare || 40}</span>
+                ${dist !== null ? `<span style="color:#94a3b8; font-size:9px;">• ${dist}km</span>` : ""}
               </div>
-              <div style="position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
-                <div style="position: absolute; inset: 0; background: #10b981; opacity: 0.35; border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-                <div style="width: 32px; height: 32px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 12px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                  🛺
-                </div>
+              <div style="width: 24px; height: 24px; background: #f59e0b; border: 2.5px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(245,158,11,0.5); display: flex; align-items: center; justify-content: center;">
+                <div style="width: 6px; height: 6px; background: white; border-radius: 50%;"></div>
               </div>
             </div>
           `,
           iconSize: [0, 0],
         });
-        myMarkerRef.current = L.marker(driverCoords, { icon: myVehicleIcon, zIndexOffset: 1000 }).addTo(map);
-      } else {
-        myMarkerRef.current.setLatLng(driverCoords);
-      }
 
-      // Plot Other Registered Active Drivers (Blue icons)
-      otherDriversMarkersRef.current.forEach((m) => m.remove());
-      otherDriversMarkersRef.current = [];
-
-      if (filterMode !== "customers" && otherDrivers.length > 0) {
-        otherDrivers.forEach((od) => {
-          const lat = Number(od.latitude);
-          const lng = Number(od.longitude);
-          if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
-
-          const dist = calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng);
-          const otherDriverIcon = L.divIcon({
-            className: "driver-other-pin",
-            html: `
-              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); cursor: pointer;">
-                <div style="background: white; border: 1.5px solid #2563eb; color: #1e40af; font-weight: 800; font-size: 9px; padding: 1px 6px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                  🛺 ${od.name || "চালক"} [${dist} কিমি]
-                </div>
-                <div style="width: 28px; height: 28px; background: #eff6ff; border: 2px solid #2563eb; border-radius: 50%; box-shadow: 0 2px 8px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: center; font-size: 14px;">
-                  🛺
-                </div>
-              </div>
-            `,
-            iconSize: [0, 0],
+        try {
+          const marker = L.marker([lat, lng], { icon: customerPin }).addTo(mapInstanceRef.current);
+          marker.on("click", () => {
+            setSelectedCustomer({ ...b, distanceKm: dist });
+            if (mapInstanceRef.current) mapInstanceRef.current.flyTo([lat, lng], 16, { duration: 0.8 });
           });
-
-          const odm = L.marker([lat, lng], { icon: otherDriverIcon }).addTo(map);
-          odm.on("click", () => {
-            setSelectedEntity({ type: "driver", data: od, distance: dist });
-          });
-          otherDriversMarkersRef.current.push(odm);
-        });
-      }
-
-      // Plot Nearby Waiting Customers (Orange/Red icons)
-      customerMarkersRef.current.forEach((m) => m.remove());
-      customerMarkersRef.current = [];
-
-      if (filterMode !== "drivers" && pendingBookings.length > 0) {
-        pendingBookings.forEach((b) => {
-          const lat = b.pickup_lat ? Number(b.pickup_lat) : driverCoords[0] + 0.008;
-          const lng = b.pickup_lng ? Number(b.pickup_lng) : driverCoords[1] + 0.006;
-          const dist = calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng);
-
-          const customerIcon = L.divIcon({
-            className: "driver-customer-pin",
-            html: `
-              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -100%); cursor: pointer;">
-                <div style="background: #f97316; color: white; font-weight: 800; font-size: 10px; padding: 2px 8px; border-radius: 9999px; box-shadow: 0 4px 8px rgba(249,115,22,0.4); white-space: nowrap; margin-bottom: 2px; border: 1.5px solid white;">
-                  👤 ${b.customer_name || "যাত্রী"} (₹${b.estimated_fare})
-                </div>
-                <div style="width: 30px; height: 30px; background: #ea580c; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 10px rgba(234,88,12,0.5); display: flex; align-items: center; justify-content: center; font-size: 15px;">
-                  📍
-                </div>
-              </div>
-            `,
-            iconSize: [0, 0],
-          });
-
-          const cm = L.marker([lat, lng], { icon: customerIcon, zIndexOffset: 500 }).addTo(map);
-          cm.on("click", () => {
-            setSelectedEntity({ type: "customer", data: b, distance: dist });
-          });
-          customerMarkersRef.current.push(cm);
-        });
-      }
+          customerMarkersRef.current.push(marker);
+        } catch {}
+      });
     });
-  }, [driverCoords, otherDrivers, pendingBookings, filterMode, driverSession?.totoNumber]);
+  }, [pendingBookings, driverCoords, hasValidLocation, activeTab]);
 
-  // Filtered trips list
-  const filteredTrips = driverTrips.filter((t) => {
-    if (tripFilter === "completed") return t.status === "completed";
-    if (tripFilter === "cancelled") return t.status === "cancelled";
-    return true;
-  });
+  // Toggle Map Style
+  const toggleMapLayer = () => {
+    const nextLayer = mapLayer === "streets" ? "satellite" : "streets";
+    setMapLayer(nextLayer);
 
-  return (
-    <div className="space-y-4 pb-4">
-      {/* ------------------------------------------------------------- */}
-      {/* 0. DRIVER PANEL TOP TAB SWITCHER                              */}
-      {/* ------------------------------------------------------------- */}
-      <div className="bg-slate-200/80 p-1 rounded-2xl flex items-center shadow-inner">
-        <button
-          type="button"
-          onClick={() => setActiveTab("radar")}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-            activeTab === "radar"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Radio className={`w-3.5 h-3.5 ${activeTab === "radar" ? "text-emerald-600" : ""}`} />
-          <span>লাইভ রেডার ও ডিউটি</span>
-          {pendingBookings.length > 0 && (
-            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+    if (tileLayerRef.current) {
+      const newUrl =
+        nextLayer === "streets"
+          ? "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          : "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
+      tileLayerRef.current.setUrl(newUrl);
+      toast.info(nextLayer === "streets" ? "🗺️ স্ট্রিট ভিউ সক্রিয়" : "🛰️ স্যাটেলাইট ভিউ সক্রিয়");
+    }
+  };
+
+  // -------------------------------------------------------------
+  // VIEW A: TRIP HISTORY & EARNINGS TAB (Matches Screenshot 2 Style)
+  // -------------------------------------------------------------
+  if (activeTab === "trips") {
+    return (
+      <div className="w-full min-h-full flex flex-col p-4 space-y-4 pb-24 bg-slate-50 select-none">
+        {/* Header */}
+        <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">আমার রাইড ও আয়</h2>
+            <p className="text-xs text-slate-500 font-medium">আজকের সম্পন্ন ট্রিপ ও ডিজিটাল রসিদ</p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchDriverTrips}
+            disabled={loadingTrips}
+            className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs hover:bg-slate-50 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 text-emerald-600 ${loadingTrips ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+
+        {/* Today's Earnings Summary Cards (Uber Captain Style) */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white shadow-lg space-y-1">
+            <span className="text-[11px] font-bold text-emerald-100 flex items-center gap-1">
+              <IndianRupee className="w-3.5 h-3.5" />
+              <span>আজকের মোট আয়</span>
+            </span>
+            <div className="text-2xl font-black font-mono">
+              ₹{tripStats.todayEarnings}.০০
+            </div>
+            <span className="text-[10px] text-emerald-100 font-medium block">
+              আজ {tripStats.todayTripsCount}টি ট্রিপ সম্পন্ন
+            </span>
+          </div>
+
+          <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-1">
+            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+              <span>সর্বমোট আয়</span>
+            </span>
+            <div className="text-2xl font-black font-mono text-slate-900">
+              ₹{tripStats.totalEarnings}.০০
+            </div>
+            <span className="text-[10px] text-slate-500 font-medium block">
+              মোট {tripStats.completedTrips}টি সফল ট্রিপ
+            </span>
+          </div>
+        </div>
+
+        {/* Trips List */}
+        <div className="space-y-3">
+          <h3 className="text-sm font-black text-slate-900">পূর্ববর্তী ট্রিপসমূহ ({driverTrips.length})</h3>
+
+          {loadingTrips ? (
+            <div className="p-8 text-center space-y-2">
+              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto" />
+              <p className="text-xs text-slate-500 font-semibold">হিস্ট্রি লোড হচ্ছে...</p>
+            </div>
+          ) : driverTrips.length === 0 ? (
+            <div className="p-6 rounded-3xl bg-white border border-slate-200 text-center space-y-2">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl mx-auto">
+                🛺
+              </div>
+              <h4 className="font-bold text-sm text-slate-900">এখনও কোনো ট্রিপ নেই</h4>
+              <p className="text-xs text-slate-500">অনলাইন থাকুন, শীঘ্রই রাইড অনুরোধ আসবে!</p>
+            </div>
+          ) : (
+            driverTrips.map((trip: any, idx: number) => {
+              const dateStr = trip.created_at
+                ? new Date(trip.created_at).toLocaleDateString("bn-BD", {
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "আজ";
+              const isCompleted = trip.status === "completed";
+
+              return (
+                <div
+                  key={trip.id || idx}
+                  className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm">
+                        🛺
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-900">
+                          #{trip.booking_number || trip.id?.slice(0, 8)}
+                        </h4>
+                        <span className="text-[10px] text-slate-400 font-medium">{dateStr}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-sm font-black font-mono text-emerald-700">
+                        ₹{trip.final_fare || trip.estimated_fare || 30}.০০
+                      </span>
+                      <span
+                        className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded block ${
+                          isCompleted ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50"
+                        }`}
+                      >
+                        {isCompleted ? "সম্পন্ন ✓" : "বাতিল"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-xs space-y-1 text-slate-600">
+                    <p className="truncate">
+                      📍 পিকআপ: <strong className="text-slate-800">{cleanLocation(trip.pickup_location)}</strong>
+                    </p>
+                    <p className="truncate">
+                      🏁 গন্তব্য: <strong className="text-slate-800">{cleanLocation(trip.drop_location)}</strong>
+                    </p>
+                  </div>
+                </div>
+              );
+            })
           )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("trips")}
-          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-            activeTab === "trips"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <History className={`w-3.5 h-3.5 ${activeTab === "trips" ? "text-blue-600" : ""}`} />
-          <span>আমার সকল ট্রিপ ও আয়</span>
-        </button>
+        </div>
       </div>
+    );
+  }
 
-      {/* ============================================================= */}
-      {/* TAB 1: LIVE RADAR & DUTY MAP VIEW                             */}
-      {/* ============================================================= */}
-      {activeTab === "radar" && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          {/* Driver's Current Location Banner */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  আপনার বর্তমান অবস্থান (Live GPS)
+  // -------------------------------------------------------------
+  // VIEW B: 100% FULL-SCREEN UBER DRIVER RADAR HUD (IDLE & RADAR)
+  // -------------------------------------------------------------
+  return (
+    <div className="relative w-full h-full min-h-[calc(100dvh-114px)] flex-1 overflow-hidden select-none bg-slate-100">
+      {/* 1. EDGE-TO-EDGE FULL CANVAS NAVIGATION MAP */}
+      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
+
+      {/* 2. TOP FLOATING UBER DRIVER STATUS HUD */}
+      <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+        <div className="pointer-events-auto rounded-3xl p-3 shadow-[0_10px_35px_rgba(0,0,0,0.14)] border border-slate-200/80 bg-white/95 backdrop-blur-xl flex items-center justify-between gap-2">
+          {/* Driver Profile Badge */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center text-lg font-black shrink-0">
+              🛺
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-xs text-slate-900 truncate">
+                  {driverSession?.driverName || "চালকের ড্যাশবোর্ড"}
+                </span>
+                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+                  ★ 5.0
                 </span>
               </div>
-
-              <button
-                type="button"
-                onClick={() => updateDriverLocation(true)}
-                disabled={isUpdatingLocation}
-                className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-xl flex items-center gap-1.5 transition-colors shadow-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isUpdatingLocation ? "animate-spin" : ""}`} />
-                <span>অবস্থান রিফ্রেশ</span>
-              </button>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
-                <MapPin className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-base font-extrabold text-slate-900 leading-snug">
-                  {driverLocationName}
-                </h3>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <span className="text-[11px] font-mono text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
-                    {driverCoords[0].toFixed(4)}° N, {driverCoords[1].toFixed(4)}° E
-                  </span>
-                  {gpsAccuracy !== null && (
-                    <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      সঠিকতা: {gpsAccuracy}মি
-                    </span>
-                  )}
-                  <span className="text-[11px] text-slate-400">
-                    আপডেট: {lastUpdatedTime}
-                  </span>
-                </div>
-              </div>
+              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 block truncate">
+                🆔 {driverSession?.uniqueId || driverSession?.totoNumber || "SR-DRV"}
+              </span>
             </div>
           </div>
 
-          {/* 2-Option Switcher: View Inbuilt Map vs View in Google Maps */}
-          <div
-            className="p-1 rounded-2xl grid grid-cols-2 gap-1"
-            style={{
-              background: "rgba(241, 245, 249, 0.95)",
-              border: "1px solid rgba(203, 213, 225, 0.8)",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            }}
-          >
+          {/* Today's Earnings Pill & Online Switcher */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Earnings Pill */}
             <button
               type="button"
-              onClick={() => setMapViewOption("inbuilt")}
-              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
-                mapViewOption === "inbuilt"
-                  ? "bg-white text-emerald-700 shadow-sm border border-emerald-200"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              onClick={() => setActiveTab("trips")}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-black font-mono transition-all flex items-center gap-1 cursor-pointer"
             >
-              <Smartphone className="w-3.5 h-3.5 text-emerald-600" />
-              <span>📱 ইনবিল্ট ম্যাপ দেখুন</span>
+              <span>₹{tripStats.todayEarnings}</span>
             </button>
 
+            {/* Online / Offline Toggle Button */}
             <button
               type="button"
-              onClick={() => setMapViewOption("google")}
-              className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs font-bold transition-all ${
-                mapViewOption === "google"
-                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
-                  : "text-slate-600 hover:text-slate-900"
+              onClick={() => onToggleOnline?.(!isOnline)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                isOnline
+                  ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
+                  : "bg-red-50 text-red-600 border border-red-200"
               }`}
             >
-              <Globe className="w-3.5 h-3.5 text-blue-600" />
-              <span>🌐 গুগল ম্যাপে খুলুন</span>
+              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
+              <span>{isOnline ? "অনলাইন" : "অফলাইন"}</span>
             </button>
           </div>
+        </div>
 
-          {/* Interactive Driver Radar Map */}
-          {mapViewOption === "inbuilt" ? (
-            <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border border-slate-200 shadow-md bg-slate-100">
-              <div ref={mapContainerRef} className="w-full h-full z-10" style={{ touchAction: "pan-y" }} />
+        {/* Location Permission Warning Banner (If GPS Denied / Blocked) */}
+        {locationError && (
+          <div className="mt-2 pointer-events-auto p-2.5 rounded-2xl bg-amber-50/98 backdrop-blur-md border border-amber-300 text-amber-950 shadow-lg flex items-center justify-between gap-2 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="text-[11px] font-bold leading-tight line-clamp-2">
+                {locationError}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => updateDriverLocation(true)}
+              disabled={isUpdatingLocation}
+              className="shrink-0 text-[10.5px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
+            >
+              {isUpdatingLocation ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
+              <span>অনুমতি দিন</span>
+            </button>
+          </div>
+        )}
+      </div>
 
-              {/* Top Floating Entity Filter Pills */}
-              <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
-                <div className="flex items-center gap-1 bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-md border border-slate-200 pointer-events-auto">
-                  <button
-                    type="button"
-                    onClick={() => setFilterMode("all")}
-                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all ${
-                      filterMode === "all"
-                        ? "bg-slate-900 text-white shadow-xs"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
-                  >
-                    সব দেখান
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterMode("customers")}
-                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
-                      filterMode === "customers"
-                        ? "bg-orange-600 text-white shadow-xs"
-                        : "text-orange-700 hover:bg-orange-50"
-                    }`}
-                  >
-                    <span>👤 যাত্রী ({pendingBookings.length})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFilterMode("drivers")}
-                    className={`text-xs font-bold px-2.5 py-1 rounded-xl transition-all flex items-center gap-1 ${
-                      filterMode === "drivers"
-                        ? "bg-blue-600 text-white shadow-xs"
-                        : "text-blue-700 hover:bg-blue-50"
-                    }`}
-                  >
-                    <span>🛺 চালক ({otherDrivers.length})</span>
-                  </button>
-                </div>
+      {/* 3. FLOATING MAP ON-SCREEN CONTROLS */}
+      {/* Map Layer Switcher: Street vs Satellite */}
+      <button
+        type="button"
+        onClick={toggleMapLayer}
+        title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "স্ট্রিট ভিউ"}
+        className="absolute bottom-48 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+      >
+        <Layers className="w-5 h-5 text-slate-700" />
+      </button>
 
+      {/* GPS Recenter Button */}
+      <button
+        type="button"
+        onClick={() => updateDriverLocation(true)}
+        disabled={isUpdatingLocation}
+        title="আমার অবস্থান"
+        className="absolute bottom-34 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white hover:bg-emerald-50 text-emerald-600 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+      >
+        {isUpdatingLocation ? (
+          <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+        ) : (
+          <LocateFixed className="w-5 h-5 text-emerald-600" />
+        )}
+      </button>
+
+      {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER */}
+      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
+        <div className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-4 space-y-3 animate-in slide-in-from-bottom-6 duration-300">
+          {/* Drag Handle */}
+          <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto" />
+
+          {selectedCustomer ? (
+            /* STATE A: A WAITING CUSTOMER HAS BEEN SELECTED ON MAP */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  <span>অপেক্ষমান যাত্রী</span>
+                </span>
                 <button
                   type="button"
-                  onClick={() => updateDriverLocation(true)}
-                  title="আমার অবস্থানে সেন্টারিং করুন"
-                  className="w-10 h-10 bg-white hover:bg-slate-50 text-emerald-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center pointer-events-auto active:scale-95"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
                 >
-                  <LocateFixed className="w-5 h-5 text-emerald-600" />
+                  ✕ বন্ধ করুন
                 </button>
               </div>
 
-              {/* Selected Entity Popup Sheet inside Map */}
-              {selectedEntity && (
-                <div className="absolute bottom-3 left-3 right-3 z-30 bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xl animate-in slide-in-from-bottom-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {selectedEntity.type === "customer" ? "অপেক্ষমান যাত্রী" : "অন্যান্য চালক"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEntity(null)}
-                      className="text-xs text-slate-400 hover:text-slate-700 font-bold"
-                    >
-                      ✕ বন্ধ করুন
-                    </button>
-                  </div>
-
-                  {selectedEntity.type === "customer" ? (
-                    <div className="mt-2 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-extrabold text-sm text-slate-900">
-                          👤 {selectedEntity.data.customer_name || "যাত্রী"}
-                        </h4>
-                        <span className="text-sm font-black text-emerald-700">
-                          ₹{selectedEntity.data.estimated_fare || 50}.00
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-600">
-                        <p>📍 পিকআপ: <span className="font-bold text-slate-800">{cleanLocation(selectedEntity.data.pickup_location)}</span></p>
-                        <p>🏁 গন্তব্য: <span className="font-bold text-slate-800">{cleanLocation(selectedEntity.data.drop_location)}</span></p>
-                        <p className="text-emerald-700 font-bold text-[11px] mt-1">
-                          🚀 আপনার থেকে {selectedEntity.distance} কিমি দূরে
-                        </p>
-                      </div>
-                      <Button
-                        onClick={() => {
-                          onAcceptRide(selectedEntity.data);
-                          setSelectedEntity(null);
-                        }}
-                        className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs"
-                      >
-                        ✅ এই রাইডটি গ্রহণ করুন
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="mt-2 space-y-1 text-xs">
-                      <h4 className="font-extrabold text-sm text-slate-900">
-                        🛺 {selectedEntity.data.name || "চালক"} ({selectedEntity.data.unique_id || selectedEntity.data.toto_number})
-                      </h4>
-                      <p className="text-slate-600">
-                        ফোন: {selectedEntity.data.phone || "অনলাইনে আছেন"}
-                      </p>
-                      <p className="text-blue-700 font-bold">
-                        📍 আপনার থেকে {selectedEntity.distance} কিমি দূরে সক্রিয় আছেন
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Google Maps View with Embed & Navigation */
-            <div className="space-y-3">
-              <div className="relative w-full h-[300px] rounded-3xl overflow-hidden border-2 border-blue-400 shadow-md bg-slate-100">
-                <iframe
-                  title="Google Map Driver Radar View"
-                  src={`https://maps.google.com/maps?q=${driverCoords[0]},${driverCoords[1]}&hl=bn&z=15&output=embed`}
-                  className="w-full h-full border-0"
-                  loading="lazy"
-                  allowFullScreen
-                />
-                <div className="absolute bottom-3 left-3 right-3 z-20">
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${driverCoords[0]},${driverCoords[1]}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
-                  >
-                    <Navigation className="w-4 h-4" />
-                    <span>🌐 গুগল ম্যাপস অ্যাপে লাইভ অবস্থান খুলুন</span>
-                    <ExternalLink className="w-3.5 h-3.5 opacity-80" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Waiting Customers Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  নিকটবর্তী অপেক্ষমান যাত্রী ({pendingBookings.length})
-                </h4>
-              </div>
-              <span className="text-[11px] text-slate-500 font-medium">রিয়েলটাইম বুকিং</span>
-            </div>
-
-            {pendingBookings.length > 0 ? (
-              <div className="space-y-2">
-                {pendingBookings.map((b) => {
-                  const bLat = b.pickup_lat ? Number(b.pickup_lat) : driverCoords[0] + 0.008;
-                  const bLng = b.pickup_lng ? Number(b.pickup_lng) : driverCoords[1] + 0.006;
-                  const distKm = calculateDistanceKm(driverCoords[0], driverCoords[1], bLat, bLng);
-
-                  return (
-                    <div
-                      key={b.id}
-                      className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-orange-300 transition-all space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-black text-slate-900">
-                              {b.customer_name || "যাত্রী"}
-                            </span>
-                            <span className="text-[10px] font-bold text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full">
-                              #{b.booking_number}
-                            </span>
-                          </div>
-                          <span className="text-xs text-emerald-700 font-bold block mt-0.5">
-                            📍 {distKm} কিমি দূরে অপেক্ষমান
-                          </span>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="text-lg font-black text-emerald-700">
-                            ₹{b.estimated_fare || 50}.00
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase">নগদ ভাড়া</span>
-                        </div>
-                      </div>
-
-                      <div className="text-xs space-y-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                        <p className="text-slate-800 line-clamp-1 font-medium">
-                          <span className="text-emerald-700 font-bold mr-1">পিকআপ:</span>
-                          {cleanLocation(b.pickup_location)}
-                        </p>
-                        <p className="text-slate-800 line-clamp-1 font-medium">
-                          <span className="text-red-600 font-bold mr-1">গন্তব্য:</span>
-                          {cleanLocation(b.drop_location)}
-                        </p>
-                      </div>
-
-                      <Button
-                        onClick={() => onAcceptRide(b)}
-                        className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-transform"
-                      >
-                        <span>✅ রাইড গ্রহণ করুন</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="p-6 rounded-2xl bg-white border border-dashed border-slate-200 text-center space-y-2">
-                <Radio className="w-8 h-8 text-emerald-600 mx-auto animate-pulse" />
-                <p className="text-xs font-bold text-slate-700">
-                  কাছাকাছি কোনো নতুন বুকিং এই মুহূর্তে খালি নেই
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  যাত্রী বুকিং করলেই সাথে সাথে আপনার স্ক্রিনে পপআপ ও নোটিফিকেশন আসবে।
-                </p>
-              </div>
-            )}
-
-            {/* Other Active Drivers Summary */}
-            <div className="pt-2">
-              <div className="flex items-center justify-between px-1 mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                    আশেপাশে সক্রিয় অন্যান্য টোটো ({otherDrivers.length})
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-black text-base text-slate-900">
+                    👤 {selectedCustomer.customer_name || "যাত্রী"}
                   </h4>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    {selectedCustomer.distanceKm !== null
+                      ? `🚀 আপনার থেকে ~${selectedCustomer.distanceKm} কিমি দূরে`
+                      : "কাছাকাছি এলাকা"}
+                  </p>
                 </div>
-                <span className="text-[11px] text-slate-500 font-medium">৫ কিমি রেডিয়াস</span>
+                <div className="text-right">
+                  <span className="text-2xl font-black font-mono text-emerald-700">
+                    ₹{selectedCustomer.estimated_fare || 40}.০০
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold block">নগদ ভাড়া</span>
+                </div>
               </div>
 
-              {otherDrivers.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {otherDrivers.slice(0, 4).map((od) => {
-                    const lat = Number(od.latitude);
-                    const lng = Number(od.longitude);
-                    const dKm = calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng);
-
-                    return (
-                      <div
-                        key={od.id}
-                        className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs shadow-2xs"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
-                            🛺
-                          </div>
-                          <div>
-                            <div className="font-bold text-slate-900 line-clamp-1">{od.name}</div>
-                            <div className="text-[10px] text-emerald-700 font-mono font-bold">
-                              🆔 {od.unique_id || od.toto_number}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full shrink-0">
-                          {dKm} কিমি
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 italic px-1">
-                  ৫ কিমির মধ্যে অন্য কোনো চালক এই মুহূর্তে অনলাইন নেই।
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-1.5 text-slate-700">
+                <p className="truncate">
+                  📍 পিকআপ: <strong className="text-slate-900">{cleanLocation(selectedCustomer.pickup_location)}</strong>
                 </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================= */}
-      {/* TAB 2: DRIVER ALL TRIPS & EARNINGS VIEW                       */}
-      {/* ============================================================= */}
-      {activeTab === "trips" && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          {/* Earnings & Trips Summary Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-linear-to-br from-emerald-600 to-teal-700 text-white rounded-3xl p-4 shadow-md space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-100 flex items-center gap-1">
-                <IndianRupee className="w-3 h-3" /> আজকের সংগৃহীত নগদ
-              </span>
-              <div className="text-2xl font-black">₹{tripStats.todayEarnings}.00</div>
-              <p className="text-[11px] text-emerald-100 font-medium">
-                আজকের সম্পন্ন: {tripStats.todayTripsCount}টি রাইড
-              </p>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-xs space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3 text-blue-600" /> মোট উপার্জিত ভাড়া
-              </span>
-              <div className="text-2xl font-black text-slate-900">₹{tripStats.totalEarnings}.00</div>
-              <p className="text-[11px] text-slate-500 font-medium">
-                মোট সম্পন্ন: {tripStats.completedTrips}টি ট্রিপ
-              </p>
-            </div>
-          </div>
-
-          {/* Trip History Header & Filters */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <History className="w-4 h-4 text-emerald-600" />
-                <h3 className="font-extrabold text-sm text-slate-900">
-                  বিগত ট্রিপের তালিকা ({driverTrips.length})
-                </h3>
+                <p className="truncate">
+                  🏁 গন্তব্য: <strong className="text-slate-900">{cleanLocation(selectedCustomer.drop_location)}</strong>
+                </p>
               </div>
 
-              <button
-                type="button"
-                onClick={fetchDriverTrips}
-                disabled={loadingTrips}
-                className="text-xs text-slate-500 hover:text-slate-800 font-bold flex items-center gap-1"
+              <Button
+                size="lg"
+                onClick={() => {
+                  onAcceptRide(selectedCustomer);
+                  setSelectedCustomer(null);
+                }}
+                className="w-full h-13 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-xl active:scale-98 transition-all cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loadingTrips ? "animate-spin" : ""}`} />
-                <span>রিফ্রেশ</span>
-              </button>
-            </div>
-
-            {/* Filter Chips */}
-            <div className="flex items-center gap-1.5 pt-1">
-              <button
-                type="button"
-                onClick={() => setTripFilter("all")}
-                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${
-                  tripFilter === "all"
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                সব ট্রিপ
-              </button>
-              <button
-                type="button"
-                onClick={() => setTripFilter("completed")}
-                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${
-                  tripFilter === "completed"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                }`}
-              >
-                সম্পন্ন ({driverTrips.filter((t) => t.status === "completed").length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTripFilter("cancelled")}
-                className={`text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${
-                  tripFilter === "cancelled"
-                    ? "bg-red-600 text-white shadow-xs"
-                    : "bg-red-50 text-red-700 hover:bg-red-100"
-                }`}
-              >
-                বাতিল ({driverTrips.filter((t) => t.status === "cancelled").length})
-              </button>
-            </div>
-          </div>
-
-          {/* Trips List */}
-          {loadingTrips ? (
-            <div className="p-8 text-center bg-white rounded-3xl border border-slate-200">
-              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto mb-2" />
-              <p className="text-xs text-slate-500 font-medium">ট্রিপের তথ্য লোড হচ্ছে...</p>
-            </div>
-          ) : filteredTrips.length > 0 ? (
-            <div className="space-y-3">
-              {filteredTrips.map((t) => {
-                const dateFormatted = t.created_at
-                  ? new Date(t.created_at).toLocaleDateString("bn-BD", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "তারিখ অনুপলব্ধ";
-
-                const isCompleted = t.status === "completed";
-                const isCancelled = t.status === "cancelled";
-                const fareAmount = t.final_fare || t.estimated_fare || 50;
-
-                return (
-                  <div
-                    key={t.id}
-                    onClick={() => setSelectedTripDetail(t)}
-                    className="p-4 rounded-3xl bg-white border border-slate-200 shadow-xs hover:border-slate-300 transition-all cursor-pointer space-y-3 active:scale-99"
-                  >
-                    {/* Header: ID, Date, Status */}
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-lg">
-                          #{t.booking_number}
-                        </span>
-                        <span className="text-slate-400 text-[11px]">{dateFormatted}</span>
-                      </div>
-
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isCompleted
-                            ? "bg-emerald-100 text-emerald-800"
-                            : isCancelled
-                            ? "bg-red-100 text-red-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
-                      >
-                        {isCompleted ? "✓ সম্পন্ন" : isCancelled ? "✕ বাতিল" : "⏳ চলমান"}
-                      </span>
-                    </div>
-
-                    {/* Route */}
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0" />
-                        <span className="text-slate-800 font-semibold line-clamp-1">
-                          {cleanLocation(t.pickup_location)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
-                        <span className="text-slate-800 font-semibold line-clamp-1">
-                          {cleanLocation(t.drop_location)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Footer: Passenger & Fare */}
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-600 font-medium">
-                        <User className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{t.customer_name || "যাত্রী"}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900 text-sm">
-                          ₹{fareAmount}.00
-                        </span>
-                        <ChevronRight className="w-4 h-4 text-slate-400" />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                ✅ রাইড গ্রহণ করুন (Accept Ride)
+              </Button>
             </div>
           ) : (
-            <div className="p-8 text-center bg-white rounded-3xl border border-dashed border-slate-200 space-y-2">
-              <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
-              <p className="text-sm font-bold text-slate-700">কোনো ট্রিপ পাওয়া যায়নি</p>
-              <p className="text-xs text-slate-400">
-                নতুন ট্রিপ গ্রহণ করলে তার বিস্তারিত তথ্য এখানে সংরক্ষিত থাকবে।
-              </p>
+            /* STATE B: IDLE / DRIVER WAITING FOR RIDE (UBER CAPTAIN STYLE) */
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-black text-base text-slate-900 leading-tight">
+                    {isOnline ? "🟢 আপনি অনলাইন আছেন" : "🔴 আপনি অফলাইন"}
+                  </h4>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5 truncate max-w-[260px]">
+                    📍 {hasValidLocation && driverLocationName ? driverLocationName : "অবস্থান সনাক্ত হচ্ছে..."}
+                  </p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-xl shrink-0">
+                  🛺
+                </div>
+              </div>
+
+              {/* Status Banner */}
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isOnline ? "bg-emerald-500 animate-ping" : "bg-red-400"}`} />
+                  <span className="font-bold text-slate-700">
+                    {isOnline
+                      ? pendingBookings.length > 0
+                        ? `ম্যাপে ${pendingBookings.length}টি রাইড অনুরোধ দৃশ্যমান`
+                        : "রাইড অনুরোধের অপেক্ষায়... নতুন রাইড আসলে অ্যালার্ট বাজবে"
+                      : "রাইড গ্রহণ করতে ওপরে অনলাইন বাটনে ট্যাপ করুন"}
+                  </span>
+                </div>
+                {pendingBookings.length > 0 && (
+                  <span className="text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg">
+                    {pendingBookings.length}টি রাইড
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* 5. TRIP DETAILS & RECEIPT MODAL                                */}
-      {/* ------------------------------------------------------------- */}
-      {selectedTripDetail && (
-        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-5 border border-slate-200 max-h-[90vh] overflow-y-auto animate-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-emerald-600" />
-                <h3 className="font-bold text-base text-slate-900">ট্রিপের বিস্তারিত রসিদ</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedTripDetail(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Booking Header */}
-            <div className="bg-slate-50 rounded-2xl p-4 text-center space-y-1">
-              <span className="text-xs font-mono font-bold text-slate-500 uppercase tracking-wider">
-                বুকিং নম্বর
-              </span>
-              <div className="text-xl font-black text-slate-900">
-                #{selectedTripDetail.booking_number}
-              </div>
-              <span
-                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full inline-block mt-1 ${
-                  selectedTripDetail.status === "completed"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : selectedTripDetail.status === "cancelled"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-blue-100 text-blue-800"
-                }`}
-              >
-                {selectedTripDetail.status === "completed"
-                  ? "✓ ট্রিপ সফলভাবে সম্পন্ন"
-                  : selectedTripDetail.status === "cancelled"
-                  ? "✕ রাইড বাতিল"
-                  : "⏳ ট্রিপ চলমান"}
-              </span>
-            </div>
-
-            {/* Passenger & Date info */}
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">তারিখ ও সময়:</span>
-                <span className="font-bold text-slate-800">
-                  {selectedTripDetail.created_at
-                    ? new Date(selectedTripDetail.created_at).toLocaleString("bn-BD")
-                    : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">যাত্রীর নাম:</span>
-                <span className="font-bold text-slate-800">
-                  {selectedTripDetail.customer_name || "যাত্রী"}
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-500">যাত্রীর ফোন:</span>
-                <span className="font-bold text-slate-800 font-mono">
-                  {selectedTripDetail.customer_phone || "-"}
-                </span>
-              </div>
-            </div>
-
-            {/* Route */}
-            <div className="bg-slate-50 p-4 rounded-2xl space-y-3 text-xs">
-              <div className="flex items-start gap-3">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block">পিকআপ পয়েন্ট</span>
-                  <span className="font-bold text-slate-800">{cleanLocation(selectedTripDetail.pickup_location)}</span>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <span className="w-3 h-3 rounded-full bg-red-500 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block">গন্তব্য</span>
-                  <span className="font-bold text-slate-800">{cleanLocation(selectedTripDetail.drop_location)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Fare Breakdown */}
-            <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-              <div className="flex justify-between text-slate-600">
-                <span>বেস ফেয়ার (নিয়মিত):</span>
-                <span>₹৩০.০০</span>
-              </div>
-              <div className="flex justify-between text-slate-600">
-                <span>দূরত্ব ভিত্তিক ভাড়া:</span>
-                <span>₹{Math.max(0, (selectedTripDetail.final_fare || selectedTripDetail.estimated_fare || 50) - 30)}.০০</span>
-              </div>
-              <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
-                <span>মোট সংগৃহীত নগদ:</span>
-                <span className="text-emerald-700">
-                  ₹{selectedTripDetail.final_fare || selectedTripDetail.estimated_fare || 50}.০০
-                </span>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => setSelectedTripDetail(null)}
-              className="w-full h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl text-xs"
-            >
-              বন্ধ করুন
-            </Button>
-          </div>
-        </div>
-      )}
-
+      </div>
     </div>
   );
 }

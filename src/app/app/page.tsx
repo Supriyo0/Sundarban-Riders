@@ -94,6 +94,7 @@ import {
   hasUserAcceptedDisclaimer,
   setUserAcceptedDisclaimer,
 } from "@/components/mobile/disclaimer-screen";
+import { MobileProfileModal } from "@/components/mobile/profile-modal";
 
 interface MobileSession {
   phone: string;
@@ -104,6 +105,9 @@ interface MobileSession {
   uniqueId?: string;
   isApproved?: boolean;
   passengerName?: string;
+  photo?: string;
+  driverPhoto?: string;
+  passengerPhoto?: string;
 }
 
 // Helper function to compress and encode document files client-side
@@ -365,18 +369,27 @@ function MobileAppPageContent() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("sr_active_ride");
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const rideTime = parsed.timestamp || (parsed.created_at ? new Date(parsed.created_at).getTime() : 0);
+          const ageMs = Date.now() - rideTime;
+          if ((rideTime > 0 && ageMs > 4 * 60 * 60 * 1000) || parsed.status === "completed" || parsed.status === "cancelled") {
+            localStorage.removeItem("sr_active_ride");
+            return null;
+          }
+          return parsed;
+        }
       } catch {}
     }
     return null;
   });
   const [alertCountdown, setAlertCountdown] = useState(30);
 
-  // Passenger State
-  const [pickupText, setPickupText] = useState("আপনার বর্তমান অবস্থান (Live GPS)");
+  // Passenger State (No hardcoded random place before GPS or user selection)
+  const [pickupText, setPickupText] = useState("");
   const [dropText, setDropText] = useState("");
-  const [pickupCoords, setPickupCoords] = useState<[number, number]>([21.8760, 88.1920]);
-  const [dropCoords, setDropCoords] = useState<[number, number]>([21.8680, 88.1630]);
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>([0, 0]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>([0, 0]);
   const [tripDistance, setTripDistance] = useState(0);
   const [tripFare, setTripFare] = useState(0);
   const [passengerCount, setPassengerCount] = useState(3);
@@ -391,7 +404,18 @@ function MobileAppPageContent() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("sr_passenger_booking");
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const bookingTime = parsed.timestamp || (parsed.created_at ? new Date(parsed.created_at).getTime() : null);
+          const ageMs = bookingTime ? Date.now() - bookingTime : Infinity;
+          if (ageMs > 4 * 60 * 60 * 1000 || parsed.status === "completed" || parsed.status === "cancelled") {
+            localStorage.removeItem("sr_passenger_booking");
+            localStorage.removeItem("sr_active_booking_id");
+            localStorage.removeItem("sr_search_status");
+            return null;
+          }
+          return parsed;
+        }
       } catch {}
     }
     return null;
@@ -427,30 +451,63 @@ function MobileAppPageContent() {
   const hasCompletedNotifiedRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
-  const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number]>([21.8760, 88.1920]);
+  const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(null);
   const [showStartOtpModal, setShowStartOtpModal] = useState(false);
   const [startOtpInput, setStartOtpInput] = useState("");
   const [isVerifyingStartOtp, setIsVerifyingStartOtp] = useState(false);
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
-  // Customer Past Rides History State
+  const handleUpdateProfile = useCallback((updates: { name?: string; photo?: string }) => {
+    setSession((prev: any) => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      if (updates.name) {
+        next.name = updates.name;
+        if (next.role === "rider") next.driverName = updates.name;
+        else next.passengerName = updates.name;
+      }
+      if (updates.photo) {
+        next.photo = updates.photo;
+        if (next.role === "rider") next.driverPhoto = updates.photo;
+        else next.passengerPhoto = updates.photo;
+      }
+      return next;
+    });
+  }, []);
+
+  // Customer Past Rides History State (Strict Real Data from Supabase)
   const [customerHistory, setCustomerHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const fetchCustomerHistory = useCallback(async () => {
-    const phone = session?.phone || phoneInput;
-    if (!phone) {
-      setIsLoadingHistory(false);
-      return;
+    let phone = session?.phone || phoneInput;
+    if (!phone && typeof window !== "undefined") {
+      try {
+        const sessStr = localStorage.getItem("sr_session");
+        if (sessStr) {
+          const parsed = JSON.parse(sessStr);
+          phone = parsed.phone || parsed.driverPhone || "";
+        }
+      } catch {}
+      if (!phone) {
+        phone = localStorage.getItem("sr_customer_phone") || localStorage.getItem("sr_last_customer_phone") || "";
+      }
     }
+
     setIsLoadingHistory(true);
     try {
-      const res = await fetch(`/api/bookings?customer_phone=${phone}&history=true`);
+      const url = phone
+        ? `/api/bookings?customer_phone=${encodeURIComponent(phone)}&history=true`
+        : `/api/bookings?history=true&all=true`;
+      const res = await fetch(url);
       const data = await res.json();
       if (data?.bookings && Array.isArray(data.bookings)) {
         setCustomerHistory(data.bookings);
+      } else if (data?.trips && Array.isArray(data.trips)) {
+        setCustomerHistory(data.trips);
       }
     } catch (err) {
       console.warn("Failed to fetch customer history:", err);
@@ -490,6 +547,16 @@ function MobileAppPageContent() {
       setStartOtpInput("");
       playSuccessSound();
       toast.success("ওটিপি যাচাই সফল! যাত্রা শুরু হয়েছে। সাবধানে ড্রাইভ করুন।");
+
+      // Rapido Captain style: auto-open Google Maps navigation to drop after OTP success
+      setTimeout(() => {
+        const drop: [number, number] = activeRide.dropCoords || dropCoords || [21.8680, 88.1630];
+        const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+        const navUrl = isAndroid
+          ? `google.navigation:q=${drop[0]},${drop[1]}&mode=d`
+          : `https://www.google.com/maps/dir/?api=1&destination=${drop[0]},${drop[1]}&travelmode=driving&dir_action=navigate`;
+        window.open(navUrl, "_blank");
+      }, 800);
     } catch {
       toast.error("সার্ভার সংযোগ সমস্যা। আবার চেষ্টা করুন।");
     } finally {
@@ -516,6 +583,14 @@ function MobileAppPageContent() {
       toast.error("টোটো বুক করতে দয়া করে আপনার হোয়াটসঅ্যাপ নম্বর দিয়ে লগইন করুন");
       setRole("passenger");
       setPhase("otp_login");
+      return;
+    }
+    if (!pickupText || !pickupText.trim() || pickupCoords[0] === 0) {
+      toast.error("⚠️ সঠিক পিকআপ স্থান নির্বাচন করুন! জিপিএস সক্রিয় করুন অথবা ওপরে পিকআপ লিখুন।");
+      return;
+    }
+    if (!dropText || !dropText.trim()) {
+      toast.error("⚠️ আপনার গন্তব্য স্থান (Drop Location) নির্বাচন করুন।");
       return;
     }
     setPhase("passenger_home");
@@ -648,7 +723,19 @@ function MobileAppPageContent() {
         const res = await fetch(`/api/bookings?id=${bId}`);
         const data = await res.json();
         const b = data.booking;
-        if (!b || !isMounted) return;
+        if (!b) {
+          // Booking does not exist in DB -> clean up immediately
+          if (pollInterval) clearInterval(pollInterval);
+          setPassengerBooking(null);
+          setActiveBookingId(null);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("sr_passenger_booking");
+            localStorage.removeItem("sr_active_booking_id");
+            localStorage.removeItem("sr_search_status");
+          }
+          return;
+        }
+        if (!isMounted) return;
 
         // Keep locations and coordinates synchronized
         if (b.pickup_location) setPickupText(b.pickup_location);
@@ -866,7 +953,7 @@ function MobileAppPageContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (passengerBooking) {
-      localStorage.setItem("sr_passenger_booking", JSON.stringify(passengerBooking));
+      localStorage.setItem("sr_passenger_booking", JSON.stringify({ ...passengerBooking, timestamp: passengerBooking.timestamp || Date.now() }));
     } else {
       localStorage.removeItem("sr_passenger_booking");
     }
@@ -979,7 +1066,7 @@ function MobileAppPageContent() {
               setActiveBookingId(b.id);
               setSearchStatus("searching");
               setSearchCountdown(180);
-              setPhase("passenger_searching");
+              setPhase("passenger_home");
               if (typeof window !== "undefined") {
                 localStorage.setItem("sr_active_booking_id", b.id);
                 localStorage.setItem("sr_search_status", "searching");
@@ -1104,7 +1191,7 @@ function MobileAppPageContent() {
   
   // Proactively watch and broadcast driver live GPS with Screen Wake Lock & Background Tracking
   useEffect(() => {
-    if (role === "rider" && isOnline) {
+    if (role === "rider" && (isOnline || Boolean(activeRide))) {
       // Auto-register push notifications so sound & vibration fire when screen is locked
       subscribeDriverToPushNotifications({
         phone: session?.phone || "",
@@ -1116,6 +1203,18 @@ function MobileAppPageContent() {
         phone: session?.phone || "",
         onLocationUpdate: (coords) => {
           setDriverLiveCoords(coords);
+          // If on an active trip, push live coordinates to booking immediately
+          if (activeRide?.id && coords[0] !== 0) {
+            fetch("/api/bookings", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "sync_live_trip",
+                bookingId: activeRide.id,
+                currentCoords: coords,
+              }),
+            }).catch(() => {});
+          }
         },
       });
 
@@ -1125,7 +1224,7 @@ function MobileAppPageContent() {
     } else {
       stopDriverBackgroundLocationTracking();
     }
-  }, [role, isOnline, session?.driverId, session?.phone]);
+  }, [role, isOnline, activeRide?.id, session?.driverId, session?.phone]);
 
   // Two-way online/offline status synchronization between App and WhatsApp/Database
   useEffect(() => {
@@ -1140,7 +1239,8 @@ function MobileAppPageContent() {
         const data = await res.json();
         const d = data.driver || (data.drivers && data.drivers[0]);
         if (d && typeof d.is_active === "boolean") {
-          const serverIsOnline = Boolean(d.is_active && d.is_available);
+          // Driver remains online during duty, including active trip when is_available is false
+          const serverIsOnline = Boolean(d.is_active && (d.is_available || activeRide));
           setIsOnline(serverIsOnline);
         }
       } catch {}
@@ -1149,7 +1249,7 @@ function MobileAppPageContent() {
     syncDriverStatus();
     const interval = setInterval(syncDriverStatus, 4000);
     return () => clearInterval(interval);
-  }, [phase, session?.driverId, session?.phone]);
+  }, [phase, session?.driverId, session?.phone, activeRide]);
 
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
@@ -1243,6 +1343,7 @@ function MobileAppPageContent() {
         (pos) => {
           const { latitude, longitude } = pos.coords;
           setPickupCoords([latitude, longitude]);
+          setDriverLiveCoords([latitude, longitude]);
           fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
             .then((r) => r.json())
             .then((d) => {
@@ -1256,6 +1357,7 @@ function MobileAppPageContent() {
             (pos2) => {
               const { latitude, longitude } = pos2.coords;
               setPickupCoords([latitude, longitude]);
+              setDriverLiveCoords([latitude, longitude]);
               fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
                 .then((r) => r.json())
                 .then((d) => {
@@ -1283,6 +1385,7 @@ function MobileAppPageContent() {
         (pos) => {
           const { latitude, longitude } = pos.coords;
           setPickupCoords([latitude, longitude]);
+          setDriverLiveCoords([latitude, longitude]);
           // Resolve initial address
           fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
             .then((r) => r.json())
@@ -1297,6 +1400,7 @@ function MobileAppPageContent() {
             (pos2) => {
               const { latitude, longitude } = pos2.coords;
               setPickupCoords([latitude, longitude]);
+              setDriverLiveCoords([latitude, longitude]);
               fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
                 .then((r) => r.json())
                 .then((d) => {
@@ -1556,15 +1660,53 @@ function MobileAppPageContent() {
     }
   };
 
-  // Logout / Switch Mode
+  // Comprehensive Logout & Complete Booking/Session Refresh
   const handleLogout = () => {
-    localStorage.removeItem("sr_mobile_session");
+    const bId = activeBookingId || passengerBooking?.id || activeRide?.id;
+    const phone = session?.phone;
+    const driverId = session?.driverId;
+
+    // Send logout cleanup to backend to mark active ride as successful/completed and free driver
+    fetch("/api/bookings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "logout_cleanup",
+        bookingId: bId,
+        phone,
+        driverId,
+      }),
+    }).catch(() => {});
+
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("sr_mobile_session");
+      localStorage.removeItem("sr_active_ride");
+      localStorage.removeItem("sr_passenger_booking");
+      localStorage.removeItem("sr_active_booking_id");
+      localStorage.removeItem("sr_driver_completed_ride");
+      localStorage.removeItem("sr_passenger_completed_ride");
+      localStorage.removeItem("sr_search_status");
+      localStorage.removeItem("sr_live_driver_loc");
+    }
+    hasCompletedNotifiedRef.current = null;
     setSession(null);
     setIncomingRide(null);
     setActiveRide(null);
     setPassengerBooking(null);
+    setActiveBookingId(null);
+    setDriverCompletedRide(null);
+    setPassengerCompletedRide(null);
+    setSearchStatus("idle");
+    setTripDistance(0);
+    setTripFare(0);
+    setRideStep("assigned");
+    setSearchCountdown(180);
+    setShowCancelModal(false);
+    setShowSosModal(false);
+    setShowStartOtpModal(false);
+    setStartOtpInput("");
     setPhase("select_role");
-    toast.info("লগআউট সম্পন্ন হয়েছে। মোড নির্বাচন করুন।");
+    toast.info("লগআউট সম্পন্ন হয়েছে। সমস্ত বুকিং ও রাইড ডেটা রিফ্রেশ করা হয়েছে।");
   };
 
   // Delete Driver Profile & Re-register
@@ -1651,7 +1793,10 @@ function MobileAppPageContent() {
                   const savedBookingId = localStorage.getItem("sr_active_booking_id");
                   const savedPassengerBooking = localStorage.getItem("sr_passenger_booking");
                   if (savedSearch === "searching" && savedBookingId && !savedPassengerBooking) {
-                    setPhase("passenger_searching");
+                    setPhase("passenger_home");
+                    setSearchStatus("searching");
+                    const sid = savedBookingId;
+                    if (sid) setActiveBookingId(sid);
                   } else {
                     setPhase("passenger_home");
                   }
@@ -2470,6 +2615,7 @@ function MobileAppPageContent() {
           <MobileAppHeader
             role="rider"
             userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
+            userPhoto={session?.photo || session?.driverPhoto}
             isSoundMuted={isSoundMuted}
             onToggleSound={() => {
               setIsSoundMuted(!isSoundMuted);
@@ -2478,6 +2624,7 @@ function MobileAppPageContent() {
             onSwitchRole={handleSwitchRole}
             onSosClick={() => setShowSosModal(true)}
             onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
+            onOpenProfile={() => setShowProfileModal(true)}
           />
         }
         bottomNav={
@@ -2491,46 +2638,21 @@ function MobileAppPageContent() {
           />
         }
       >
-        <div className="w-full min-h-full text-slate-900 flex flex-col relative select-none pb-28" style={{background:"linear-gradient(160deg, #f0fdf4 0%, #f8fafc 40%, #eff6ff 100%)"}}>
-          {/* Driver Quick Sub-Header: Profile, Toto Number & Online Toggle */}
-        <div className="sticky top-0 z-30 px-4 py-2.5 flex items-center justify-between" style={{background:"rgba(255,255,255,0.92)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderBottom:"1px solid rgba(226,232,240,0.6)",boxShadow:"0 1px 8px rgba(0,0,0,0.05)"}}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-black text-lg shadow-2xs">
-              🛺
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-xs text-slate-900">{session?.driverName || "টোটো চালক দাদা"}</span>
-                <span className="flex items-center text-[9px] text-amber-700 font-bold bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
-                  ★ 5.0
-                </span>
-              </div>
-              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                🆔 {session?.uniqueId || session?.totoNumber || "SR-DRV"}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {/* Driver Logout Option */}
-            <button
-              type="button"
-              onClick={handleLogout}
-              title="লগআউট করুন"
-              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer shrink-0"
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-600" />
-              <span className="text-[10px]">লগআউট</span>
-            </button>
-
-            {/* Online / Offline Toggle */}
-            <button
-              type="button"
-              onClick={async () => {
-                const nextOnline = !isOnline;
+        <div className="w-full min-h-full flex-1 text-slate-900 flex flex-col relative select-none">
+        {/* Radar & Status Area (When Idle — 100% Full-Screen Uber Driver Dashboard) */}
+        {!activeRide && (
+          <div
+            className="w-full flex-1 relative overflow-hidden"
+            style={{ minHeight: "calc(100dvh - 114px)", height: "calc(100dvh - 114px)" }}
+          >
+            <DriverRadarPanel
+              driverSession={session}
+              isOnline={isOnline}
+              initialTab={bottomNavTab === "trips" ? "trips" : "radar"}
+              onToggleOnline={async (nextOnline) => {
                 setIsOnline(nextOnline);
                 if (!isSoundMuted) playSuccessSound();
-                toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢 (ব্যাকগ্রাউন্ড জিপিএস সক্রিয়)" : "আপনি এখন অফলাইন আছেন 🔴");
+                toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
 
                 if (nextOnline) {
                   subscribeDriverToPushNotifications({
@@ -2539,7 +2661,6 @@ function MobileAppPageContent() {
                   }).catch(() => {});
                 }
 
-                // Sync online/offline status with server and WhatsApp
                 const driverId = session?.driverId;
                 const phone = session?.phone;
                 if (driverId || phone) {
@@ -2559,25 +2680,7 @@ function MobileAppPageContent() {
                   }
                 }
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
-                isOnline
-                  ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
-                  : "bg-red-50 text-red-600 border border-red-200"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
-              <span>{isOnline ? "অনলাইন" : "অফলাইন"}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Radar & Status Area (When Idle) */}
-        {!activeRide && (
-          <div className="w-full p-4 space-y-4">
-            <DriverRadarPanel
-              driverSession={session}
-              isOnline={isOnline}
-              initialTab={bottomNavTab === "trips" ? "trips" : "radar"}
+              onLogout={handleLogout}
               onAcceptRide={async (b) => {
                 try {
                   const res = await fetch("/api/bookings", {
@@ -2635,183 +2738,82 @@ function MobileAppPageContent() {
           </div>
         )}
 
-        {/* Active In-Progress Ride View */}
+        {/* Active In-Progress Ride View — Full-Screen Rapido Captain / Uber Driver HUD */}
         {activeRide && (
-          <div className="w-full p-4 pb-36 flex flex-col space-y-4">
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl flex items-center justify-between" style={{background:"rgba(240,253,244,0.9)",border:"1px solid rgba(167,243,208,0.8)",boxShadow:"0 4px 16px rgba(16,185,129,0.08), 0 1px 0 rgba(255,255,255,0.8) inset"}}>
-                <div>
-                  <span className="text-xs text-emerald-700 font-bold uppercase tracking-wider">
-                    {activeRide.status === "heading_pickup" ? "যাত্রীর কাছে যাচ্ছেন" : "যাত্রা চলমান 🛺"}
-                  </span>
-                  <h4 className="font-bold text-lg text-slate-900 mt-0.5">{activeRide.passengerName}</h4>
-                  <p className="text-xs font-mono font-bold text-emerald-700 mt-0.5">
-                    📱 +91 {activeRide.passengerPhone?.replace(/\D/g, "").slice(-10)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`tel:${activeRide.passengerPhone}`}
-                    className="w-11 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center text-white shadow-md active:scale-95 transition-all"
-                    title="যাত্রীকে ফোন করুন"
-                  >
-                    <Phone className="w-5 h-5 fill-white" />
-                  </a>
-                  <a
-                    href={`https://wa.me/91${activeRide.passengerPhone?.replace(/\D/g, "").slice(-10)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-11 h-11 rounded-2xl bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white shadow-md active:scale-95 transition-all"
-                    title="যাত্রীকে হোয়াটসঅ্যাপে মেসেজ করুন"
-                  >
-                    <MessageCircle className="w-5 h-5 fill-white" />
-                  </a>
-                </div>
-              </div>
-
-              {/* Destination Road Map with 2 Options: Inbuilt Map vs Google Map */}
-              <DriverActiveTripMap
-                pickup={activeRide.pickup}
-                drop={activeRide.drop}
-                pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
-                dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
-                driverCoords={driverLiveCoords || [21.8770, 88.1930]}
-                status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
-              />
-
-              {/* Route Summary Details Card */}
-              <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-start gap-3">
-                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">পিকআপ লোকেশন</span>
-                    <p className="text-sm font-bold text-slate-900">{activeRide.pickup}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <span className="w-3.5 h-3.5 rounded-full bg-red-500 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 font-bold uppercase">গন্তব্য (Drop)</span>
-                    <p className="text-sm font-bold text-slate-900">{activeRide.drop}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Swipe actions based on ride progress */}
-            <div className="space-y-3 pb-4">
-              {activeRide.status === "heading_pickup" ? (
-                <div className="space-y-2.5">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between text-xs">
-                    <span className="font-extrabold text-amber-900 flex items-center gap-1.5">
-                      <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>যাত্রী গাড়িতে উঠলে ৪ সংখ্যার ওটিপি নিন</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-700 bg-white px-2 py-0.5 rounded-full border border-amber-200">
-                      ওটিপি বাধ্যতামূলক
-                    </span>
-                  </div>
-
-                  <SwipeToConfirm
-                    key="slider_start_journey"
-                    label="➡️ স্লাইড করে ওটিপি দিন ও যাত্রা শুরু করুন"
-                    confirmedLabel="ওটিপি লিখুন..."
-                    colorScheme="blue"
-                    onConfirm={async () => {
-                      setStartOtpInput("");
-                      setShowStartOtpModal(true);
-                    }}
-                  />
-
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setStartOtpInput("");
-                      setShowStartOtpModal(true);
-                    }}
-                    variant="outline"
-                    className="w-full h-11 rounded-2xl border-blue-200 text-blue-700 hover:bg-blue-50 font-bold text-xs flex items-center justify-center gap-2"
-                  >
-                    <KeyRound className="w-3.5 h-3.5 text-blue-600" />
-                    <span>🔐 সরাসরি ওটিপি (OTP) দিন</span>
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs">
-                    <span className="font-extrabold text-emerald-800 flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping" />
-                      যাত্রা শুরু হয়েছে ও চলমান 🛺
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
-                      গন্তব্যে যাচ্ছেন
-                    </span>
-                  </div>
-
-                  <SwipeToConfirm
-                    key="slider_complete_journey"
-                    label="➡️ স্লাইড করে ট্রিপ সমাপ্ত করুন"
-                    confirmedLabel="ট্রিপ সমাপ্ত হয়েছে ✓"
-                    colorScheme="emerald"
-                    onConfirm={async () => {
-                      try {
-                        const res = await fetch("/api/bookings", {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "complete",
-                            bookingId: activeRide.id,
-                            driverId: session?.driverId,
-                            endCoords: driverLiveCoords || null,
-                          }),
-                        });
-                        const data = await res.json();
-                        const finalFare = data.booking?.final_fare || activeRide.fare || 50;
-                        const distKm = data.booking?.actual_distance_km || 1.0;
-                        playSuccessSound();
-                        const completedData = {
-                          id: activeRide.bookingNumber || activeRide.id,
-                          pickup: activeRide.pickup,
-                          drop: activeRide.drop,
-                          fare: finalFare,
-                          distanceKm: distKm,
-                          passengerName: activeRide.passengerName,
-                          passengerPhone: activeRide.passengerPhone,
-                        };
-                        setDriverCompletedRide(completedData);
-                        if (typeof window !== "undefined") {
-                          localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                          localStorage.removeItem("sr_active_ride");
-                        }
-                        setActiveRide(null);
-                        setPhase("rider_trip_completed");
-                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
-                      } catch {
-                        playSuccessSound();
-                        const completedData = {
-                          id: activeRide.bookingNumber || activeRide.id,
-                          pickup: activeRide.pickup,
-                          drop: activeRide.drop,
-                          fare: activeRide.fare || 50,
-                          distanceKm: 1.0,
-                          passengerName: activeRide.passengerName,
-                          passengerPhone: activeRide.passengerPhone,
-                        };
-                        setDriverCompletedRide(completedData);
-                        if (typeof window !== "undefined") {
-                          localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                          localStorage.removeItem("sr_active_ride");
-                        }
-                        setActiveRide(null);
-                        setPhase("rider_trip_completed");
-                        toast.success(`ট্রিপ সফলভাবে সমাপ্ত!`);
-                      }
-                    }}
-                  />
-                </div>
-              )}
-            </div>
+          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "calc(100dvh - 58px)" }}>
+            <DriverActiveTripMap
+              bookingId={activeRide.id}
+              bookingNumber={activeRide.bookingNumber}
+              pickup={activeRide.pickup}
+              drop={activeRide.drop}
+              pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
+              dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
+              driverCoords={driverLiveCoords || [21.8770, 88.1930]}
+              status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
+              passengerName={activeRide.passengerName}
+              passengerPhone={activeRide.passengerPhone}
+              onArrivedAtPickup={() => {
+                toast.success("পিকআপ লোকেশনে পৌঁছে গেছেন! যাত্রীকে ওটিপি দিতে বলুন।");
+              }}
+              onRequestOtpModal={() => {
+                setStartOtpInput("");
+                setShowStartOtpModal(true);
+              }}
+              onCompleteTrip={async () => {
+                try {
+                  const res = await fetch("/api/bookings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "complete",
+                      bookingId: activeRide.id,
+                      driverId: session?.driverId,
+                      endCoords: driverLiveCoords || null,
+                    }),
+                  });
+                  const data = await res.json();
+                  const finalFare = data.booking?.final_fare || activeRide.fare || 50;
+                  const distKm = data.booking?.actual_distance_km || 1.0;
+                  playSuccessSound();
+                  const completedData = {
+                    id: activeRide.bookingNumber || activeRide.id,
+                    pickup: activeRide.pickup,
+                    drop: activeRide.drop,
+                    fare: finalFare,
+                    distanceKm: distKm,
+                    passengerName: activeRide.passengerName,
+                    passengerPhone: activeRide.passengerPhone,
+                  };
+                  setDriverCompletedRide(completedData);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                    localStorage.removeItem("sr_active_ride");
+                  }
+                  setActiveRide(null);
+                  setPhase("rider_trip_completed");
+                  toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+                } catch {
+                  playSuccessSound();
+                  const completedData = {
+                    id: activeRide.bookingNumber || activeRide.id,
+                    pickup: activeRide.pickup,
+                    drop: activeRide.drop,
+                    fare: activeRide.fare || 50,
+                    distanceKm: 1.0,
+                    passengerName: activeRide.passengerName,
+                    passengerPhone: activeRide.passengerPhone,
+                  };
+                  setDriverCompletedRide(completedData);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                    localStorage.removeItem("sr_active_ride");
+                  }
+                  setActiveRide(null);
+                  setPhase("rider_trip_completed");
+                  toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ সংগ্রহ করুন।`);
+                }
+              }}
+            />
           </div>
         )}
 
@@ -3131,6 +3133,30 @@ function MobileAppPageContent() {
         )}
 
         </div>
+
+        {/* 👤 Uber Driver Profile & KYC Modal */}
+        <MobileProfileModal
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          role="rider"
+          userName={session?.driverName || "টোটো চালক"}
+          userPhone={session?.phone}
+          userPhoto={session?.photo || session?.driverPhoto}
+          driverKyc={{
+            aadharNumber: kycAadharNumber,
+            totoNumber: kycTotoNumber || session?.totoNumber,
+            licenseNumber: kycLicenseNumber,
+            aadharDoc: kycAadharDoc,
+            receiptDoc: kycReceiptDoc,
+            district: kycDistrict,
+            block: kycBlock,
+            isApproved: session?.isApproved ?? true,
+          }}
+          cancellationStrikes={customerStrikes}
+          onUpdateProfile={handleUpdateProfile}
+          onSwitchRole={handleSwitchRole}
+          onLogout={handleLogout}
+        />
       </MobileAppShell>
     );
   }
@@ -3210,6 +3236,7 @@ function MobileAppPageContent() {
         <MobileAppHeader
           role="passenger"
           userName={session?.passengerName || "যাত্রী বন্ধু"}
+          userPhoto={session?.photo || session?.passengerPhoto}
           isSoundMuted={isSoundMuted}
           onToggleSound={() => {
             setIsSoundMuted(!isSoundMuted);
@@ -3218,6 +3245,7 @@ function MobileAppPageContent() {
           onSwitchRole={handleSwitchRole}
           onSosClick={() => setShowSosModal(true)}
           onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
+          onOpenProfile={() => setShowProfileModal(true)}
         />
       }
       bottomNav={
@@ -3231,11 +3259,9 @@ function MobileAppPageContent() {
         />
       }
     >
-      <div className="min-h-full flex-1 text-slate-900 flex flex-col select-none" style={{background:"linear-gradient(180deg,#f0fdf4 0%,#f8fafc 50%,#ffffff 100%)"}}>
-        {/* Main Booking Interface */}
-        <div className="p-4 sm:p-5 space-y-4 pb-4">
+      <div className="w-full h-full flex-1 text-slate-900 flex flex-col select-none overflow-hidden relative">
         {bottomNavTab === "map" ? (
-          <div className="space-y-4 pb-4">
+          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 pb-24">
             {/* Active ride mini-banner when on map tab */}
             {passengerBooking && (
               <button
@@ -3440,107 +3466,101 @@ function MobileAppPageContent() {
             )}
           </div>
         ) : (
-          <>
-            {!passengerBooking && (
-              <div className="space-y-3">
-                {isCustomerBlocked || customerStrikes >= 3 ? (
-                  <div className="p-4 rounded-2xl bg-red-50 border-2 border-red-300 shadow-sm space-y-2 animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
-                        <span className="text-base">🚫</span>
-                        <span>অ্যাকাউন্ট সাময়িকভাবে স্থগিত (Blocked)</span>
-                      </div>
-                      <span className="text-[11px] font-mono font-bold bg-red-200 text-red-900 px-2 py-0.5 rounded-md">
-                        ৩/৩ বাতিল
-                      </span>
-                    </div>
-                    <p className="text-xs text-red-700 font-medium leading-relaxed">
-                      ৩ বার বুকিং বাতিল করায় আপনার নম্বরটি সাময়িকভাবে স্থগিত করা হয়েছে। নতুন কোনো রাইড বুক করা যাবে না।
-                    </p>
-                    <div className="pt-1 flex items-center justify-between">
-                      <a
-                        href="tel:9593177885"
-                        className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
-                      >
-                        <Phone className="w-3.5 h-3.5 fill-white" />
-                        <span>📞 হেল্পলাইনে কল করুন (9593177885)</span>
-                      </a>
-                    </div>
+          <div className="relative w-full h-full flex-1 overflow-hidden">
+            {/* Account Blocked Alert Overlay */}
+            {isCustomerBlocked || customerStrikes >= 3 ? (
+              <div className="absolute top-3 left-3 right-3 z-50 p-4 rounded-3xl bg-red-50/98 backdrop-blur-xl border-2 border-red-300 shadow-2xl space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+                    <span className="text-base">🚫</span>
+                    <span>অ্যাকাউন্ট সাময়িকভাবে স্থগিত (Blocked)</span>
                   </div>
-                ) : customerStrikes > 0 ? (
-                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span className="font-semibold">
-                        বাতিলকরণ সতর্কতা: ৩ বার বাতিল করলে অ্যাকাউন্ট ব্লক হবে
-                      </span>
-                    </div>
-                    <span className="font-mono font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded-md shrink-0">
-                      {customerStrikes}/3
-                    </span>
-                  </div>
-                ) : null}
-
-                <div>
-                  <h2 className="text-2xl font-bold tracking-tight text-slate-900">টোটো রাইড বুক করুন</h2>
-                  <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                    পিকআপ স্বয়ংক্রিয় জিপিএস এবং ম্যাপে লাল পিন টেনে গন্তব্য নির্বাচন করুন।
-                  </p>
+                  <span className="text-[11px] font-mono font-bold bg-red-200 text-red-900 px-2 py-0.5 rounded-md">
+                    ৩/৩ বাতিল
+                  </span>
+                </div>
+                <p className="text-xs text-red-700 font-medium leading-relaxed">
+                  ৩ বার বুকিং বাতিল করায় আপনার নম্বরটি সাময়িকভাবে স্থগিত করা হয়েছে। নতুন কোনো রাইড বুক করা যাবে না।
+                </p>
+                <div className="pt-1 flex items-center justify-between">
+                  <a
+                    href="tel:9593177885"
+                    className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <Phone className="w-3.5 h-3.5 fill-white" />
+                    <span>📞 হেল্পলাইনে কল করুন (9593177885)</span>
+                  </a>
                 </div>
               </div>
-            )}
+            ) : customerStrikes > 0 ? (
+              <div className="absolute top-2 left-3 right-3 z-40 p-2.5 rounded-2xl bg-amber-50/95 backdrop-blur-md border border-amber-200 flex items-center justify-between text-xs text-amber-900 shadow-md">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="font-semibold text-[11px]">
+                    বাতিলকরণ সতর্কতা: ৩ বার বাতিল করলে অ্যাকাউন্ট ব্লক হবে
+                  </span>
+                </div>
+                <span className="font-mono font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded-md shrink-0">
+                  {customerStrikes}/3
+                </span>
+              </div>
+            ) : null}
 
             {passengerBooking ? (
-              <LiveRideTrackingMap
-                booking={{
-                  id: passengerBooking.id,
-                  driverName: passengerBooking.driverName || "টোটো চালক",
-                  driverPhone: passengerBooking.driverPhone || "",
-                  totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || "",
-                  startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
-                }}
-            pickupCoords={pickupCoords}
-            dropCoords={dropCoords}
-            pickupText={pickupText}
-            dropText={dropText}
-            tripDistance={tripDistance}
-            tripFare={tripFare}
-            selectedTier={selectedTier}
-            paymentMode={paymentMode}
-            rideStep={rideStep}
-            onStepChange={setRideStep}
-            onFinishTrip={() => {
-              setPassengerCompletedRide({
-                ...passengerBooking,
-                actual_distance_km: tripDistance,
-                final_fare: tripFare,
-              });
-              setPassengerBooking(null);
-              setActiveBookingId(null);
-              if (typeof window !== "undefined") {
-                localStorage.removeItem("sr_passenger_booking");
-                localStorage.removeItem("sr_active_booking_id");
-                localStorage.removeItem("sr_search_status");
-              }
-              setPhase("passenger_trip_completed");
-              playSuccessSound();
-              toast.success("ট্রিপ সফলভাবে সমাপ্ত হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
-            }}
-            onCancelClick={() => setShowCancelModal(true)}
-            onSosClick={() => setShowSosModal(true)}
-          />
-        ) : (
-          <div className="space-y-4 pb-2">
-            <InteractiveBookingMap
-              initialPickup={pickupText}
-              initialDrop={dropText}
-              onRouteSelected={handleRouteSelected}
-              onConfirmBooking={handleConfirmBooking}
-              isBlocked={isCustomerBlocked || customerStrikes >= 3}
-            />
+              <div className="w-full h-full relative overflow-hidden">
+                <LiveRideTrackingMap
+                  booking={{
+                    id: passengerBooking.id,
+                    driverName: passengerBooking.driverName || passengerBooking.driver_name || "টোটো চালক",
+                    driverPhone: passengerBooking.driverPhone || passengerBooking.driver_phone || "",
+                    totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || passengerBooking.toto_number || "",
+                    startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
+                    driver_lat: passengerBooking.driver_lat,
+                    driver_lng: passengerBooking.driver_lng,
+                  }}
+                  rideStep={rideStep}
+                  pickupText={pickupText}
+                  dropText={dropText}
+                  pickupCoords={
+                    passengerBooking.pickupCoords ||
+                    (passengerBooking.pickup_lat && passengerBooking.pickup_lng
+                      ? [Number(passengerBooking.pickup_lat), Number(passengerBooking.pickup_lng)]
+                      : pickupCoords)
+                  }
+                  dropCoords={
+                    passengerBooking.dropCoords ||
+                    (passengerBooking.drop_lat && passengerBooking.drop_lng
+                      ? [Number(passengerBooking.drop_lat), Number(passengerBooking.drop_lng)]
+                      : dropCoords)
+                  }
+                  tripDistance={tripDistance}
+                  tripFare={tripFare}
+                  onCancelRide={() => setShowCancelModal(true)}
+                  onSosClick={() => setShowSosModal(true)}
+                  onTripFinished={() => {
+                    setPassengerBooking(null);
+                    setActiveBookingId(null);
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("sr_passenger_booking");
+                      localStorage.removeItem("sr_active_booking_id");
+                      localStorage.removeItem("sr_search_status");
+                    }
+                    toast.success("যাত্রা সফলভাবে সম্পন্ন হয়েছে! সুন্দরবন রাইডার্সে ধন্যবাদ।");
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="w-full h-full relative overflow-hidden">
+                <InteractiveBookingMap
+                  initialPickup={pickupText}
+                  initialDrop={dropText}
+                  onRouteSelected={handleRouteSelected}
+                  onConfirmBooking={handleConfirmBooking}
+                  isBlocked={isCustomerBlocked || customerStrikes >= 3}
+                />
+              </div>
+            )}
           </div>
-        )}
-          </>
         )}
 
         {/* ------------------------------------------------------------- */}
@@ -3894,7 +3914,29 @@ function MobileAppPageContent() {
         defaultRole="passenger"
       />
 
-      </div>
+      {/* 👤 Uber Passenger Profile & Account Modal */}
+      <MobileProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        role="passenger"
+        userName={session?.passengerName || "যাত্রী বন্ধু"}
+        userPhone={session?.phone || phoneInput}
+        userPhoto={session?.photo || session?.passengerPhoto}
+        driverKyc={{
+          aadharNumber: kycAadharNumber,
+          totoNumber: kycTotoNumber,
+          licenseNumber: kycLicenseNumber,
+          aadharDoc: kycAadharDoc,
+          receiptDoc: kycReceiptDoc,
+          district: kycDistrict,
+          block: kycBlock,
+          isApproved: session?.isApproved ?? false,
+        }}
+        cancellationStrikes={customerStrikes}
+        onUpdateProfile={handleUpdateProfile}
+        onSwitchRole={handleSwitchRole}
+        onLogout={handleLogout}
+      />
     </MobileAppShell>
   );
 }

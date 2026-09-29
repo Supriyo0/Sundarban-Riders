@@ -52,14 +52,18 @@ export default function DispatchRadarPage() {
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-      setBookings(data || []);
+      const res = await fetch("/api/bookings?history=true&all=true");
+      const data = await res.json();
+      if (data?.bookings && Array.isArray(data.bookings)) {
+        setBookings(data.bookings);
+      } else {
+        const { data: raw, error } = await supabase
+          .from("bookings")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (!error && raw) setBookings(raw || []);
+      }
     } catch (err: unknown) {
       console.error("Error loading bookings:", err);
     } finally {
@@ -81,8 +85,11 @@ export default function DispatchRadarPage() {
       )
       .subscribe();
 
+    const interval = setInterval(loadBookings, 4000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, []);
 

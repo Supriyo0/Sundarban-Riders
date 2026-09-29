@@ -564,6 +564,40 @@ function enrichBookingCoords(booking: any) {
   const fallbackOtp = seedNum.length >= 4 ? seedNum.slice(-4) : "5821";
   const startOtp = meta.start_otp || fallbackOtp;
 
+  // 5. Real live driver coordinates
+  let driverLat: number | null = null;
+  let driverLng: number | null = null;
+
+  if (meta.live_coords && Array.isArray(meta.live_coords) && meta.live_coords.length === 2) {
+    const d0 = Number(meta.live_coords[0]);
+    const d1 = Number(meta.live_coords[1]);
+    if (!isNaN(d0) && !isNaN(d1) && d0 !== 0 && d1 !== 0) {
+      driverLat = d0;
+      driverLng = d1;
+    }
+  }
+
+  if ((!driverLat || !driverLng) && booking.drivers) {
+    const d = booking.drivers;
+    if (d.latitude && d.longitude) {
+      driverLat = Number(d.latitude);
+      driverLng = Number(d.longitude);
+    } else if (d.current_location_name) {
+      try {
+        const dMeta = JSON.parse(d.current_location_name);
+        if (dMeta.lat && dMeta.lng) {
+          driverLat = Number(dMeta.lat);
+          driverLng = Number(dMeta.lng);
+        }
+      } catch {}
+    }
+  }
+
+  if ((!driverLat || !driverLng) && booking.driver_lat && booking.driver_lng) {
+    driverLat = Number(booking.driver_lat);
+    driverLng = Number(booking.driver_lng);
+  }
+
   return {
     ...booking,
     pickup_location: cleanPickup,
@@ -574,6 +608,9 @@ function enrichBookingCoords(booking: any) {
     drop_lng: dropLng,
     start_coords: [lat, lng],
     end_coords: [dropLat, dropLng],
+    driver_lat: driverLat,
+    driver_lng: driverLng,
+    driver_coords: driverLat && driverLng ? [driverLat, driverLng] : undefined,
     start_otp: startOtp,
     passenger_count: meta.passenger_count || 3,
     actual_distance_km: meta.actual_distance_km || meta.live_distance_km || booking.actual_distance_km || null,
@@ -656,8 +693,50 @@ export async function GET(request: Request) {
     const validDriverId = driverId && driverId.trim() !== "" && driverId !== "undefined" && driverId !== "null" ? driverId.trim() : null;
     const validDriverUniqueId = driverUniqueId && driverUniqueId.trim() !== "" && driverUniqueId !== "undefined" ? driverUniqueId.trim() : null;
 
+    const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
+
+    // General History Fallback (when phone is not yet saved or in preview)
+    if (isHistory && !validDriverId && last10Driver.length < 10 && !validDriverUniqueId && !customerPhone) {
+      const { data, error } = await admin
+        .from("bookings")
+        .select("*, drivers(*)")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      const trips = (data || []).map(enrichBookingCoords);
+      const completedTrips = trips.filter((t) => t.status === "completed");
+      const totalEarnings = completedTrips.reduce(
+        (sum, t) => sum + (Number(t.final_fare) || Number(t.estimated_fare) || 0),
+        0
+      );
+
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayTrips = trips.filter((t) => t.created_at && t.created_at.startsWith(todayStr));
+      const todayCompleted = todayTrips.filter((t) => t.status === "completed");
+      const todayEarnings = todayCompleted.reduce(
+        (sum, t) => sum + (Number(t.final_fare) || Number(t.estimated_fare) || 0),
+        0
+      );
+
+      return NextResponse.json({
+        bookings: trips,
+        trips,
+        stats: {
+          totalTrips: trips.length,
+          completedTrips: completedTrips.length,
+          totalEarnings,
+          todayTripsCount: todayTrips.length,
+          todayEarnings,
+        },
+        customer: { cancellation_count: 0, is_blocked: false },
+      });
+    }
+
     if (validDriverId || last10Driver.length >= 10 || validDriverUniqueId) {
-      const isHistory = searchParams.get("history") === "true" || searchParams.get("all") === "true";
       if (isHistory) {
         let query = admin
           .from("bookings")
@@ -708,6 +787,7 @@ export async function GET(request: Request) {
 
         return NextResponse.json({
           trips,
+          bookings: trips,
           stats: {
             totalTrips: trips.length,
             completedTrips: completedTrips.length,
@@ -747,6 +827,17 @@ export async function GET(request: Request) {
       const { data, error } = await activeQuery.maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      // Auto-expire stale bookings older than 6 hours (prevents 2-day-old ghost rides)
+      if (data) {
+        const ageMs = data.created_at ? Date.now() - new Date(data.created_at).getTime() : 0;
+        if (ageMs > 6 * 60 * 60 * 1000) {
+          const newStatus = data.status === "pending" ? "cancelled" : "completed";
+          void admin.from("bookings").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", data.id);
+          return NextResponse.json({ booking: null });
+        }
+      }
+
       return NextResponse.json({ booking: data ? enrichBookingCoords(data) : null });
     }
 
@@ -789,6 +880,7 @@ export async function GET(request: Request) {
         const enriched = (data || []).map(enrichBookingCoords);
         return NextResponse.json({
           bookings: enriched,
+          trips: enriched,
           customer: customerRecord || { cancellation_count: 0, is_blocked: false }
         });
       }
@@ -806,6 +898,20 @@ export async function GET(request: Request) {
       const { data, error } = await activeQuery.limit(1).maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      // Auto-expire stale bookings older than 6 hours (e.g. unfinished ride from 2 days ago)
+      if (data) {
+        const ageMs = data.created_at ? Date.now() - new Date(data.created_at).getTime() : 0;
+        if (ageMs > 6 * 60 * 60 * 1000) {
+          const newStatus = data.status === "pending" ? "cancelled" : "completed";
+          void admin.from("bookings").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", data.id);
+          return NextResponse.json({
+            booking: null,
+            customer: customerRecord || { cancellation_count: 0, is_blocked: false }
+          });
+        }
+      }
+
       const enriched = data ? enrichBookingCoords(data) : null;
       let finalBooking = null;
       if (enriched) {
@@ -861,17 +967,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const {
-      customerName,
-      customerPhone,
-      pickupLocation,
-      dropLocation,
-      pickupCoords,
-      dropCoords,
-      estimatedFare,
-      passengerCount = 3,
-      tripDistance,
-    } = body;
+    const pickupLocation = body.pickupLocation || body.pickup;
+    const dropLocation = body.dropLocation || body.drop;
+    const customerPhone = body.customerPhone || body.customer_phone;
+    const customerName = body.customerName || body.customer_name;
+    const pickupCoords = body.pickupCoords || body.pickup_coords;
+    const dropCoords = body.dropCoords || body.drop_coords;
+    const estimatedFare = body.estimatedFare || body.estimated_fare;
+    const tripDistance = body.tripDistance || body.trip_distance;
+    const passengerCount = body.passengerCount || body.passenger_count || 3;
 
     if (!pickupLocation || !dropLocation) {
       return NextResponse.json({ error: "পিকআপ ও গন্তব্য অবস্থান আবশ্যক" }, { status: 400 });
@@ -1000,13 +1104,31 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { action, bookingId, driverId, driverName, driverPhone, totoNumber } = body;
+    const { action, bookingId, driverId, driverName, driverPhone, totoNumber, phone } = body;
+
+    const admin = supabaseAdmin();
+
+    // 0. Logout cleanup: marks in-progress rides as completed and frees drivers
+    if (action === "logout_cleanup") {
+      const cleanPhone = (phone || driverPhone || "").replace(/\D/g, "").slice(-10);
+      if (bookingId) {
+        await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
+          .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`);
+      }
+      if (cleanPhone) {
+        await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
+          .in("status", ["assigned", "in_progress"])
+          .or(`customer_phone.ilike.%${cleanPhone}%,driver_phone.ilike.%${cleanPhone}%`);
+      }
+      if (driverId) {
+        await admin.from("drivers").update({ is_available: true, is_active: false }).eq("id", driverId);
+      }
+      return NextResponse.json({ success: true, message: "Logged out and ride marked successful/completed" });
+    }
 
     if (!bookingId || !action) {
       return NextResponse.json({ error: "bookingId and action required" }, { status: 400 });
     }
-
-    const admin = supabaseAdmin();
 
     // 1. Fetch current booking state
     const { data: booking, error: fetchErr } = await admin
@@ -1200,41 +1322,63 @@ export async function PATCH(request: Request) {
       const distanceKm = typeof body.distanceKm === "number" ? Math.max(0.1, body.distanceKm) : null;
       const currentCoords = body.currentCoords;
 
+      const meta = getBookingMeta(booking);
+      const pricingConfig = await loadActivePricingConfig(admin);
+      const passengerCount = meta.passenger_count || 3;
+      const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
+      let liveFare = booking.final_fare || booking.estimated_fare;
       if (distanceKm !== null) {
-        const meta = getBookingMeta(booking);
-        const pricingConfig = await loadActivePricingConfig(admin);
-        const passengerCount = meta.passenger_count || 3;
-        const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
         const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
-        const liveFare = fareResult.totalFare;
-
-        const updatedMeta = updateBookingMeta(booking.feedback, {
-          live_distance_km: distanceKm,
-          live_fare: liveFare,
-          live_coords: currentCoords,
-          live_updated_at: new Date().toISOString(),
-        });
-
-        const { data: updated } = await admin
-          .from("bookings")
-          .update({
-            feedback: updatedMeta,
-            final_fare: liveFare,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", booking.id)
-          .select()
-          .maybeSingle();
-
-        return NextResponse.json({
-          success: true,
-          booking: updated ? enrichBookingCoords(updated) : undefined,
-          liveDistanceKm: distanceKm,
-          liveFare,
-        });
+        liveFare = fareResult.totalFare;
       }
 
-      return NextResponse.json({ success: true });
+      const metaUpdates: Record<string, any> = {
+        live_updated_at: new Date().toISOString(),
+      };
+      if (distanceKm !== null) {
+        metaUpdates.live_distance_km = distanceKm;
+        metaUpdates.live_fare = liveFare;
+      }
+      if (currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
+        metaUpdates.live_coords = currentCoords;
+      }
+
+      const updatedMeta = updateBookingMeta(booking.feedback, metaUpdates);
+
+      const bookingUpdates: Record<string, any> = {
+        feedback: updatedMeta,
+        updated_at: new Date().toISOString(),
+      };
+      if (distanceKm !== null) {
+        bookingUpdates.final_fare = liveFare;
+      }
+
+      const { data: updated } = await admin
+        .from("bookings")
+        .update(bookingUpdates)
+        .eq("id", booking.id)
+        .select("*, drivers(*)")
+        .maybeSingle();
+
+      // Also persist real live coordinates to the driver record in drivers table
+      if (booking.driver_id && currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
+        const lat = Number(currentCoords[0]);
+        const lng = Number(currentCoords[1]);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0) {
+          void admin.from("drivers").update({
+            latitude: lat,
+            longitude: lng,
+            updated_at: new Date().toISOString(),
+          }).eq("id", booking.driver_id);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        booking: updated ? enrichBookingCoords(updated) : undefined,
+        liveDistanceKm: distanceKm,
+        liveFare,
+      });
     }
 
     // -------------------------------------------------------------

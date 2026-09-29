@@ -29,7 +29,7 @@
   },
   "packageManager": "npm@10.9.9",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "tunnel": "node scratch/run_ngrok.mjs",
     "build": "next build",
     "start": "next start",

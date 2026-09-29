@@ -206,31 +206,21 @@ export async function GET(req: Request) {
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lng);
 
-    // 1. Check if coords are close to one of our regional hubs (< 600m)
-    for (const lm of SUNDARBAN_LANDMARKS) {
-      const d = calculateDistanceKm(latitude, longitude, lm.lat, lm.lng);
-      if (d < 0.6) {
-        return NextResponse.json({
-          name: lm.name,
-          full_address: `${lm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
-          lat: latitude,
-          lng: longitude,
-          isHub: true,
-        });
-      }
-    }
-
-    // 2. OpenStreetMap Nominatim reverse geocode
+    // 1. First attempt OpenStreetMap Nominatim reverse geocode for real street/road/village
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
         {
+          signal: controller.signal,
           headers: {
             "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
             "Accept-Language": "bn,en;q=0.8",
           },
         }
       );
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
@@ -243,16 +233,49 @@ export async function GET(req: Request) {
         const displayName =
           parts.length > 0
             ? parts.join(", ")
-            : data.display_name?.split(",").slice(0, 2).join(",") || "বর্তমান অবস্থান";
+            : data.display_name?.split(",").slice(0, 2).join(",") || "";
 
-        return NextResponse.json({
-          name: displayName.trim(),
-          full_address: data.display_name,
-          lat: latitude,
-          lng: longitude,
-        });
+        if (displayName && displayName.trim().length > 0) {
+          return NextResponse.json({
+            name: displayName.trim(),
+            full_address: data.display_name,
+            lat: latitude,
+            lng: longitude,
+          });
+        }
       }
     } catch {}
+
+    // 2. Check if coords are close to one of our regional hubs (< 1.5 km) as high-confidence fallback
+    let closestLm: (typeof SUNDARBAN_LANDMARKS)[0] | null = null;
+    let minD = 9999;
+    for (const lm of SUNDARBAN_LANDMARKS) {
+      const d = calculateDistanceKm(latitude, longitude, lm.lat, lm.lng);
+      if (d < minD) {
+        minD = d;
+        closestLm = lm;
+      }
+    }
+
+    if (closestLm && minD < 1.5) {
+      return NextResponse.json({
+        name: closestLm.name,
+        full_address: `${closestLm.name}, সুন্দরবন অঞ্চল, দক্ষিণ ২৪ পরগনা`,
+        lat: latitude,
+        lng: longitude,
+        isHub: true,
+        distanceKm: minD,
+      });
+    }
+
+    if (closestLm) {
+      return NextResponse.json({
+        name: `${closestLm.name} সংলগ্ন`,
+        full_address: `${closestLm.name} সংলগ্ন এলাকা, সুন্দরবন`,
+        lat: latitude,
+        lng: longitude,
+      });
+    }
 
     return NextResponse.json({
       name: `লোকেশন (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,

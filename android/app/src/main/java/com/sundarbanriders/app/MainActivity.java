@@ -1,10 +1,11 @@
 package com.sundarbanriders.app;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
-import android.webkit.GeolocationPermissions;
-import android.webkit.WebChromeClient;
+import android.webkit.DownloadListener;
 import android.webkit.WebSettings;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -29,16 +30,24 @@ public class MainActivity extends BridgeActivity {
             );
         }
 
-        // Enable precise Geolocation in Capacitor Android WebView
+        // Enable Geolocation & Download Handling in Capacitor Android WebView
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebSettings webSettings = getBridge().getWebView().getSettings();
             webSettings.setGeolocationEnabled(true);
             webSettings.setGeolocationDatabasePath(getFilesDir().getPath());
+            webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
 
-            getBridge().getWebView().setWebChromeClient(new WebChromeClient() {
+            // Handle PDF and file downloads via Android System Intent / View
+            getBridge().getWebView().setDownloadListener(new DownloadListener() {
                 @Override
-                public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
-                    callback.invoke(origin, true, false);
+                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW);
+                        intent.setData(Uri.parse(url));
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
                 }
             });
         }

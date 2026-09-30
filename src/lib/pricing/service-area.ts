@@ -12,12 +12,12 @@ export interface ServiceAreaBounds {
   maxLng: number;
 }
 
-// Geographic bounding box for the South Section of South 24 Parganas
+// Geographic bounding box covering Sundarban, South 24 Parganas, and Kolkata metropolitan test area
 export const SUNDARBAN_SERVICE_BOUNDS: ServiceAreaBounds = {
-  minLat: 21.45, // Bay of Bengal / Bakkhali / Sagar Coast
-  maxLat: 22.32, // Just north of Diamond Harbour / Sarisha / Lakshmikantapur
-  minLng: 88.00, // Sagar Island & Hooghly River western boundary
-  maxLng: 88.90, // Patharpratima, Raidighi & Sundarban Eastern boundary
+  minLat: 21.30, // Bay of Bengal / Bakkhali / Sagar Coast
+  maxLat: 23.20, // North to Kolkata, Baruipur, Sonarpur, Salt Lake & Greater Kolkata
+  minLng: 87.70, // Western boundary (Hooghly / Howrah border)
+  maxLng: 89.50, // Eastern boundary (Sundarban & border)
 };
 
 export const DEFAULT_CENTRAL_HUB = {

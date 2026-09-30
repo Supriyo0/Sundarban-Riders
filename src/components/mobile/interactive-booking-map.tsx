@@ -589,26 +589,30 @@ export function InteractiveBookingMap({
     });
   }, [nearbyDrivers]);
 
-  // Real GPS Geolocation Fetcher with NO Random Fallback (Strict Error if not detected)
+  // Real GPS Geolocation Fetcher with Capacitor Native & Browser Web Support
   const fetchCurrentLocation = useCallback(
-    (userInitiated = false) => {
+    async (userInitiated = false) => {
       if (isLocatingRef.current && !userInitiated) return;
       isLocatingRef.current = true;
       setIsLocating(true);
+
+      const isNative = typeof window !== "undefined" && Boolean((window as any).Capacitor?.isNativePlatform?.());
 
       const handleFail = (msg?: string, isDenied = false) => {
         isLocatingRef.current = false;
         setIsLocating(false);
         setGpsDetected(false);
         setHasValidPickup(false);
-        setPickupCoords([0, 0]);
-        setPickupInputValue("");
         setPermissionState(isDenied ? "denied" : "prompt");
+
+        const defaultDeniedMsg = isNative
+          ? "⚠️ ফোনে লোকেশন পারমিশন দেওয়া হয়নি। Settings > Apps > Sundarban Riders থেকে Location চালু করুন।"
+          : "⚠️ ব্রাউজারে লোকেশন পারমিশন ব্লক (Blocked) আছে! ব্রাউজারের সাইট সেটিংস থেকে Location 'Allow' করুন।";
 
         const errorMsg =
           msg ||
           (isDenied
-            ? "⚠️ Chrome-এ লোকেশন পারমিশন ব্লক (Blocked) আছে! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।"
+            ? defaultDeniedMsg
             : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ওপরে আপনার পিকআপ স্থান টাইপ করুন বা ম্যাপে ক্লিক করুন।");
 
         setLocationError(errorMsg);
@@ -619,14 +623,7 @@ export function InteractiveBookingMap({
 
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
-
-        // Strict Service Area Boundary Check: Never accept foreign, Washington, or out-of-territory points
-        if (!isLocationInServiceArea(latitude, longitude)) {
-          handleFail(
-            "⚠️ আপনার বর্তমান অবস্থানটি সুন্দরবন পরিষেবা এলাকার (ডায়মন্ড হারবার থেকে বকখালি ও সাগর) বাইরে! পরিষেবা পেতে ওপরে অনুমোদিত পিকআপ স্থান টাইপ করুন।"
-          );
-          return;
-        }
+        setIsLocating(false);
 
         const newPickup: [number, number] = [latitude, longitude];
         setPickupCoords(newPickup);
@@ -646,33 +643,69 @@ export function InteractiveBookingMap({
         // Exact zoom-in like Uber when pickup is detected
         if (mapInstanceRef.current && (!dropCoordsRef.current || dropCoordsRef.current[0] === 0)) {
           try {
-            mapInstanceRef.current.flyTo(newPickup, 18, { duration: 1.2 });
+            mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.2 });
           } catch {}
         }
 
-        setIsLocating(false);
-        if (userInitiated) toast.success(`📍 বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
+        const isOutOfService = !isLocationInServiceArea(latitude, longitude);
+        if (isOutOfService) {
+          toast.warning(`📍 অবস্থান সনাক্ত হয়েছে: ${detectedName} (সুন্দরবন মূল এলাকার বাইরে)`);
+        } else if (userInitiated) {
+          toast.success(`📍 বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
+        }
       };
 
       if (userInitiated) {
         toast.info("📍 জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
       }
 
+      // 1. Try Native Capacitor Geolocation first if running in Android App
+      if (isNative) {
+        try {
+          const { Geolocation } = await import("@capacitor/geolocation");
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location !== "granted") {
+            const requested = await Geolocation.requestPermissions();
+            if (requested.location !== "granted") {
+              handleFail(
+                "⚠️ অ্যাপে লোকেশন পারমিশন দিন। আপনার ফোনের Settings > Apps > Sundarban Riders > Permissions থেকে Location চালু করুন।",
+                true
+              );
+              return;
+            }
+          }
+
+          const position = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 10000,
+          });
+
+          if (position?.coords) {
+            await handleSuccess(position.coords.latitude, position.coords.longitude);
+            return;
+          }
+        } catch (capErr) {
+          console.warn("Capacitor Geolocation error, falling back to browser API:", capErr);
+        }
+      }
+
+      // 2. Standard Web Browser Geolocation (Chrome / Safari / Firefox)
       if (typeof window === "undefined" || !navigator.geolocation) {
-        handleFail("⚠️ আপনার ব্রাউজারে লোকেশন পরিষেবা সমর্থিত নয়। অনুগ্রহ করে পিকআপ স্থান টাইপ করুন।");
+        handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা সমর্থিত নয়। অনুগ্রহ করে পিকআপ স্থান টাইপ করুন।");
         return;
       }
 
-      // Check permission state in Chrome / modern browsers
+      // Check permission state in modern browsers
       if (typeof navigator.permissions !== "undefined" && navigator.permissions.query) {
         navigator.permissions
           .query({ name: "geolocation" as PermissionName })
           .then((status) => {
             if (status.state === "denied") {
-              handleFail(
-                "⚠️ Chrome-এ লোকেশন ব্লক করা আছে! URL বারের বামে তালা/টিউন (🔒) আইকনে ক্লিক করে Location 'Allow' করুন।",
-                true
-              );
+              const deniedText = isNative
+                ? "⚠️ ফোনে লোকেশন পারমিশন ব্লক আছে। Settings > Apps থেকে অনুমতি দিন।"
+                : "⚠️ ব্রাউজারে লোকেশন ব্লক করা আছে! সাইট সেটিংস থেকে Location 'Allow' করুন।";
+              handleFail(deniedText, true);
             }
           })
           .catch(() => {});
@@ -682,33 +715,33 @@ export function InteractiveBookingMap({
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
         (err) => {
           if (err.code === 1) {
-            handleFail(
-              "⚠️ Chrome-এ লোকেশন পারমিশন দেওয়া হয়নি! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।",
-              true
-            );
+            const deniedText = isNative
+              ? "⚠️ ফোনে লোকেশন পারমিশন দেওয়া হয়নি। Settings > Apps > Sundarban Riders থেকে Location চালু করুন।"
+              : "⚠️ ব্রাউজারে লোকেশন পারমিশন দেওয়া হয়নি। সাইট সেটিংস থেকে Location 'Allow' করুন।";
+            handleFail(deniedText, true);
           } else {
-            // Try fallback with low accuracy (Wi-Fi / Cell tower)
+            // Try fallback with lower accuracy (Wi-Fi / Cell tower)
             navigator.geolocation.getCurrentPosition(
               (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
               (fallbackErr) => {
                 if (fallbackErr.code === 1) {
-                  handleFail(
-                    "⚠️ Chrome-এ লোকেশন পারমিশন দেওয়া হয়নি! URL বারের বামে তালা/টিউন (🔒) আইকন থেকে Location 'Allow' করুন।",
-                    true
-                  );
+                  const deniedText = isNative
+                    ? "⚠️ ফোনে লোকেশন পারমিশন দেওয়া হয়নি। Settings > Apps > Sundarban Riders থেকে Location চালু করুন।"
+                    : "⚠️ ব্রাউজারে লোকেশন পারমিশন দেওয়া হয়নি। সাইট সেটিংস থেকে Location 'Allow' করুন।";
+                  handleFail(deniedText, true);
                 } else if (fallbackErr.code === 2) {
                   handleFail(
-                    "⚠️ ডিভাইসের জিপিএস পজিশন পাওয়া যায়নি (কম্পিউটার/ফোনে লোকেশন বন্ধ থাকতে পারে)। ওপরে পিকআপ টাইপ করুন বা ম্যাপে ক্লিক করুন।"
+                    "⚠️ ডিভাইসের জিপিএস অবস্থান মেলেনি (ফোনে Location/GPS চালু আছে কি না পরীক্ষা করুন)।"
                   );
                 } else {
-                  handleFail("⚠️ জিপিএস রেসপন্স টাইমআউট হয়েছে। অনুগ্রহ করে ওপরে আপনার পিকআপ স্থান লিখুন।");
+                  handleFail("⚠️ জিপিএস রেসপন্স টাইমআউট হয়েছে। ওপরে পিকআপ টাইপ করুন বা পুনরায় চেষ্টা করুন।");
                 }
               },
-              { enableHighAccuracy: false, timeout: 8000 }
+              { enableHighAccuracy: false, timeout: 10000, maximumAge: 30000 }
             );
           }
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]

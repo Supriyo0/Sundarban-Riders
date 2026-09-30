@@ -753,33 +753,57 @@ export async function GET(request: Request) {
     }
 
     if (validDriverId || last10Driver.length >= 10 || validDriverUniqueId) {
+      const matchedDriverIds: string[] = [];
+      if (validDriverId) {
+        matchedDriverIds.push(validDriverId);
+      }
+      if (last10Driver.length >= 10 || validDriverUniqueId) {
+        const dConds: string[] = [];
+        if (last10Driver.length >= 10) {
+          dConds.push(`phone.ilike.%${last10Driver}%`);
+        }
+        if (validDriverUniqueId) {
+          dConds.push(`toto_number.ilike.%${validDriverUniqueId}%`);
+        }
+        try {
+          const { data: matched } = await admin
+            .from("drivers")
+            .select("id")
+            .or(dConds.join(","));
+          if (matched) {
+            for (const d of matched) {
+              if (d.id && !matchedDriverIds.includes(d.id)) {
+                matchedDriverIds.push(d.id);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[api/bookings] driver match lookup error:", err);
+        }
+      }
+
       if (isHistory) {
-        let query = admin
+        if (matchedDriverIds.length === 0) {
+          return NextResponse.json({
+            trips: [],
+            bookings: [],
+            stats: {
+              totalTrips: 0,
+              completedTrips: 0,
+              totalEarnings: 0,
+              todayTripsCount: 0,
+              todayEarnings: 0,
+            },
+          });
+        }
+
+        const { data, error } = await admin
           .from("bookings")
-          .select("*")
+          .select("*, drivers(*)")
+          .in("driver_id", matchedDriverIds)
           .order("created_at", { ascending: false })
           .limit(50);
 
-        const conditions: string[] = [];
-        if (validDriverId) {
-          conditions.push(`driver_id.eq.${validDriverId}`);
-        }
-        if (last10Driver.length >= 10) {
-          conditions.push(`driver_phone.eq.${last10Driver}`);
-          conditions.push(`driver_phone.eq.91${last10Driver}`);
-          conditions.push(`driver_phone.eq.+91${last10Driver}`);
-          conditions.push(`driver_phone.ilike.%${last10Driver}%`);
-        }
-        if (validDriverUniqueId) {
-          conditions.push(`toto_number.eq.${validDriverUniqueId}`);
-          conditions.push(`driver_unique_id.eq.${validDriverUniqueId}`);
-        }
-
-        if (conditions.length > 0) {
-          query = query.or(conditions.join(","));
-        }
-
-        const { data, error } = await query;
         if (error) {
           console.error("[api/bookings] driver history query error:", error);
           return NextResponse.json({ error: error.message }, { status: 500 });
@@ -814,33 +838,18 @@ export async function GET(request: Request) {
         });
       }
 
-      let activeQuery = admin
+      if (matchedDriverIds.length === 0) {
+        return NextResponse.json({ booking: null });
+      }
+
+      const { data, error } = await admin
         .from("bookings")
         .select("*, drivers(*)")
+        .in("driver_id", matchedDriverIds)
         .in("status", ["assigned", "in_progress"])
         .order("created_at", { ascending: false })
-        .limit(1);
-
-      const activeConditions: string[] = [];
-      if (validDriverId) {
-        activeConditions.push(`driver_id.eq.${validDriverId}`);
-      }
-      if (last10Driver.length >= 10) {
-        activeConditions.push(`driver_phone.eq.${last10Driver}`);
-        activeConditions.push(`driver_phone.eq.91${last10Driver}`);
-        activeConditions.push(`driver_phone.eq.+91${last10Driver}`);
-        activeConditions.push(`driver_phone.ilike.%${last10Driver}%`);
-      }
-      if (validDriverUniqueId) {
-        activeConditions.push(`toto_number.eq.${validDriverUniqueId}`);
-        activeConditions.push(`driver_unique_id.eq.${validDriverUniqueId}`);
-      }
-
-      if (activeConditions.length > 0) {
-        activeQuery = activeQuery.or(activeConditions.join(","));
-      }
-
-      const { data, error } = await activeQuery.maybeSingle();
+        .limit(1)
+        .maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -1216,6 +1225,25 @@ export async function PATCH(request: Request) {
           .maybeSingle();
         if (foundDriver?.id) {
           validDriverId = foundDriver.id;
+        } else if (clean.length === 10) {
+          try {
+            const { data: newDriver } = await admin
+              .from("drivers")
+              .insert({
+                name: driverName || "সুন্দরবন চালক",
+                phone: clean,
+                toto_number: totoNumber || "WB-96-T-8421",
+                is_active: true,
+                is_available: false,
+              })
+              .select("id")
+              .maybeSingle();
+            if (newDriver?.id) {
+              validDriverId = newDriver.id;
+            }
+          } catch (createDriverErr) {
+            console.warn("[accept ride] auto-create driver error:", createDriverErr);
+          }
         }
       }
 
@@ -1223,7 +1251,13 @@ export async function PATCH(request: Request) {
       const existingMeta = getBookingMeta(booking);
       const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
       const startOtp = existingMeta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821");
-      const updatedFeedback = updateBookingMeta(booking.feedback, { start_otp: startOtp });
+      const updatedFeedback = updateBookingMeta(booking.feedback, {
+        start_otp: startOtp,
+        driver_id: validDriverId || driverId || "",
+        driver_name: driverName || "সুন্দরবন চালক",
+        driver_phone: driverPhone || "",
+        toto_number: totoNumber || "WB-96-T-8421",
+      });
 
       // Assign ride atomically - ONLY updating columns that exist in bookings schema
       const updateData: Record<string, any> = {

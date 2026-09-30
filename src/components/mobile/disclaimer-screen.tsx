@@ -24,6 +24,48 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
+import { toast } from "sonner";
+
+export async function triggerDownloadPdf(url: string, filename: string, e?: React.MouseEvent) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  try {
+    toast.info("📄 PDF ডাউনলোড প্রস্তুত করা হচ্ছে...");
+    const fullUrl =
+      typeof window !== "undefined" && url.startsWith("/")
+        ? window.location.origin + url
+        : url;
+
+    // 1. Fetch blob and trigger browser download
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 15000);
+    toast.success("✅ PDF ডাউনলোড সফল হয়েছে!");
+
+    // 2. Also trigger system viewer for Android WebView
+    if (typeof window !== "undefined") {
+      try {
+        window.open(fullUrl, "_system");
+      } catch {}
+    }
+  } catch (err) {
+    console.warn("Blob download failed, opening direct URL:", err);
+    if (typeof window !== "undefined") {
+      const fullUrl = url.startsWith("/") ? window.location.origin + url : url;
+      window.open(fullUrl, "_system") || window.open(fullUrl, "_blank");
+    }
+  }
+}
 
 export interface DisclaimerItem {
   id: string;
@@ -365,15 +407,15 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
             >
               {role === "rider" ? "🛺 চালক পার্টনার চুক্তি ও নিয়মাবলী" : "👤 যাত্রী সুরক্ষা ও ব্যবহারের শর্তাবলী"}
             </span>
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[10px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg border border-slate-200 flex items-center gap-1 transition-colors"
+            <button
+              type="button"
+              onClick={(e) => triggerDownloadPdf(pdfUrl, pdfName, e)}
+              className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 py-1.5 rounded-lg border border-slate-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              title="অফিসিয়াল PDF ডাউনলোড করুন"
             >
-              <Download className="w-3 h-3" />
+              <Download className="w-3.5 h-3.5 text-emerald-700" />
               <span>PDF ডাউনলোড</span>
-            </a>
+            </button>
           </div>
 
           <h1 className="text-xl font-black text-slate-900 tracking-tight leading-tight">
@@ -571,14 +613,14 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
             <FileText className="w-4 h-4 text-slate-500" />
             <span>অফিসিয়াল ডকুমেন্ট: <strong className="font-bold">{pdfName}</strong></span>
           </div>
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] font-bold text-emerald-700 underline"
+          <button
+            type="button"
+            onClick={(e) => triggerDownloadPdf(pdfUrl, pdfName, e)}
+            className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline flex items-center gap-1 cursor-pointer active:scale-95"
           >
-            PDF খুলুন
-          </a>
+            <Download className="w-3.5 h-3.5" />
+            <span>PDF ডাউনলোড</span>
+          </button>
         </div>
       </div>
 
@@ -649,6 +691,7 @@ export function DisclaimerViewerModal({
 
   const items = activeTab === "rider" ? RIDER_DISCLAIMERS : PASSENGER_DISCLAIMERS;
   const pdfUrl = activeTab === "rider" ? "/rider-disclaimer.pdf" : "/customer-disclaimer.pdf";
+  const pdfName = activeTab === "rider" ? "FINAL RIDER DISCLAIMER 28-09-26.pdf" : "COUSTOMER DISCLAIMER 28-09-26.pdf";
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in select-none">
@@ -714,15 +757,14 @@ export function DisclaimerViewerModal({
                 ? "যাত্রীদের নিরাপত্তা ও সেবামূলক অধিকার (৬টি ধারা):"
                 : "চালক পার্টনার হিসেবে দায়িত্ব ও দায়মুক্তি বিধিমালা (১৪টি ধারা):"}
             </span>
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1"
+            <button
+              type="button"
+              onClick={(e) => triggerDownloadPdf(pdfUrl, pdfName, e)}
+              className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-2xs"
             >
-              <Download className="w-3 h-3" />
-              <span>PDF</span>
-            </a>
+              <Download className="w-3.5 h-3.5 text-emerald-700" />
+              <span>PDF ডাউনলোড</span>
+            </button>
           </div>
 
           {/* PDF Official Greeting */}

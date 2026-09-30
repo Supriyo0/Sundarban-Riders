@@ -490,7 +490,7 @@ export function DriverRadarPanel({
   // -------------------------------------------------------------
   if (activeTab === "trips") {
     return (
-      <div className="w-full min-h-full flex flex-col p-4 space-y-4 pb-24 bg-slate-50 select-none">
+      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pb-32 bg-slate-50 select-none">
         {/* Header */}
         <div className="flex items-center justify-between pb-1 border-b border-slate-200">
           <div>
@@ -501,7 +501,7 @@ export function DriverRadarPanel({
             type="button"
             onClick={fetchDriverTrips}
             disabled={loadingTrips}
-            className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs hover:bg-slate-50 transition-colors"
+            className="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs hover:bg-slate-50 transition-colors cursor-pointer active:scale-95"
           >
             <RefreshCw className={`w-4 h-4 text-emerald-600 ${loadingTrips ? "animate-spin" : ""}`} />
           </button>
@@ -568,7 +568,8 @@ export function DriverRadarPanel({
               return (
                 <div
                   key={trip.id || idx}
-                  className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md"
+                  onClick={() => setSelectedTripDetail(trip)}
+                  className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md cursor-pointer active:scale-[0.99] group"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
@@ -605,11 +606,134 @@ export function DriverRadarPanel({
                       🏁 গন্তব্য: <strong className="text-slate-800">{cleanLocation(trip.drop_location)}</strong>
                     </p>
                   </div>
+
+                  <div className="flex items-center justify-between pt-1 text-[10px] text-emerald-700 font-bold border-t border-slate-100">
+                    <span className="flex items-center gap-1">
+                      <Receipt className="w-3 h-3" />
+                      <span>রসিদ ও যাত্রীর বিবরণ দেখতে ট্যাপ করুন</span>
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
                 </div>
               );
             })
           )}
         </div>
+
+        {/* Detailed Trip Receipt Modal for Driver */}
+        {selectedTripDetail && (
+          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in select-none">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-lg font-black">
+                    🛺
+                  </div>
+                  <div>
+                    <h3 className="font-black text-sm text-slate-900">
+                      #{selectedTripDetail.booking_number || selectedTripDetail.id?.slice(0, 8)}
+                    </h3>
+                    <span className="text-[10.5px] text-slate-500 font-medium">
+                      ডিজিটাল ট্রিপ ভাউচার
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTripDetail(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Fare & Status */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10.5px] text-slate-500 font-bold block">প্রাপ্ত ভাড়া</span>
+                  <span className="text-xl font-black font-mono text-emerald-700">
+                    ₹{selectedTripDetail.final_fare || selectedTripDetail.estimated_fare || 30}.০০
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span
+                    className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+                      selectedTripDetail.status === "completed"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-red-100 text-red-800"
+                    }`}
+                  >
+                    {selectedTripDetail.status === "completed" ? "সফল ট্রিপ ✓" : "বাতিল ট্রিপ"}
+                  </span>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    {selectedTripDetail.created_at
+                      ? new Date(selectedTripDetail.created_at).toLocaleTimeString("bn-BD", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "আজ"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Route Info */}
+              <div className="space-y-2 text-xs">
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">পিকআপ পয়েন্ট</span>
+                    <span className="font-bold text-slate-800">
+                      {cleanLocation(selectedTripDetail.pickup_location)}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 mt-1 shrink-0" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">গন্তব্য পয়েন্ট</span>
+                    <span className="font-bold text-slate-800">
+                      {cleanLocation(selectedTripDetail.drop_location)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Passenger Info */}
+              <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold text-xs">
+                    👤
+                  </div>
+                  <div>
+                    <span className="font-bold text-xs text-slate-900 block">
+                      {selectedTripDetail.customer_name || "যাত্রী বন্ধু"}
+                    </span>
+                    <span className="text-[10.5px] text-slate-500">
+                      {selectedTripDetail.customer_phone ? `+91 ${selectedTripDetail.customer_phone.slice(-10)}` : "ফোন সংরক্ষিত"}
+                    </span>
+                  </div>
+                </div>
+                {selectedTripDetail.customer_phone && (
+                  <a
+                    href={`tel:${selectedTripDetail.customer_phone}`}
+                    className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors cursor-pointer"
+                    title="যাত্রীকে কল করুন"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+
+              <Button
+                type="button"
+                onClick={() => setSelectedTripDetail(null)}
+                className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
+              >
+                বন্ধ করুন
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

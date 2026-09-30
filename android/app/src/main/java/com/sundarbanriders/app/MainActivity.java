@@ -19,8 +19,23 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestAppPermissions();
+        setupWebView();
+    }
 
-        // Explicitly request runtime Precise Location permissions from Android
+    @Override
+    public void onStart() {
+        super.onStart();
+        setupWebView();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        setupWebView();
+    }
+
+    private void requestAppPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                 this,
@@ -31,17 +46,19 @@ public class MainActivity extends BridgeActivity {
                 LOCATION_PERMISSION_REQUEST_CODE
             );
         }
+    }
 
-        // Enable Geolocation & Download Handling in Capacitor Android WebView
+    private void setupWebView() {
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebSettings webSettings = getBridge().getWebView().getSettings();
             webSettings.setGeolocationEnabled(true);
-            webSettings.setGeolocationDatabasePath(getFilesDir().getPath());
+            try {
+                webSettings.setGeolocationDatabasePath(getFilesDir().getPath());
+            } catch (Exception e) {}
             webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
             webSettings.setDatabaseEnabled(true);
             webSettings.setDomStorageEnabled(true);
 
-            // Subclass BridgeWebChromeClient to retain ALL Capacitor bridge features AND auto-grant Geolocation for WebView
             getBridge().getWebView().setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
                 @Override
                 public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback callback) {
@@ -49,7 +66,6 @@ public class MainActivity extends BridgeActivity {
                 }
             });
 
-            // Handle PDF and file downloads via Android System Intent / View
             getBridge().getWebView().setDownloadListener(new DownloadListener() {
                 @Override
                 public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {

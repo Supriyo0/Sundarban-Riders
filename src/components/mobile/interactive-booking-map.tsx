@@ -23,6 +23,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
 import {
   DEFAULT_TOTO_PRICING,
@@ -597,6 +599,22 @@ export function InteractiveBookingMap({
     });
   }, [nearbyDrivers]);
 
+  // Permission Request & Refresh Handler for Native & Web
+  const handleRequestPermissionAndLocate = useCallback(async () => {
+    const isNative = Capacitor.isNativePlatform();
+    if (isNative) {
+      try {
+        const res = await Geolocation.requestPermissions();
+        if (res.location === "granted") {
+          toast.success("✅ লোকেশন অনুমতি দেওয়া হয়েছে!");
+        }
+      } catch (e) {
+        console.warn("Permission request error:", e);
+      }
+    }
+    fetchCurrentLocation(true);
+  }, []);
+
   // Real GPS Geolocation Fetcher with Capacitor Native & Browser Web Support (Pure GPS, Zero IP guessing)
   const fetchCurrentLocation = useCallback(
     async (userInitiated = false) => {
@@ -604,7 +622,7 @@ export function InteractiveBookingMap({
       isLocatingRef.current = true;
       setIsLocating(true);
 
-      const isNative = typeof window !== "undefined" && Boolean((window as any).Capacitor?.isNativePlatform?.());
+      const isNative = Capacitor.isNativePlatform();
 
       const handleFail = (msg?: string, isDenied = false) => {
         isLocatingRef.current = false;
@@ -612,19 +630,21 @@ export function InteractiveBookingMap({
         setGpsDetected(false);
         setPermissionState(isDenied ? "denied" : "prompt");
 
-        const defaultDeniedMsg = isNative
-          ? "⚠️ ফোনে লোকেশন পারমিশন দেওয়া হয়নি। Settings > Apps > Sundarban Riders থেকে Location চালু করুন।"
-          : "⚠️ ব্রাউজারে লোকেশন পারমিশন ব্লক (Blocked) আছে! ব্রাউজারের সাইট সেটিংস থেকে Location 'Allow' করুন।";
+        if (userInitiated || isDenied) {
+          const defaultDeniedMsg = isNative
+            ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
+            : "⚠️ ব্রাউজারে লোকেশন পারমিশন Blocked আছে। অনুগ্রহ করে ব্রাউজার সাইট সেটিংস থেকে Location 'Allow' করুন।";
 
-        const errorMsg =
-          msg ||
-          (isDenied
-            ? defaultDeniedMsg
-            : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ডিভাইসের GPS চালু করুন অথবা পিকআপ অনুসন্ধান করুন।");
+          const errorMsg =
+            msg ||
+            (isDenied
+              ? defaultDeniedMsg
+              : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ফোনের নোটিফিকেশন বার থেকে Location (GPS) চালু করুন।");
 
-        setLocationError(errorMsg);
-        if (userInitiated) {
-          toast.error(errorMsg);
+          setLocationError(errorMsg);
+          if (userInitiated) {
+            toast.error(errorMsg);
+          }
         }
       };
 
@@ -674,17 +694,18 @@ export function InteractiveBookingMap({
       // 1. Try Native Capacitor Geolocation first if in Android/iOS App
       if (isNative) {
         try {
-          const { Geolocation } = await import("@capacitor/geolocation");
-          try {
-            const perm = await Geolocation.checkPermissions();
-            if (perm.location !== "granted") {
-              await Geolocation.requestPermissions();
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location !== "granted") {
+            const req = await Geolocation.requestPermissions();
+            if (req.location !== "granted") {
+              handleFail(undefined, true);
+              return;
             }
-          } catch {}
+          }
 
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 15000,
+            timeout: 20000,
             maximumAge: 0,
           });
 
@@ -712,7 +733,7 @@ export function InteractiveBookingMap({
             (fallbackErr) => {
               if (fallbackErr.code === 1 || err.code === 1) {
                 const deniedText = isNative
-                  ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Location 'Allow')।"
+                  ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
                   : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ অনুসন্ধান করুন।";
                 handleFail(deniedText, true);
               } else {
@@ -743,11 +764,10 @@ export function InteractiveBookingMap({
     let isCancelled = false;
 
     const startWatching = async () => {
-      const isNative = typeof window !== "undefined" && Boolean((window as any).Capacitor?.isNativePlatform?.());
+      const isNative = Capacitor.isNativePlatform();
 
       if (isNative) {
         try {
-          const { Geolocation } = await import("@capacitor/geolocation");
           capWatchId = await Geolocation.watchPosition(
             { enableHighAccuracy: true, maximumAge: 0 },
             async (position, err) => {
@@ -804,9 +824,7 @@ export function InteractiveBookingMap({
         navigator.geolocation.clearWatch(watchId);
       }
       if (capWatchId) {
-        import("@capacitor/geolocation").then(({ Geolocation }) => {
-          Geolocation.clearWatch({ id: capWatchId! }).catch(() => {});
-        });
+        Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
     };
   }, [hasValidPickup, resolveLocationAddress]);
@@ -1174,7 +1192,7 @@ export function InteractiveBookingMap({
                   </div>
                   <button
                     type="button"
-                    onClick={() => fetchCurrentLocation(true)}
+                    onClick={handleRequestPermissionAndLocate}
                     disabled={isLocating}
                     className="shrink-0 text-[10.5px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
                   >

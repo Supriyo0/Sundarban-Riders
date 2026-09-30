@@ -34,6 +34,9 @@ interface TripCompletionReceiptProps {
   drop: string;
   distanceKm: number;
   fare: number;
+  estimatedDistanceKm?: number;
+  estimatedFare?: number;
+  durationMinutes?: number;
   onBookAnother: () => void;
   role?: "rider" | "passenger";
 }
@@ -49,6 +52,9 @@ export function TripCompletionReceipt({
   drop,
   distanceKm,
   fare,
+  estimatedDistanceKm,
+  estimatedFare,
+  durationMinutes = 12,
   onBookAnother,
   role = "passenger",
 }: TripCompletionReceiptProps) {
@@ -82,7 +88,11 @@ export function TripCompletionReceipt({
 
   // WhatsApp Receipt Share
   const handleShareReceiptOnWhatsApp = () => {
-    const receiptMsg = `🧾 *সুন্দরবন রাইডার — ক্যাব রসিদ ও ট্রিপ সারাংশ*
+    const estNote = estimatedDistanceKm && estimatedDistanceKm !== distanceKm
+      ? `\n📌 *প্রাথমিক বুকিং:* ${estimatedDistanceKm} কিমি (আনুমানিক ₹${estimatedFare || fare}.০০)`
+      : "";
+
+    const receiptMsg = `🧾 *সুন্দরবন রাইডার্স — ডিজিটাল রসিদ ও ট্রিপ সারাংশ*
 ==============================
 🆔 রাইড নং: #${tripId}
 👤 যাত্রী: ${customerName || "যাত্রী বন্ধু"}
@@ -91,17 +101,14 @@ export function TripCompletionReceipt({
 📞 চালকের ফোন: ${driverPhone}
 
 📍 *পিকআপ:* ${pickup}
-🏁 *গন্তব্য:* ${drop}
-📏 *মোট দূরত্ব:* ${distanceKm} কিমি
-⏱️ *ট্রিপ স্থায়িত্ব:* ~১২ মিনিট
+🏁 *গন্তব্য:* ${drop}${estNote}
+📏 *প্রকৃত ভ্রমণ দূরত্ব:* ${distanceKm} কিমি
+⏱️ *ট্রিপ স্থায়িত্ব:* ~${durationMinutes} মিনিট
 
-💵 *ভাড়ার বিবরণ:*
-- বেস ফেয়ার: ₹৩০.০০
-- দূরত্ব চার্জ: ₹${Math.max(0, fare - 30)}.00
-------------------------------
-💰 *মোট নগদ ভাড়া:* ₹${fare}.০০ (সংগৃহীত)
+💵 *ভাড়ার বিবরণ (রেট চার্ট অনুযায়ী):*
+- প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹${fare}.০০ (সংগৃহীত)
 ==============================
-সুন্দরবন রাইডারের সাথে ভ্রমণ করার জন্য আপনাকে ধন্যবাদ! আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করি।`;
+সুন্দরবন রাইডার্সের সাথে ভ্রমণ করার জন্য ধন্যবাদ! নিরাপদ ও আরামদায়ক যাত্রা।`;
 
     const encoded = encodeURIComponent(receiptMsg);
     const cleanPhone = customerPhone.replace(/\D/g, "");
@@ -269,18 +276,32 @@ export function TripCompletionReceipt({
                 </span>
               </div>
 
+              {/* Initial vs Actual Realized Comparison (For early drop-off or extended distance) */}
+              {estimatedDistanceKm !== undefined && estimatedFare !== undefined && (
+                <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between text-slate-600 font-semibold">
+                    <span>📌 প্রাথমিক বুকিং অনুমান:</span>
+                    <span className="font-mono text-slate-700">{estimatedDistanceKm} কিমি • ₹{estimatedFare}</span>
+                  </div>
+                  <div className="flex items-center justify-between font-black text-amber-950 pt-1 border-t border-amber-200">
+                    <span>🏁 প্রকৃত ভ্রমণ ও স্থায়িত্ব:</span>
+                    <span className="text-emerald-700 font-mono">{distanceKm} কিমি • ~{durationMinutes} মিনিট</span>
+                  </div>
+                </div>
+              )}
+
               {/* Fare Breakdown */}
               <div className="space-y-1.5 pt-1 text-xs">
-                <div className="flex justify-between text-slate-500 font-medium">
-                  <span>বেস ফেয়ার (Base Fare):</span>
-                  <span>₹৩০.০০</span>
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>প্রকৃত ভ্রমণ দূরত্ব (Actual GPS Distance):</span>
+                  <span className="font-bold text-slate-900">{distanceKm} কিমি</span>
                 </div>
-                <div className="flex justify-between text-slate-500 font-medium">
-                  <span>দূরত্ব চার্জ ({distanceKm} কিমি):</span>
-                  <span>₹{Math.max(0, fare - 30)}.০০</span>
+                <div className="flex justify-between text-slate-600 font-medium">
+                  <span>ভ্রমণ স্থায়িত্ব (Travel Duration):</span>
+                  <span className="font-bold text-slate-900">~{durationMinutes} মিনিট</span>
                 </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
-                  <span>মোট নগদ ভাড়া (Cash Paid):</span>
+                  <span>চূড়ান্ত প্রদেয় নগদ ভাড়া (Final Cash Fare):</span>
                   <span className="text-emerald-600 text-lg">₹{fare}.০০</span>
                 </div>
               </div>

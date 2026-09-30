@@ -23,7 +23,7 @@ interface DriverActiveTripMapProps {
   tripStartTime?: string;
   onArrivedAtPickup?: () => void;
   onRequestOtpModal?: () => void;
-  onCompleteTrip?: () => Promise<void>;
+  onCompleteTrip?: (finalOdometerKm?: number) => Promise<void>;
   onOdometerUpdate?: (reading: LiveMeterReading) => void;
 }
 
@@ -530,7 +530,7 @@ export function DriverActiveTripMap({
                   label="যাত্রার শেষ প্রান্তে সোয়াইপ করুন 🏁"
                   confirmedLabel="ট্রিপ সম্পন্ন হচ্ছে..."
                   onConfirm={async () => {
-                    await onCompleteTrip?.();
+                    await onCompleteTrip?.(meterReading.totalKm > 0 ? meterReading.totalKm : undefined);
                   }}
                 />
               </div>

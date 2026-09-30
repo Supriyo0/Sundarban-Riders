@@ -2846,7 +2846,7 @@ function MobileAppPageContent() {
                 setStartOtpInput("");
                 setShowStartOtpModal(true);
               }}
-              onCompleteTrip={async () => {
+              onCompleteTrip={async (finalKm) => {
                 try {
                   const res = await fetch("/api/bookings", {
                     method: "PATCH",
@@ -2856,11 +2856,15 @@ function MobileAppPageContent() {
                       bookingId: activeRide.id,
                       driverId: session?.driverId,
                       endCoords: driverLiveCoords || null,
+                      finalDistanceKm: finalKm && finalKm > 0 ? finalKm : undefined,
                     }),
                   });
                   const data = await res.json();
                   const finalFare = data.booking?.final_fare || activeRide.fare || 50;
-                  const distKm = data.booking?.actual_distance_km || 1.0;
+                  const distKm = data.booking?.actual_distance_km || finalKm || 1.0;
+                  const estDist = activeRide.distanceKm || distKm;
+                  const estFare = activeRide.fare || finalFare;
+
                   playSuccessSound();
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,
@@ -2868,6 +2872,8 @@ function MobileAppPageContent() {
                     drop: activeRide.drop,
                     fare: finalFare,
                     distanceKm: distKm,
+                    estimatedDistanceKm: estDist,
+                    estimatedFare: estFare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
                   };
@@ -2886,7 +2892,9 @@ function MobileAppPageContent() {
                     pickup: activeRide.pickup,
                     drop: activeRide.drop,
                     fare: activeRide.fare || 50,
-                    distanceKm: 1.0,
+                    distanceKm: finalKm || 1.0,
+                    estimatedDistanceKm: activeRide.distanceKm,
+                    estimatedFare: activeRide.fare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
                   };
@@ -3267,6 +3275,9 @@ function MobileAppPageContent() {
         drop={driverCompletedRide.drop}
         distanceKm={driverCompletedRide.distanceKm || 1.0}
         fare={driverCompletedRide.fare || 50}
+        estimatedDistanceKm={driverCompletedRide.estimatedDistanceKm}
+        estimatedFare={driverCompletedRide.estimatedFare}
+        durationMinutes={driverCompletedRide.durationMinutes || 12}
         onBookAnother={() => {
           setDriverCompletedRide(null);
           if (typeof window !== "undefined") {
@@ -3296,6 +3307,9 @@ function MobileAppPageContent() {
         drop={passengerCompletedRide?.drop_location || dropText}
         distanceKm={passengerCompletedRide?.actual_distance_km || tripDistance}
         fare={passengerCompletedRide?.final_fare || passengerCompletedRide?.estimated_fare || tripFare}
+        estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km || tripDistance}
+        estimatedFare={passengerCompletedRide?.estimated_fare || tripFare}
+        durationMinutes={passengerCompletedRide?.duration_minutes || 12}
         onBookAnother={() => {
           hasCompletedNotifiedRef.current = null;
           setPassengerCompletedRide(null);

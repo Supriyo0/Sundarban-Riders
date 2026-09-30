@@ -326,7 +326,7 @@ export function LiveRideTrackingMap({
   const otp = booking?.start_otp || booking?.startOtp || "";
   const totoNum = booking?.toto_number || booking?.totoNumber || booking?.uniqueId || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
-  const displayFare = rideStep === "in_trip" ? Math.max(tripFare, Math.round(liveMeterFare)) : tripFare;
+  const displayFare = rideStep === "in_trip" && liveMeterFare > 0 ? Math.round(liveMeterFare) : tripFare;
   const displayKm = rideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
 
   // If ride is arrived/completed: Show completion modal

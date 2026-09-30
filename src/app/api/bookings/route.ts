@@ -1470,9 +1470,14 @@ export async function PATCH(request: Request) {
         : (enriched.drop_lat && enriched.drop_lng ? [enriched.drop_lat, enriched.drop_lng] : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
 
       let distanceKm = 1.0;
-      if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
+      if (body.finalDistanceKm && typeof body.finalDistanceKm === "number" && body.finalDistanceKm > 0) {
+        distanceKm = Math.round(body.finalDistanceKm * 10) / 10;
+      } else if (meta.live_distance_km && typeof meta.live_distance_km === "number" && meta.live_distance_km > 0) {
+        distanceKm = Math.round(meta.live_distance_km * 10) / 10;
+      } else if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
         distanceKm = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
       }
+      if (distanceKm <= 0) distanceKm = 1.0;
 
       const pricingConfig = await loadActivePricingConfig(admin);
       const passengerCount = meta.passenger_count || 3;
@@ -1480,9 +1485,14 @@ export async function PATCH(request: Request) {
       const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
       const calculatedFare = fareResult.totalFare;
 
+      const initialEstDist = booking.estimated_distance_km || meta.estimated_distance_km || meta.initial_distance_km || distanceKm;
+      const initialEstFare = booking.estimated_fare || meta.estimated_fare || meta.initial_fare || calculatedFare;
+
       const updatedMeta = updateBookingMeta(booking.feedback, {
         actual_distance_km: distanceKm,
         calculated_fare: calculatedFare,
+        estimated_distance_km: initialEstDist,
+        estimated_fare: initialEstFare,
         fare_breakdown: fareResult,
         passenger_count: passengerCount,
         end_coords: eCoords,

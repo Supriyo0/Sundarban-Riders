@@ -961,16 +961,42 @@ export async function GET(request: Request) {
       });
     }
 
-    // Default: return recent pending bookings
+    // Default: return recent pending bookings strictly within 5 km and within 3 minutes
+    const driverLatStr = searchParams.get("driver_lat") || searchParams.get("lat");
+    const driverLngStr = searchParams.get("driver_lng") || searchParams.get("lng");
+    const dLat = driverLatStr ? parseFloat(driverLatStr) : null;
+    const dLng = driverLngStr ? parseFloat(driverLngStr) : null;
+
     const { data, error } = await admin
       .from("bookings")
       .select("*")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(10);
+      .limit(20);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ bookings: data });
+
+    const enriched = (data || []).map(enrichBookingCoords);
+    const now = Date.now();
+    const valid = enriched.filter((b) => {
+      if (b.status !== "pending") return false;
+      if (b.driver_id) return false;
+      if (b.created_at && now - new Date(b.created_at).getTime() > 180 * 1000) return false;
+      if (dLat !== null && dLng !== null && !isNaN(dLat) && !isNaN(dLng) && dLat !== 0 && dLng !== 0) {
+        const pLat = b.pickup_lat || b.start_coords?.[0];
+        const pLng = b.pickup_lng || b.start_coords?.[1];
+        if (pLat && pLng) {
+          const distKm = calculateDistanceKm(dLat, dLng, pLat, pLng);
+          if (distKm > 5.0) return false;
+        }
+      }
+      return true;
+    });
+
+    return NextResponse.json({
+      booking: valid[0] || null,
+      bookings: valid,
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });

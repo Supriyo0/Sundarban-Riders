@@ -1304,12 +1304,29 @@ function MobileAppPageContent() {
             return;
           }
 
-          // Otherwise check for newly posted pending bookings
-          const res = await fetch("/api/bookings?status=pending");
+          // Otherwise check for newly posted pending bookings strictly within 5 km of driver
+          const queryParams = driverLiveCoords && driverLiveCoords[0] !== 0
+            ? `?status=pending&driver_lat=${driverLiveCoords[0]}&driver_lng=${driverLiveCoords[1]}`
+            : `?status=pending`;
+          const res = await fetch(`/api/bookings${queryParams}`);
           const data = await res.json();
-          if (data.booking && data.booking.status === "pending") {
+          if (data.booking && data.booking.status === "pending" && !data.booking.driver_id) {
             const b = data.booking;
             if (!declinedBookingIdsRef.current.has(b.id)) {
+              // Strict 5 km client-side distance check
+              if (driverLiveCoords && driverLiveCoords[0] !== 0) {
+                const pLat = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lat) : Number(b.start_coords?.[0]);
+                const pLng = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lng) : Number(b.start_coords?.[1]);
+                if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
+                  const R = 6371;
+                  const dLat = ((pLat - driverLiveCoords[0]) * Math.PI) / 180;
+                  const dLon = ((pLng - driverLiveCoords[1]) * Math.PI) / 180;
+                  const a = Math.sin(dLat / 2) ** 2 + Math.cos((driverLiveCoords[0] * Math.PI) / 180) * Math.cos((pLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+                  const dKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                  if (dKm > 5.0) return; // Ignore bookings farther than 5 km
+                }
+              }
+
               setAlertCountdown(30);
               setIncomingRide({
                 id: b.id,

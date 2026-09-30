@@ -312,13 +312,26 @@ export function DriverRadarPanel({
           setOtherDrivers(others);
         }
 
-        const bRes = await fetch("/api/bookings?status=pending");
+        const qParams = hasValidLocation && driverCoords[0] !== 0
+          ? `?status=pending&driver_lat=${driverCoords[0]}&driver_lng=${driverCoords[1]}`
+          : `?status=pending`;
+        const bRes = await fetch(`/api/bookings${qParams}`);
         const bJson = await bRes.json();
         const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
-        // Strictly filter out any pending ride older than 3 minutes (180s)
+        // Strictly filter out any pending ride older than 3 minutes (180s) or taken by another driver or > 5 km
         const validPending = rawBookings.filter((b: any) => {
-          if (!b.created_at) return true;
-          return Date.now() - new Date(b.created_at).getTime() <= 180 * 1000;
+          if (b.status !== "pending") return false;
+          if (b.driver_id) return false;
+          if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 180 * 1000) return false;
+          if (hasValidLocation && driverCoords[0] !== 0) {
+            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
+              const dKm = calculateDistanceKm(driverCoords[0], driverCoords[1], pLat, pLng);
+              if (dKm > 5.0) return false;
+            }
+          }
+          return true;
         });
         setPendingBookings(validPending);
       } catch (err) {

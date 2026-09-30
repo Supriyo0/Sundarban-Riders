@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Navigation, ExternalLink, Phone, MessageCircle, KeyRound, CheckCircle2, ShieldAlert } from "lucide-react";
+import { Navigation, ExternalLink, Phone, MessageCircle, KeyRound, CheckCircle2, ShieldAlert, Clock, MapPin } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { LiveFareMeter, LiveMeterReading } from "@/lib/mobile/live-fare-meter";
 import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
@@ -58,11 +58,50 @@ export function DriverActiveTripMap({
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [meterReading, setMeterReading] = useState<LiveMeterReading>({
     totalKm: 0,
-    liveFare: pricingConfig.baseFare || 30,
+    liveFare: 34,
     tripMinutes: 0,
     currentSpeedKmh: 0,
   });
   const [hasArrived, setHasArrived] = useState(false);
+
+  // Live timer states: Real-time duration & clock
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentClockTime, setCurrentClockTime] = useState("");
+
+  const formatDuration = (totalSec: number) => {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hrs.toString().padStart(2, "0")}:${remMins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Real-time ticking interval for Travelling Duration & Clock
+  useEffect(() => {
+    if (status !== "on_trip") return;
+    const startTs = tripStartTime ? new Date(tripStartTime).getTime() : Date.now();
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.floor((now - startTs) / 1000));
+      setElapsedSeconds(diffSec);
+      setCurrentClockTime(
+        new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })
+      );
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [status, tripStartTime]);
 
   // Active continuous driver GPS tracking
   const [activeDriverCoords, setActiveDriverCoords] = useState<[number, number]>(() => {
@@ -298,33 +337,35 @@ export function DriverActiveTripMap({
       {/* ── 2. TOP FLOATING NAVIGATION HUD (Rapido Captain Style) ── */}
       <div className="absolute top-0 left-0 right-0 z-20 p-3 pointer-events-none space-y-2">
         <div
-          className="pointer-events-auto rounded-3xl p-3.5 shadow-2xl border border-white/20 flex items-center justify-between"
+          className="pointer-events-auto rounded-3xl p-3 shadow-2xl border border-white/20 flex items-center justify-between"
           style={{
             background: status === "heading_pickup"
-              ? "linear-gradient(135deg,rgba(15,23,42,0.94),rgba(30,58,95,0.92))"
-              : "linear-gradient(135deg,rgba(5,46,22,0.94),rgba(20,83,45,0.92))",
+              ? "linear-gradient(135deg,rgba(15,23,42,0.95),rgba(30,58,95,0.93))"
+              : "linear-gradient(135deg,rgba(5,46,22,0.95),rgba(20,83,45,0.93))",
             backdropFilter: "blur(20px)",
           }}
         >
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-inner"
+              className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-inner"
               style={{ background: status === "heading_pickup" ? "rgba(96,165,250,0.25)" : "rgba(52,211,153,0.25)" }}
             >
-              {status === "heading_pickup" ? "📍" : "🏁"}
+              {status === "heading_pickup" ? "📍" : "🛺"}
             </div>
             <div className="min-w-0 flex-1">
               <span
-                className="text-[10px] font-black uppercase tracking-wider block"
+                className="text-[9.5px] font-black uppercase tracking-wider block"
                 style={{ color: status === "heading_pickup" ? "#93c5fd" : "#6ee7b7" }}
               >
-                {status === "heading_pickup" ? "পিকআপে যাচ্ছেন" : "গন্তব্যে যাচ্ছেন"}
+                {status === "heading_pickup" ? "পিকআপে যাচ্ছেন" : "গন্তব্যে যাত্রা চলছে (On Trip)"}
               </span>
-              <p className="text-sm font-extrabold text-white truncate mt-0.5">
+              <p className="text-xs sm:text-sm font-extrabold text-white truncate mt-0.5">
                 {status === "heading_pickup" ? pickup : drop}
               </p>
-              <span className="text-[11px] font-semibold text-slate-300 block">
-                {routeDistance} কিমি • ~{routeDuration} মিনিট
+              <span className="text-[10px] font-semibold text-slate-300 block truncate mt-0.5">
+                {status === "on_trip"
+                  ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${meterReading.totalKm.toFixed(2)} কিমি • 💰 ₹${meterReading.liveFare}`
+                  : `${routeDistance} কিমি • ~${routeDuration} মিনিট`}
               </span>
             </div>
           </div>
@@ -354,39 +395,57 @@ export function DriverActiveTripMap({
           className="pointer-events-auto rounded-3xl overflow-hidden shadow-2xl border border-white/80"
           style={{ background: "rgba(255,255,255,0.98)", backdropFilter: "blur(24px)" }}
         >
-          {/* Live Fare Meter Bar (Only when on_trip) */}
+          {/* ── 4-PILLAR LIVE TRAVELING HUD: DURATION, DISTANCE, TIME, FARE (When on_trip) ── */}
           {status === "on_trip" && (
-            <div className="px-4 pt-3.5 pb-0 bg-slate-900 text-white">
+            <div className="px-3.5 pt-3 pb-2.5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white rounded-t-3xl border-b border-white/10">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  লাইভ মিটার সক্রিয়
+                  লাইভ মিটার সক্রিয় (GPS Odometer)
                 </span>
-                <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
-                  GPS নির্ভুল হিসাব
+                <span className="text-[9.5px] font-mono text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-white/10">
+                  নিখুঁত রেট হিসাব
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-2 pb-3">
-                <div className="bg-slate-800/80 rounded-2xl p-2.5 text-center border border-white/5">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">অতিক্রান্ত</span>
-                  <p className="text-xl font-black text-emerald-400 font-mono tabular-nums leading-tight">
+
+              {/* 4 STATS GRID: Duration, Distance, Clock/Time, Fare */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {/* 1. Travelling Duration */}
+                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
+                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">সময়কাল</span>
+                  <p className="text-base sm:text-lg font-black text-sky-400 font-mono tabular-nums leading-tight mt-0.5">
+                    {formatDuration(elapsedSeconds)}
+                  </p>
+                  <span className="text-[8px] text-slate-400 block font-medium">মি : সে</span>
+                </div>
+
+                {/* 2. Travelling Distance */}
+                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
+                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">দূরত্ব</span>
+                  <p className="text-base sm:text-lg font-black text-emerald-400 font-mono tabular-nums leading-tight mt-0.5">
                     {meterReading.totalKm.toFixed(2)}
                   </p>
-                  <span className="text-[9px] text-slate-400">কিমি</span>
+                  <span className="text-[8px] text-slate-400 block font-medium">কিমি</span>
                 </div>
-                <div className="bg-slate-800/80 rounded-2xl p-2.5 text-center border border-amber-500/20">
-                  <span className="text-[9px] text-amber-400 font-bold uppercase block">নগদ ভাড়া</span>
-                  <p className="text-xl font-black text-amber-400 font-mono tabular-nums leading-tight">
+
+                {/* 3. Time (Current Clock) */}
+                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
+                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">বর্তমান ঘড়ি</span>
+                  <p className="text-xs sm:text-sm font-black text-amber-300 font-mono leading-tight mt-1 truncate">
+                    {currentClockTime ? currentClockTime.replace(/:\d\d\s/, " ") : "--:--"}
+                  </p>
+                  <span className="text-[8px] text-amber-400/80 block font-medium truncate">
+                    {routeDuration ? `~${routeDuration}মি গন্তব্য` : "লাইভ সময়"}
+                  </span>
+                </div>
+
+                {/* 4. Live Cash Fare */}
+                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-amber-500/25">
+                  <span className="text-[8.5px] text-amber-400 font-black uppercase tracking-tight block">নগদ ভাড়া</span>
+                  <p className="text-base sm:text-lg font-black text-amber-400 font-mono tabular-nums leading-tight mt-0.5">
                     ₹{meterReading.liveFare}
                   </p>
-                  <span className="text-[9px] text-slate-400">টাকা</span>
-                </div>
-                <div className="bg-slate-800/80 rounded-2xl p-2.5 text-center border border-white/5">
-                  <span className="text-[9px] text-sky-400 font-bold uppercase block">সময়</span>
-                  <p className="text-xl font-black text-sky-300 font-mono tabular-nums leading-tight">
-                    {meterReading.tripMinutes}
-                  </p>
-                  <span className="text-[9px] text-slate-400">মিনিট</span>
+                  <span className="text-[8px] text-slate-400 block font-bold">টাকা</span>
                 </div>
               </div>
             </div>
@@ -448,42 +507,32 @@ export function DriverActiveTripMap({
                       setHasArrived(true);
                       onArrivedAtPickup?.();
                     }}
-                    className="w-full py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-black border border-slate-300 shadow-xs active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>✓ আমি পিকআপে পৌঁছে গেছি</span>
+                    <CheckCircle2 className="w-4 h-4" />
+                    পিকআপ লোকেশনে পৌঁছেছি (I Have Arrived)
                   </button>
                 ) : (
-                  <div className="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center text-xs font-bold text-emerald-800">
-                    ✓ আপনি পিকআপে পৌঁছে গেছেন • যাত্রীর ওটিপি যাচাই করুন
-                  </div>
+                  <button
+                    type="button"
+                    onClick={onRequestOtpModal}
+                    className="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    যাত্রা শুরু ওটিপি লিখুন (Enter Ride OTP)
+                  </button>
                 )}
-
-                {/* Primary OTP Trigger */}
-                <button
-                  type="button"
-                  onClick={onRequestOtpModal}
-                  className="w-full py-4 rounded-2xl font-black text-sm text-white shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  style={{
-                    background: "linear-gradient(135deg,#059669,#10b981)",
-                    boxShadow: "0 6px 20px rgba(5,150,105,0.35)",
-                  }}
-                >
-                  <KeyRound className="w-4.5 h-4.5" />
-                  <span>🔐 ওটিপি (OTP) লিখুন ও যাত্রা শুরু করুন</span>
-                </button>
               </div>
             ) : (
-              <div className="space-y-2">
-                {onCompleteTrip && (
-                  <SwipeToConfirm
-                    key="slider_driver_complete"
-                    label="➡️ স্লাইড করে ট্রিপ সমাপ্ত করুন"
-                    confirmedLabel="ট্রিপ সমাপ্ত হচ্ছে... ✓"
-                    colorScheme="emerald"
-                    onConfirm={onCompleteTrip}
-                  />
-                )}
+              /* ON TRIP: Swipe to complete */
+              <div className="pt-1">
+                <SwipeToConfirm
+                  label="যাত্রার শেষ প্রান্তে সোয়াইপ করুন 🏁"
+                  confirmedLabel="ট্রিপ সম্পন্ন হচ্ছে..."
+                  onConfirm={async () => {
+                    await onCompleteTrip?.();
+                  }}
+                />
               </div>
             )}
           </div>

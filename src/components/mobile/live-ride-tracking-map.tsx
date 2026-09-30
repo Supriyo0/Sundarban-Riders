@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2, Clock, Navigation, MapPin } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { LiveFareMeter } from "@/lib/mobile/live-fare-meter";
+import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
 
 async function getLeaflet() {
   const mod = await import("leaflet");
@@ -26,6 +27,8 @@ interface LiveRideTrackingMapProps {
     startOtp?: string;
     driver_lat?: number | string;
     driver_lng?: number | string;
+    trip_start_time?: string;
+    tripStartTime?: string;
   };
   rideStep: "assigned" | "arriving" | "in_trip" | "arrived";
   pickupText: string;
@@ -34,6 +37,8 @@ interface LiveRideTrackingMapProps {
   dropCoords?: [number, number];
   tripDistance: number;
   tripFare: number;
+  passengerCount?: number;
+  pricingConfig?: TotoPricingConfig;
   onCancelRide?: () => void;
   onSosClick?: () => void;
   onTripFinished?: () => void;
@@ -48,6 +53,8 @@ export function LiveRideTrackingMap({
   dropCoords = [21.868, 88.163],
   tripDistance,
   tripFare,
+  passengerCount = 3,
+  pricingConfig = DEFAULT_TOTO_PRICING,
   onCancelRide,
   onSosClick,
   onTripFinished,
@@ -57,7 +64,7 @@ export function LiveRideTrackingMap({
   const driverMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
-  const meterRef = useRef<LiveFareMeter>(new LiveFareMeter());
+  const meterRef = useRef<LiveFareMeter>(new LiveFareMeter(passengerCount, pricingConfig, booking?.trip_start_time || booking?.tripStartTime));
 
   const [driverPos, setDriverPos] = useState<[number, number]>(() => {
     if (booking?.driver_lat && booking?.driver_lng) {
@@ -71,6 +78,46 @@ export function LiveRideTrackingMap({
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [rating, setRating] = useState(5);
   const [rated, setRated] = useState(false);
+
+  // Live timer states: Real-time duration & clock
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [currentClockTime, setCurrentClockTime] = useState("");
+
+  const formatDuration = (totalSec: number) => {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hrs.toString().padStart(2, "0")}:${remMins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Real-time ticking interval for Travelling Duration & Clock
+  useEffect(() => {
+    if (rideStep !== "in_trip") return;
+    const startStr = booking?.trip_start_time || booking?.tripStartTime;
+    const startTs = startStr ? new Date(startStr).getTime() : Date.now();
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diffSec = Math.max(0, Math.floor((now - startTs) / 1000));
+      setElapsedSeconds(diffSec);
+      setCurrentClockTime(
+        new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })
+      );
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [rideStep, booking?.trip_start_time, booking?.tripStartTime]);
 
   // Haversine distance for ETA calc
   const haversineKm = (a: [number, number], b: [number, number]) => {
@@ -102,7 +149,7 @@ export function LiveRideTrackingMap({
     };
   }, [rideStep, driverPos, pickupCoords, dropCoords]);
 
-  // 2. Poll driver location & booking status every 3s
+  // 2. Poll driver location, trip start time & booking status every 2.5s
   useEffect(() => {
     let mounted = true;
     let timer: NodeJS.Timeout;
@@ -121,6 +168,19 @@ export function LiveRideTrackingMap({
           return;
         }
 
+        // Live distance & fare synchronization from backend
+        if (b.actual_distance_km) {
+          setLiveMeterKm(Number(b.actual_distance_km));
+        } else if (b.feedback?.live_distance_km) {
+          setLiveMeterKm(Number(b.feedback.live_distance_km));
+        }
+
+        if (b.final_fare) {
+          setLiveMeterFare(Number(b.final_fare));
+        } else if (b.feedback?.live_fare) {
+          setLiveMeterFare(Number(b.feedback.live_fare));
+        }
+
         let dLat: number | null = null, dLng: number | null = null;
         if (b.driver_lat && b.driver_lng) { dLat = Number(b.driver_lat); dLng = Number(b.driver_lng); }
         else if (b.drivers?.latitude && b.drivers?.longitude) { dLat = Number(b.drivers.latitude); dLng = Number(b.drivers.longitude); }
@@ -131,11 +191,14 @@ export function LiveRideTrackingMap({
           setEtaMinutes(Math.max(1, Math.round(distLeft / 0.25))); // ~15 km/h toto speed
           if (rideStep === "in_trip") {
             const upd = meterRef.current.addGpsReading(dLat, dLng);
-            if (upd.totalKm > 0) { setLiveMeterKm(upd.totalKm); setLiveMeterFare(upd.liveFare); }
+            if (upd.totalKm > 0) {
+              setLiveMeterKm((prev) => Math.max(prev, upd.totalKm));
+              setLiveMeterFare((prev) => Math.max(prev, upd.liveFare));
+            }
           }
         }
       } catch {}
-      if (mounted) timer = setTimeout(poll, 3000);
+      if (mounted) timer = setTimeout(poll, 2500);
     };
     poll();
     return () => { mounted = false; clearTimeout(timer); };
@@ -203,7 +266,7 @@ export function LiveRideTrackingMap({
         const dMarker = L.marker(driverPos, { icon: totoIcon, zIndexOffset: 1000 }).addTo(map);
         driverMarkerRef.current = dMarker;
 
-        // Route casing (outer shadow line)
+        // Route casing
         const pts = routeCoords.length > 1 ? routeCoords : [driverPos, rideStep === "in_trip" ? dropCoords : pickupCoords];
         const casing = L.polyline(pts, {
           color: "#ffffff",
@@ -214,7 +277,7 @@ export function LiveRideTrackingMap({
         }).addTo(map);
         routeCasingRef.current = casing;
 
-        // Route polyline (inner solid street line)
+        // Route polyline
         const line = L.polyline(pts, {
           color: rideStep === "in_trip" ? "#059669" : "#0284c7",
           weight: 5,
@@ -224,7 +287,7 @@ export function LiveRideTrackingMap({
         }).addTo(map);
         routeLineRef.current = line;
 
-        // Street zoom bounds
+        // Fit street zoom bounds
         try {
           const b = L.latLngBounds(pts);
           map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
@@ -263,7 +326,7 @@ export function LiveRideTrackingMap({
   const otp = booking?.start_otp || booking?.startOtp || "";
   const totoNum = booking?.toto_number || booking?.totoNumber || booking?.uniqueId || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
-  const displayFare = rideStep === "in_trip" ? Math.round(liveMeterFare) : tripFare;
+  const displayFare = rideStep === "in_trip" ? Math.max(tripFare, Math.round(liveMeterFare)) : tripFare;
   const displayKm = rideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
 
   // If ride is arrived/completed: Show completion modal
@@ -298,9 +361,15 @@ export function LiveRideTrackingMap({
                   key={star}
                   type="button"
                   onClick={() => setRating(star)}
-                  className="transition-transform active:scale-90"
+                  className="p-1 text-2xl transition-transform active:scale-125"
                 >
-                  <Star className={`w-8 h-8 ${star <= rating ? "fill-amber-400 text-amber-400" : "fill-slate-100 text-slate-300"}`} />
+                  <Star
+                    className={`w-7 h-7 ${
+                      star <= rating
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-slate-300"
+                    }`}
+                  />
                 </button>
               ))}
             </div>
@@ -312,9 +381,10 @@ export function LiveRideTrackingMap({
               setRated(true);
               onTripFinished?.();
             }}
-            className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-black text-sm shadow-xl active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            ✓ সম্পূর্ণ (Done)
+            <CheckCircle2 className="w-4 h-4" />
+            <span>{rated ? "মূল্যায়ন সম্পন্ন" : "মূল্যায়ন জমা দিয়ে সমাপ্ত করুন"}</span>
           </button>
         </div>
       </div>
@@ -322,28 +392,27 @@ export function LiveRideTrackingMap({
   }
 
   return (
-    <div className="relative w-full overflow-hidden select-none" style={{ height: "calc(100dvh - 58px)", background: "#f1f5f9" }}>
-
-      {/* ── 1. FULL SCREEN LEAFLET STREET MAP ── */}
+    <div className="relative w-full h-[calc(100dvh-58px)] overflow-hidden bg-slate-900 select-none">
+      {/* ── 1. FULL SCREEN MAP ── */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
       {/* ── 2. TOP FLOATING STATUS HUD PILL ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 p-3.5 flex items-center justify-between pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-3 bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xl border border-slate-200/90">
+      <div className="absolute top-0 left-0 right-0 z-20 p-3 flex items-center justify-between pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-3 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-xl border border-slate-200/90 max-w-[85%]">
           <span className="relative flex h-3 w-3 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
           </span>
-          <div>
-            <p className="text-xs font-black text-slate-900 leading-tight">
-              {rideStep === "in_trip" ? "🛺 গন্তব্যে যাত্রা চলছে" : "🛺 চালক পিকআপে আসছেন"}
+          <div className="min-w-0">
+            <p className="text-xs font-black text-slate-900 leading-tight flex items-center gap-1.5 truncate">
+              <span>{rideStep === "in_trip" ? "🛺 যাত্রা চলছে (On Trip)" : "🛺 চালক পিকআপে আসছেন"}</span>
             </p>
-            <p className="text-[10.5px] font-semibold leading-tight mt-0.5" style={{ color: rideStep === "in_trip" ? "#059669" : "#0284c7" }}>
-              {etaMinutes !== null
-                ? rideStep === "in_trip"
-                  ? `লাইভ GPS ট্র্যাকিং • ${liveMeterKm.toFixed(2)} কিমি চলেছে`
-                  : `আনুমানিক ~${etaMinutes} মিনিটে পৌঁছাবেন`
-                : rideStep === "in_trip" ? "লাইভ GPS সক্রিয়" : "কাছাকাছি আসছেন..."}
+            <p className="text-[10px] font-bold leading-tight mt-0.5 truncate" style={{ color: rideStep === "in_trip" ? "#059669" : "#0284c7" }}>
+              {rideStep === "in_trip"
+                ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • 💰 ₹${displayFare} • 🕒 ${currentClockTime || "লাইভ"}`
+                : etaMinutes !== null
+                ? `আনুমানিক ~${etaMinutes} মিনিটে পৌঁছাবেন`
+                : "কাছাকাছি আসছেন..."}
             </p>
           </div>
         </div>
@@ -368,24 +437,62 @@ export function LiveRideTrackingMap({
           className="pointer-events-auto rounded-3xl overflow-hidden shadow-2xl border border-white/80"
           style={{ background: "rgba(255,255,255,0.98)", backdropFilter: "blur(24px)" }}
         >
-          {/* Live meter bar (only when in_trip) */}
+          {/* ── 4-PILLAR LIVE TRAVELING HUD: DURATION, DISTANCE, TIME, FARE (When in_trip) ── */}
           {rideStep === "in_trip" && (
-            <div className="px-4 pt-3.5 pb-0">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800">লাইভ মিটার</span>
-                <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
-                  GPS সিঙ্ক সক্রিয়
+            <div className="px-3.5 pt-3 pb-2.5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white rounded-t-3xl border-b border-white/10">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                    লাইভ ট্রিপ মিটার (Live Meter)
+                  </span>
+                </div>
+                <span className="text-[9.5px] font-mono font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
+                  GPS রিয়েলটাইম সিঙ্ক
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="bg-emerald-50 border border-emerald-200/90 rounded-2xl p-2.5">
-                  <span className="text-[9px] font-bold text-emerald-800 uppercase block">অতিক্রান্ত দূরত্ব</span>
-                  <span className="text-lg font-black text-emerald-900 tabular-nums">{displayKm} কিমি</span>
+
+              {/* 4 STATS GRID: Duration, Distance, Clock/Time, Fare */}
+              <div className="grid grid-cols-4 gap-1.5">
+                {/* 1. Travelling Duration */}
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">সময়কাল</span>
+                  <p className="text-base sm:text-lg font-black font-mono text-sky-400 tabular-nums leading-tight mt-0.5">
+                    {formatDuration(elapsedSeconds)}
+                  </p>
+                  <span className="text-[8px] text-slate-400 block font-medium">মি : সে</span>
                 </div>
-                <div className="bg-amber-50 border border-amber-200/90 rounded-2xl p-2.5">
-                  <span className="text-[9px] font-bold text-amber-800 uppercase block">চলমান নগদ ভাড়া</span>
-                  <span className="text-lg font-black text-amber-900 tabular-nums">₹{displayFare}</span>
+
+                {/* 2. Travelling Distance */}
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">দূরত্ব</span>
+                  <p className="text-base sm:text-lg font-black font-mono text-emerald-400 tabular-nums leading-tight mt-0.5">
+                    {displayKm}
+                  </p>
+                  <span className="text-[8px] text-slate-400 block font-medium">কিমি</span>
+                </div>
+
+                {/* 3. Time (Current Clock) */}
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">বর্তমান ঘড়ি</span>
+                  <p className="text-xs sm:text-sm font-black font-mono text-amber-300 leading-tight mt-1 truncate">
+                    {currentClockTime ? currentClockTime.replace(/:\d\d\s/, " ") : "--:--"}
+                  </p>
+                  <span className="text-[8px] text-amber-400/80 block font-medium truncate">
+                    {etaMinutes ? `~${etaMinutes}মি গন্তব্য` : "লাইভ সময়"}
+                  </span>
+                </div>
+
+                {/* 4. Live Fare */}
+                <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-2 text-center">
+                  <span className="text-[8.5px] font-black text-emerald-300 uppercase tracking-tight block">ভাড়া</span>
+                  <p className="text-base sm:text-lg font-black font-mono text-emerald-300 tabular-nums leading-tight mt-0.5">
+                    ₹{displayFare}
+                  </p>
+                  <span className="text-[8px] text-emerald-400 block font-bold">নগদ প্রদেয়</span>
                 </div>
               </div>
             </div>
@@ -432,7 +539,7 @@ export function LiveRideTrackingMap({
               </div>
             </div>
 
-            {/* Highlighted Ride OTP + Fare row */}
+            {/* Ride OTP + Fare row */}
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded-2xl flex items-center gap-2.5 shadow-2xs">
                 <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
@@ -444,7 +551,7 @@ export function LiveRideTrackingMap({
               <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex items-center justify-between">
                 <div>
                   <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
-                    {rideStep === "in_trip" ? "লাইভ ভাড়া" : "নির্ধারিত ভাড়া"}
+                    {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "নির্ধারিত ভাড়া"}
                   </span>
                   <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
                 </div>

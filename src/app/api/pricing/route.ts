@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
-import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
+import {
+  DEFAULT_TOTO_PRICING,
+  DEFAULT_TOTO_SLABS,
+  TotoPricingConfig,
+  TotoSlabConfig,
+} from "@/lib/pricing/fare-calculator";
 
 const PRICING_CONFIG_KEY = "toto_pricing_config";
 
@@ -19,27 +24,40 @@ export async function GET() {
 
     if (data?.value) {
       try {
-        const parsed = JSON.parse(data.value);
-        return NextResponse.json({
-          config: { ...DEFAULT_TOTO_PRICING, ...parsed },
-        });
+        const parsed = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
+        const config: TotoPricingConfig = {
+          ...DEFAULT_TOTO_PRICING,
+          ...parsed,
+          slabs:
+            parsed.slabs && Array.isArray(parsed.slabs) && parsed.slabs.length > 0
+              ? parsed.slabs
+              : DEFAULT_TOTO_SLABS,
+        };
+        return NextResponse.json({ config });
       } catch {}
     }
 
     // Also check individual keys in system_settings as fallback
     const { data: allSettings } = await admin.from("system_settings").select("*");
-    const merged = { ...DEFAULT_TOTO_PRICING };
+    const merged: TotoPricingConfig = {
+      ...DEFAULT_TOTO_PRICING,
+      slabs: [...DEFAULT_TOTO_SLABS],
+    };
 
     if (allSettings && allSettings.length > 0) {
       allSettings.forEach((row: any) => {
-        if (row.key === "base_fare") merged.baseFare = parseFloat(row.value) || merged.baseFare;
-        if (row.key === "rate_per_km_0_10") merged.ratePerKm0to10 = parseFloat(row.value) || merged.ratePerKm0to10;
-        if (row.key === "rate_per_km_10_20") merged.ratePerKm10to20 = parseFloat(row.value) || merged.ratePerKm10to20;
-        if (row.key === "rate_per_km_20_25") merged.ratePerKm20to25 = parseFloat(row.value) || merged.ratePerKm20to25;
-        if (row.key === "extra_passenger_rate_per_km") merged.extraPassengerRatePerKm = parseFloat(row.value) || merged.extraPassengerRatePerKm;
-        if (row.key === "night_charge_0_10") merged.nightCharge0to10 = parseFloat(row.value) || merged.nightCharge0to10;
-        if (row.key === "night_charge_10_20") merged.nightCharge10to20 = parseFloat(row.value) || merged.nightCharge10to20;
-        if (row.key === "night_charge_20_25") merged.nightCharge20to25 = parseFloat(row.value) || merged.nightCharge20to25;
+        if (row.key === "per_km_rate" || row.key === "rate_per_km_0_10")
+          merged.perKmRate = parseFloat(row.value) || merged.perKmRate;
+        if (row.key === "min_billable_km")
+          merged.minBillableKm = parseFloat(row.value) || merged.minBillableKm;
+        if (row.key === "extra_passenger_rate_per_km")
+          merged.extraPassengerRatePerKm = parseFloat(row.value) || merged.extraPassengerRatePerKm;
+        if (row.key === "night_charge_tier_1" || row.key === "night_charge_0_10")
+          merged.nightChargeTier1 = parseFloat(row.value) || merged.nightChargeTier1;
+        if (row.key === "night_charge_tier_2" || row.key === "night_charge_10_20")
+          merged.nightChargeTier2 = parseFloat(row.value) || merged.nightChargeTier2;
+        if (row.key === "night_charge_tier_3" || row.key === "night_charge_20_25")
+          merged.nightChargeTier3 = parseFloat(row.value) || merged.nightChargeTier3;
         if (row.key === "night_start_time") merged.nightStartTime = row.value || merged.nightStartTime;
         if (row.key === "night_end_time") merged.nightEndTime = row.value || merged.nightEndTime;
       });
@@ -55,22 +73,43 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    const incomingSlabs: TotoSlabConfig[] =
+      body.slabs && Array.isArray(body.slabs) && body.slabs.length > 0
+        ? body.slabs.map((s: any, idx: number) => ({
+            slabNumber: Number(s.slabNumber ?? idx + 1),
+            name: String(s.name || `স্ল্যাব ${idx + 1}`),
+            minKm: Number(s.minKm ?? 0),
+            maxKm: Number(s.maxKm ?? 999),
+            bookingCharge: Number(s.bookingCharge ?? 10),
+            nightChargeTier: (Number(s.nightChargeTier) || (idx < 4 ? 1 : idx < 7 ? 2 : 3)) as 1 | 2 | 3,
+          }))
+        : DEFAULT_TOTO_SLABS;
+
     const config: TotoPricingConfig = {
-      baseFare: Number(body.baseFare ?? DEFAULT_TOTO_PRICING.baseFare),
-      ratePerKm0to10: Number(body.ratePerKm0to10 ?? DEFAULT_TOTO_PRICING.ratePerKm0to10),
-      ratePerKm10to20: Number(body.ratePerKm10to20 ?? DEFAULT_TOTO_PRICING.ratePerKm10to20),
-      ratePerKm20to25: Number(body.ratePerKm20to25 ?? DEFAULT_TOTO_PRICING.ratePerKm20to25),
+      perKmRate: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
+      minBillableKm: Number(body.minBillableKm ?? DEFAULT_TOTO_PRICING.minBillableKm),
+      includedPassengers: Number(body.includedPassengers ?? DEFAULT_TOTO_PRICING.includedPassengers),
+      extraPassengerRatePerKm: Number(body.extraPassengerRatePerKm ?? DEFAULT_TOTO_PRICING.extraPassengerRatePerKm),
+      nightStartTime: String(body.nightStartTime || DEFAULT_TOTO_PRICING.nightStartTime),
+      nightEndTime: String(body.nightEndTime || DEFAULT_TOTO_PRICING.nightEndTime),
+      nightChargeTier1: Number(body.nightChargeTier1 ?? DEFAULT_TOTO_PRICING.nightChargeTier1),
+      nightChargeTier2: Number(body.nightChargeTier2 ?? DEFAULT_TOTO_PRICING.nightChargeTier2),
+      nightChargeTier3: Number(body.nightChargeTier3 ?? DEFAULT_TOTO_PRICING.nightChargeTier3),
+      slabs: incomingSlabs,
+
+      // Backward compatibility fields
+      baseFare: Number(incomingSlabs[0]?.bookingCharge ?? 10),
+      ratePerKm0to10: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
+      ratePerKm10to20: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
+      ratePerKm20to25: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
       maxServiceKm: Number(body.maxServiceKm ?? DEFAULT_TOTO_PRICING.maxServiceKm),
       defaultPassengerCount: Number(body.defaultPassengerCount ?? DEFAULT_TOTO_PRICING.defaultPassengerCount),
       minPassengers: Number(body.minPassengers ?? DEFAULT_TOTO_PRICING.minPassengers),
       maxPassengers: Number(body.maxPassengers ?? DEFAULT_TOTO_PRICING.maxPassengers),
-      includedPassengers: Number(body.includedPassengers ?? DEFAULT_TOTO_PRICING.includedPassengers),
-      extraPassengerRatePerKm: Number(body.extraPassengerRatePerKm ?? DEFAULT_TOTO_PRICING.extraPassengerRatePerKm),
-      nightCharge0to10: Number(body.nightCharge0to10 ?? DEFAULT_TOTO_PRICING.nightCharge0to10),
-      nightCharge10to20: Number(body.nightCharge10to20 ?? DEFAULT_TOTO_PRICING.nightCharge10to20),
-      nightCharge20to25: Number(body.nightCharge20to25 ?? DEFAULT_TOTO_PRICING.nightCharge20to25),
-      nightStartTime: String(body.nightStartTime || DEFAULT_TOTO_PRICING.nightStartTime),
-      nightEndTime: String(body.nightEndTime || DEFAULT_TOTO_PRICING.nightEndTime),
+      nightCharge0to10: Number(body.nightChargeTier1 ?? DEFAULT_TOTO_PRICING.nightChargeTier1),
+      nightCharge10to20: Number(body.nightChargeTier2 ?? DEFAULT_TOTO_PRICING.nightChargeTier2),
+      nightCharge20to25: Number(body.nightChargeTier3 ?? DEFAULT_TOTO_PRICING.nightChargeTier3),
     };
 
     const admin = supabaseAdmin();
@@ -80,22 +119,21 @@ export async function POST(request: Request) {
       {
         key: PRICING_CONFIG_KEY,
         value: JSON.stringify(config),
-        description: "টোটো ভাড়ার সম্পূর্ণ রেট চার্ট ও নাইট টাইমিং কনফিগারেশন",
+        description: "সুন্দরবন রাইডার্সের সম্পূর্ণ ১০-স্ল্যাব রেট চার্ট ও নাইট টাইমিং কনফিগারেশন",
         updated_at: new Date().toISOString(),
       },
       { onConflict: "key" }
     );
 
-    // 2. Also mirror into individual keys for compatibility
+    // 2. Also mirror into individual keys for legacy compatibility
     const items = [
       { key: "base_fare", value: String(config.baseFare), description: "বেস ভাড়া (টাকা)" },
-      { key: "rate_per_km_0_10", value: String(config.ratePerKm0to10), description: "০-১০ কিমি রেট (টাকা/কিমি)" },
-      { key: "rate_per_km_10_20", value: String(config.ratePerKm10to20), description: "১০-২০ কিমি রেট (টাকা/কিমি)" },
-      { key: "rate_per_km_20_25", value: String(config.ratePerKm20to25), description: "২০-২৫ কিমি রেট (টাকা/কিমি)" },
+      { key: "per_km_rate", value: String(config.perKmRate), description: "প্রতি কিমি ভাড়া (টাকা/কিমি)" },
+      { key: "rate_per_km_0_10", value: String(config.perKmRate), description: "০-১০ কিমি রেট (টাকা/কিমি)" },
       { key: "extra_passenger_rate_per_km", value: String(config.extraPassengerRatePerKm), description: "অতিরিক্ত যাত্রী রেট প্রতি কিমি" },
-      { key: "night_charge_0_10", value: String(config.nightCharge0to10), description: "নাইট চার্জ ০-১০ কিমি" },
-      { key: "night_charge_10_20", value: String(config.nightCharge10to20), description: "নাইট চার্জ ১০-২০ কিমি" },
-      { key: "night_charge_20_25", value: String(config.nightCharge20to25), description: "নাইট চার্জ ২০-২৫ কিমি" },
+      { key: "night_charge_tier_1", value: String(config.nightChargeTier1), description: "নাইট চার্জ ০-১৩ কিমি" },
+      { key: "night_charge_tier_2", value: String(config.nightChargeTier2), description: "নাইট চার্জ ১৪-২০ কিমি" },
+      { key: "night_charge_tier_3", value: String(config.nightChargeTier3), description: "নাইট চার্জ ২১+ কিমি" },
       { key: "night_start_time", value: config.nightStartTime, description: "রাতের চার্জ শুরু সময়" },
       { key: "night_end_time", value: config.nightEndTime, description: "রাতের চার্জ শেষ সময়" },
     ];
@@ -109,7 +147,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: "ভাড়ার রেট চার্ট ও নাইট টাইমিং সফলভাবে সংরক্ষিত হয়েছে!",
+      message: "১০-স্ল্যাব রেট চার্ট ও নাইট টাইমিং সফলভাবে সংরক্ষিত হয়েছে!",
       config,
     });
   } catch (err: unknown) {

@@ -73,6 +73,8 @@ const DEFAULT_REGION_NAME = DEFAULT_CENTRAL_HUB.name;
 interface InteractiveBookingMapProps {
   initialPickup?: string;
   initialDrop?: string;
+  initialPickupCoords?: [number, number];
+  initialDropCoords?: [number, number];
   onRouteSelected?: (route: {
     pickup: string;
     drop: string;
@@ -91,6 +93,8 @@ interface InteractiveBookingMapProps {
 export function InteractiveBookingMap({
   initialPickup = "",
   initialDrop = "",
+  initialPickupCoords,
+  initialDropCoords,
   onRouteSelected,
   onConfirmBooking,
   isBlocked = false,
@@ -110,7 +114,9 @@ export function InteractiveBookingMap({
   const isInitialValid = Boolean(
     initialPickup &&
     initialPickup.trim() !== "" &&
-    initialPickup !== "আপনার বর্তমান অবস্থান (Live GPS)"
+    initialPickup !== "আপনার বর্তমান অবস্থান (Live GPS)" &&
+    initialPickupCoords &&
+    initialPickupCoords[0] !== 0
   );
   const [hasValidPickup, setHasValidPickup] = useState(isInitialValid);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -118,15 +124,17 @@ export function InteractiveBookingMap({
   // Service territory tracking
   const [isDropOutOfService, setIsDropOutOfService] = useState(false);
 
-  // Coordinates (Only set when valid; never auto-fill random coordinates)
+  // Coordinates (Only set when valid; never auto-fill default hub coordinates)
   const [pickupCoords, setPickupCoords] = useState<[number, number]>(
-    isInitialValid ? DEFAULT_CENTRAL_HUB.coords : [0, 0]
+    initialPickupCoords && initialPickupCoords[0] !== 0 ? initialPickupCoords : [0, 0]
   );
-  const [dropCoords, setDropCoords] = useState<[number, number]>([0, 0]);
+  const [dropCoords, setDropCoords] = useState<[number, number]>(
+    initialDropCoords && initialDropCoords[0] !== 0 ? initialDropCoords : [0, 0]
+  );
 
   // Input states
-  const [pickupInputValue, setPickupInputValue] = useState(isInitialValid ? initialPickup : "");
-  const [dropInputValue, setDropInputValue] = useState(initialDrop);
+  const [pickupInputValue, setPickupInputValue] = useState(initialPickup || "");
+  const [dropInputValue, setDropInputValue] = useState(initialDrop || "");
 
   // Active Map View Style
   const [mapLayer, setMapLayer] = useState<"streets" | "satellite">("streets");
@@ -589,7 +597,7 @@ export function InteractiveBookingMap({
     });
   }, [nearbyDrivers]);
 
-  // Real GPS Geolocation Fetcher with Capacitor Native & Browser Web Support
+  // Real GPS Geolocation Fetcher with Capacitor Native & Browser Web Support (Pure GPS, Zero IP guessing)
   const fetchCurrentLocation = useCallback(
     async (userInitiated = false) => {
       if (isLocatingRef.current && !userInitiated) return;
@@ -602,7 +610,6 @@ export function InteractiveBookingMap({
         isLocatingRef.current = false;
         setIsLocating(false);
         setGpsDetected(false);
-        setHasValidPickup(false);
         setPermissionState(isDenied ? "denied" : "prompt");
 
         const defaultDeniedMsg = isNative
@@ -613,7 +620,7 @@ export function InteractiveBookingMap({
           msg ||
           (isDenied
             ? defaultDeniedMsg
-            : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ওপরে আপনার পিকআপ স্থান টাইপ করুন বা ম্যাপে ক্লিক করুন।");
+            : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ডিভাইসের GPS চালু করুন অথবা পিকআপ অনুসন্ধান করুন।");
 
         setLocationError(errorMsg);
         if (userInitiated) {
@@ -624,6 +631,11 @@ export function InteractiveBookingMap({
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
         setIsLocating(false);
+
+        if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
+          handleFail();
+          return;
+        }
 
         const newPickup: [number, number] = [latitude, longitude];
         setPickupCoords(newPickup);
@@ -636,7 +648,7 @@ export function InteractiveBookingMap({
         setPickupInputValue(detectedName);
 
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
-          fitBounds: Boolean(dropInputRef.current),
+          fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
           flyDuration: 1.2,
         });
 
@@ -656,32 +668,24 @@ export function InteractiveBookingMap({
       };
 
       if (userInitiated) {
-        toast.info("📍 জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
+        toast.info("📍 স্যাটেলাইট জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
       }
 
-      // Helper for IP-based network location fallback
-      const tryIpFallback = async () => {
-        try {
-          const res = await fetch("/api/geocode?ip=true");
-          if (res.ok) {
-            const data = await res.json();
-            if (data?.lat && data?.lng) {
-              await handleSuccess(data.lat, data.lng, data.name || data.full_address);
-              return true;
-            }
-          }
-        } catch {}
-        return false;
-      };
-
-      // 1. Try Native Capacitor Geolocation first if available
+      // 1. Try Native Capacitor Geolocation first if in Android/iOS App
       if (isNative) {
         try {
           const { Geolocation } = await import("@capacitor/geolocation");
+          try {
+            const perm = await Geolocation.checkPermissions();
+            if (perm.location !== "granted") {
+              await Geolocation.requestPermissions();
+            }
+          } catch {}
+
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 30000,
+            timeout: 15000,
+            maximumAge: 0,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
@@ -693,37 +697,32 @@ export function InteractiveBookingMap({
         }
       }
 
-      // 2. Standard Web Browser Geolocation
+      // 2. Standard Web Browser / WebView High-Accuracy Hardware GPS
       if (typeof window === "undefined" || !navigator.geolocation) {
-        const ok = await tryIpFallback();
-        if (!ok) handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান লিখুন।");
+        handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান অনুসন্ধান করুন।");
         return;
       }
 
       navigator.geolocation.getCurrentPosition(
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
         (err) => {
-          // If high accuracy fails or times out, try low accuracy (cell/Wi-Fi)
+          // If high accuracy satellite GPS times out (e.g. indoors), try cellular/network triangulated GPS
           navigator.geolocation.getCurrentPosition(
             (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-            async (fallbackErr) => {
-              // If both GPS attempts fail, try IP fallback
-              const ipSuccess = await tryIpFallback();
-              if (!ipSuccess) {
-                if (fallbackErr.code === 1 || err.code === 1) {
-                  const deniedText = isNative
-                    ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Location 'Allow')।"
-                    : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ লিখুন।";
-                  handleFail(deniedText, userInitiated);
-                } else {
-                  handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। ওপরে পিকআপ স্থান লিখুন।");
-                }
+            (fallbackErr) => {
+              if (fallbackErr.code === 1 || err.code === 1) {
+                const deniedText = isNative
+                  ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Location 'Allow')।"
+                  : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ অনুসন্ধান করুন।";
+                handleFail(deniedText, true);
+              } else {
+                handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
               }
             },
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
           );
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -736,6 +735,81 @@ export function InteractiveBookingMap({
       fetchCurrentLocation(false);
     }
   }, [fetchCurrentLocation]);
+
+  // Continuous Live GPS Watcher on Mount (Auto-locks as soon as satellite lock arrives)
+  useEffect(() => {
+    let watchId: number | null = null;
+    let capWatchId: string | null = null;
+    let isCancelled = false;
+
+    const startWatching = async () => {
+      const isNative = typeof window !== "undefined" && Boolean((window as any).Capacitor?.isNativePlatform?.());
+
+      if (isNative) {
+        try {
+          const { Geolocation } = await import("@capacitor/geolocation");
+          capWatchId = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, maximumAge: 0 },
+            async (position, err) => {
+              if (isCancelled || err || !position?.coords) return;
+              const { latitude, longitude } = position.coords;
+              if (latitude && longitude && (pickupCoordsRef.current[0] === 0 || !hasValidPickup)) {
+                const resolved = await resolveLocationAddress(latitude, longitude);
+                if (!isCancelled) {
+                  setPickupCoords([latitude, longitude]);
+                  setPickupInputValue(resolved);
+                  setHasValidPickup(true);
+                  setGpsDetected(true);
+                  setLocationError(null);
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+                  }
+                }
+              }
+            }
+          );
+        } catch {}
+      }
+
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          async (pos) => {
+            if (isCancelled || !pos?.coords) return;
+            const { latitude, longitude } = pos.coords;
+            if (latitude && longitude && (pickupCoordsRef.current[0] === 0 || !hasValidPickup)) {
+              const resolved = await resolveLocationAddress(latitude, longitude);
+              if (!isCancelled) {
+                setPickupCoords([latitude, longitude]);
+                setPickupInputValue(resolved);
+                setHasValidPickup(true);
+                setGpsDetected(true);
+                setLocationError(null);
+                if (mapInstanceRef.current) {
+                  mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+                }
+              }
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0 }
+        );
+      }
+    };
+
+    startWatching();
+
+    return () => {
+      isCancelled = true;
+      if (watchId !== null && typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (capWatchId) {
+        import("@capacitor/geolocation").then(({ Geolocation }) => {
+          Geolocation.clearWatch({ id: capWatchId! }).catch(() => {});
+        });
+      }
+    };
+  }, [hasValidPickup, resolveLocationAddress]);
 
   // -------------------------------------------------------------
   // INITIALIZE LEAFLET MAP

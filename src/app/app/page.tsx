@@ -3653,6 +3653,8 @@ function MobileAppPageContent() {
                 <InteractiveBookingMap
                   initialPickup={pickupText}
                   initialDrop={dropText}
+                  initialPickupCoords={pickupCoords}
+                  initialDropCoords={dropCoords}
                   onRouteSelected={handleRouteSelected}
                   onConfirmBooking={handleConfirmBooking}
                   isBlocked={isCustomerBlocked || customerStrikes >= 3}

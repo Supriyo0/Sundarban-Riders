@@ -74,17 +74,11 @@ export async function GET(req: Request) {
         console.warn("[geocode] All IP geolocations failed:", err2);
       }
 
-      // If IP was outside service area (like Vercel cloud datacenter in Washington) or failed,
-      // return Central South 24 Parganas Hub: Kakdwip Station Road
-      return NextResponse.json({
-        name: DEFAULT_CENTRAL_HUB.name,
-        full_address: DEFAULT_CENTRAL_HUB.full_address,
-        lat: DEFAULT_CENTRAL_HUB.lat,
-        lng: DEFAULT_CENTRAL_HUB.lng,
-        source: "default_hub",
-        isInServiceArea: true,
-        note: "service_territory_default",
-      });
+      // If IP was outside service area or failed, return error instead of fake hub
+      return NextResponse.json(
+        { error: "IP location unavailable or outside service territory" },
+        { status: 404 }
+      );
     }
 
     // -------------------------------------------------------------

@@ -134,7 +134,9 @@ export async function POST(request: Request) {
     const blockStr = (block || "").toString().trim();
     const aadharStr = (aadhar_no || "").toString().trim();
     const aadharCardUrl = (body.aadhar_card_url || "").toString().trim();
-    const secondaryDocUrl = (body.secondary_doc_url || "").toString().trim();
+    const totoReceiptDocUrl = (body.toto_receipt_doc_url || body.secondary_doc_url || "").toString().trim();
+    const licenseNo = (body.license_no || "").toString().trim();
+    const licenseDocUrl = (body.license_doc_url || "").toString().trim();
 
     const metaObj: Record<string, unknown> = {
       district: distStr,
@@ -142,7 +144,13 @@ export async function POST(request: Request) {
       aadhar_no: aadharStr,
     };
     if (aadharCardUrl) metaObj.aadhar_card_url = aadharCardUrl;
-    if (secondaryDocUrl) metaObj.secondary_doc_url = secondaryDocUrl;
+    if (totoReceiptDocUrl) {
+      metaObj.toto_receipt_doc_url = totoReceiptDocUrl;
+      metaObj.secondary_doc_url = totoReceiptDocUrl;
+      metaObj.secondary_doc_type = "toto_receipt";
+    }
+    if (licenseNo) metaObj.license_no = licenseNo;
+    if (licenseDocUrl) metaObj.license_doc_url = licenseDocUrl;
 
     const metaString = JSON.stringify(metaObj);
 
@@ -183,6 +191,11 @@ export async function POST(request: Request) {
           district: distStr,
           block: blockStr,
           aadhar_no: aadharStr,
+          aadhar_card_url: aadharCardUrl,
+          toto_receipt_doc_url: totoReceiptDocUrl,
+          secondary_doc_url: totoReceiptDocUrl,
+          license_no: licenseNo,
+          license_doc_url: licenseDocUrl,
         },
         message: "চালক তথ্য আপডেট করা হয়েছে",
       });
@@ -219,6 +232,11 @@ export async function POST(request: Request) {
         district: distStr,
         block: blockStr,
         aadhar_no: aadharStr,
+        aadhar_card_url: aadharCardUrl,
+        toto_receipt_doc_url: totoReceiptDocUrl,
+        secondary_doc_url: totoReceiptDocUrl,
+        license_no: licenseNo,
+        license_doc_url: licenseDocUrl,
       },
       message: "নতুন চালক সফলভাবে যুক্ত হয়েছে",
     }, { status: 201 });

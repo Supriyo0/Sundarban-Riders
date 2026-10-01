@@ -83,6 +83,18 @@ export default function RidersPage() {
   const [newAadharCardUrl, setNewAadharCardUrl] = useState("");
   const [uploadingAadharDoc, setUploadingAadharDoc] = useState(false);
   const aadharFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Toto Receipt (টোটো রসিদ)
+  const [newTotoReceiptDocUrl, setNewTotoReceiptDocUrl] = useState("");
+  const [uploadingTotoReceiptDoc, setUploadingTotoReceiptDoc] = useState(false);
+  const totoReceiptFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Driving Licence (লাইসেন্স - ঐচ্ছিক / Not Mandatory)
+  const [newLicenseNo, setNewLicenseNo] = useState("");
+  const [newLicenseDocUrl, setNewLicenseDocUrl] = useState("");
+  const [uploadingLicenseDoc, setUploadingLicenseDoc] = useState(false);
+  const licenseFileInputRef = useRef<HTMLInputElement>(null);
+
   const [saving, setSaving] = useState(false);
 
   // Approve Driver Dialog State with Unique ID assignment
@@ -119,6 +131,52 @@ export default function RidersPage() {
       toast.error("আপলোড ব্যর্থ হয়েছে");
     } finally {
       setUploadingAadharDoc(false);
+    }
+  };
+
+  const handleTotoReceiptDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingTotoReceiptDoc(true);
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("name", `admin_receipt_${file.name}`);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.success && json.url) {
+        setNewTotoReceiptDocUrl(json.url);
+        toast.success("টোটো রসিদ ImgBB-তে সফলভাবে আপলোড হয়েছে");
+      } else {
+        toast.error(json.message || "টোটো রসিদ আপলোড ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("টোটো রসিদ আপলোড ব্যর্থ হয়েছে");
+    } finally {
+      setUploadingTotoReceiptDoc(false);
+    }
+  };
+
+  const handleLicenseDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingLicenseDoc(true);
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("name", `admin_license_${file.name}`);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.success && json.url) {
+        setNewLicenseDocUrl(json.url);
+        toast.success("ড্রাইভিং লাইসেন্স ImgBB-তে সফলভাবে আপলোড হয়েছে");
+      } else {
+        toast.error(json.message || "লাইসেন্স আপলোড ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("লাইসেন্স আপলোড ব্যর্থ হয়েছে");
+    } finally {
+      setUploadingLicenseDoc(false);
     }
   };
 
@@ -396,6 +454,10 @@ export default function RidersPage() {
           block: newBlock.trim(),
           aadhar_no: newAadharNo.trim(),
           aadhar_card_url: newAadharCardUrl.trim() || undefined,
+          toto_receipt_doc_url: newTotoReceiptDocUrl.trim() || undefined,
+          secondary_doc_url: newTotoReceiptDocUrl.trim() || undefined,
+          license_no: newLicenseNo.trim() || undefined,
+          license_doc_url: newLicenseDocUrl.trim() || undefined,
         }),
       });
 
@@ -413,6 +475,9 @@ export default function RidersPage() {
       setNewBlock("");
       setNewAadharNo("");
       setNewAadharCardUrl("");
+      setNewTotoReceiptDocUrl("");
+      setNewLicenseNo("");
+      setNewLicenseDocUrl("");
       loadDrivers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "চালক যুক্ত করা যায়নি";
@@ -769,16 +834,18 @@ export default function RidersPage() {
 
       {/* Add Driver Dialog */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="sm:max-w-[480px] border-border bg-card">
+        <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto border-border bg-card">
           <DialogHeader>
-            <DialogTitle className="text-foreground">নতুন টোটো চালক যুক্ত করুন</DialogTitle>
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <span>🛺 নতুন টোটো চালক যুক্ত করুন</span>
+            </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              চালকের সঠিক নাম, ফোন নম্বর, টোটো নম্বর, এলাকা ও আধার নম্বর লিখুন।
+              চালকের সঠিক বিবরণ ও প্রয়োজনীয় ডকুমেন্টস (আধার কার্ড, টোটো রসিদ ও ঐচ্ছিক লাইসেন্স) যুক্ত করুন।
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddDriver} className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-foreground">চালকের পূর্ণ নাম *</Label>
+              <Label htmlFor="name" className="text-foreground font-semibold">চালকের পূর্ণ নাম *</Label>
               <Input
                 id="name"
                 placeholder="যেমন: রাজেশ মন্ডল"
@@ -791,7 +858,7 @@ export default function RidersPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="phone" className="text-foreground">হোয়াটসঅ্যাপ ফোন নম্বর *</Label>
+                <Label htmlFor="phone" className="text-foreground font-semibold">হোয়াটসঅ্যাপ ফোন নম্বর *</Label>
                 <Input
                   id="phone"
                   placeholder="যেমন: +91 9876543210"
@@ -803,7 +870,7 @@ export default function RidersPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="toto" className="text-foreground">টোটো রেজিস্ট্রেশন নম্বর *</Label>
+                <Label htmlFor="toto" className="text-foreground font-semibold">টোটো রেজিস্ট্রেশন নম্বর *</Label>
                 <Input
                   id="toto"
                   placeholder="যেমন: WB-96-T-1234"
@@ -839,66 +906,206 @@ export default function RidersPage() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="aadhar" className="text-foreground">আধার নম্বর (Aadhar No)</Label>
-              <Input
-                id="aadhar"
-                placeholder="১২ সংখ্যার আধার নম্বর (যেমন: 1234 5678 9012)"
-                value={newAadharNo}
-                onChange={(e) => setNewAadharNo(e.target.value)}
-                maxLength={16}
-                className="bg-muted border-border text-foreground font-mono"
-              />
-            </div>
+            {/* KYC Documents Section */}
+            <div className="pt-2 pb-1 border-t border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5 text-emerald-500" />
+                  চালকের ভেরিফিকেশন ডকুমেন্টস
+                </span>
+                <span className="text-[11px] text-muted-foreground font-medium">আধার ও টোটো রসিদ প্রয়োজন</span>
+              </div>
 
-            {/* ImgBB Aadhar Document Upload */}
-            <div className="space-y-2">
-              <Label className="text-foreground">আধার কার্ড ছবি (ImgBB হোস্টিং)</Label>
-              <input
-                ref={aadharFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleAadharDocUpload}
-              />
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 border-dashed border-border"
-                  disabled={uploadingAadharDoc}
-                  onClick={() => aadharFileInputRef.current?.click()}
-                >
-                  {uploadingAadharDoc ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
+              {/* 1. AADHAR CARD */}
+              <div className="p-3 rounded-xl bg-muted/40 border border-border/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="aadhar" className="text-foreground font-bold text-xs flex items-center gap-1.5">
+                    <CreditCard className="h-3.5 w-3.5 text-amber-500" />
+                    ১. আধার কার্ড (Aadhar Card)
+                  </Label>
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                    আবশ্যক
+                  </span>
+                </div>
+                <Input
+                  id="aadhar"
+                  placeholder="১২ সংখ্যার আধার নম্বর (যেমন: 1234 5678 9012)"
+                  value={newAadharNo}
+                  onChange={(e) => setNewAadharNo(e.target.value)}
+                  maxLength={16}
+                  className="bg-background border-border text-foreground font-mono text-xs h-9"
+                />
+                <input
+                  ref={aadharFileInputRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleAadharDocUpload}
+                />
+                <div className="flex items-center gap-2 pt-0.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 border-dashed border-border"
+                    disabled={uploadingAadharDoc}
+                    onClick={() => aadharFileInputRef.current?.click()}
+                  >
+                    {uploadingAadharDoc ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-500" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {newAadharCardUrl ? "আধার ছবি পরিবর্তন করুন" : "আধার কার্ড ছবি আপলোড (ImgBB)"}
+                  </Button>
+                  {newAadharCardUrl && (
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <a
+                        href={newAadharCardUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary underline truncate max-w-[140px] flex items-center gap-1"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        আধার প্রিভিউ
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                        onClick={() => setNewAadharCardUrl("")}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   )}
-                  {newAadharCardUrl ? "ছবি পরিবর্তন করুন" : "আধার ছবি আপলোড (ImgBB)"}
-                </Button>
-                {newAadharCardUrl && (
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={newAadharCardUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary underline truncate max-w-[180px] flex items-center gap-1"
-                    >
-                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                      লিংক প্রিভিউ
-                    </a>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-destructive"
-                      onClick={() => setNewAadharCardUrl("")}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
+                </div>
+              </div>
+
+              {/* 2. TOTO ROSIT / RECEIPT */}
+              <div className="p-3 rounded-xl bg-muted/40 border border-border/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-foreground font-bold text-xs flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-purple-500" />
+                    ২. টোটো রসিদ (Toto Rosit / Purchase Receipt)
+                  </Label>
+                  <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">
+                    আবশ্যক
+                  </span>
+                </div>
+                <input
+                  ref={totoReceiptFileInputRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleTotoReceiptDocUpload}
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 border-dashed border-border"
+                    disabled={uploadingTotoReceiptDoc}
+                    onClick={() => totoReceiptFileInputRef.current?.click()}
+                  >
+                    {uploadingTotoReceiptDoc ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-purple-500" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {newTotoReceiptDocUrl ? "টোটো রসিদ পরিবর্তন করুন" : "টোটো রসিদ ছবি আপলোড (ImgBB)"}
+                  </Button>
+                  {newTotoReceiptDocUrl && (
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <a
+                        href={newTotoReceiptDocUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-purple-600 underline truncate max-w-[140px] flex items-center gap-1"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 text-purple-500 shrink-0" />
+                        রসিদ প্রিভিউ
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                        onClick={() => setNewTotoReceiptDocUrl("")}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. DRIVING LICENCE (NOT MANDATORY) */}
+              <div className="p-3 rounded-xl bg-muted/40 border border-border/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="license" className="text-foreground font-bold text-xs flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-blue-500" />
+                    ৩. ড্রাইভিং লাইসেন্স (Licence)
+                  </Label>
+                  <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
+                    ঐচ্ছিক (Not Mandatory)
+                  </span>
+                </div>
+                <Input
+                  id="license"
+                  placeholder="লাইসেন্স নম্বর (ঐচ্ছিক)"
+                  value={newLicenseNo}
+                  onChange={(e) => setNewLicenseNo(e.target.value)}
+                  className="bg-background border-border text-foreground font-mono text-xs h-9"
+                />
+                <input
+                  ref={licenseFileInputRef}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="hidden"
+                  onChange={handleLicenseDocUpload}
+                />
+                <div className="flex items-center gap-2 pt-0.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 border-dashed border-border"
+                    disabled={uploadingLicenseDoc}
+                    onClick={() => licenseFileInputRef.current?.click()}
+                  >
+                    {uploadingLicenseDoc ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {newLicenseDocUrl ? "লাইসেন্স ছবি পরিবর্তন করুন" : "লাইসেন্স ছবি আপলোড (ঐচ্ছিক)"}
+                  </Button>
+                  {newLicenseDocUrl && (
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <a
+                        href={newLicenseDocUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 underline truncate max-w-[140px] flex items-center gap-1"
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        লাইসেন্স প্রিভিউ
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                        onClick={() => setNewLicenseDocUrl("")}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

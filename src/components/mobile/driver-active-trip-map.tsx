@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Navigation, ExternalLink, Phone, MessageCircle, KeyRound, CheckCircle2, ShieldAlert, Clock, MapPin } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
 import { LiveFareMeter, LiveMeterReading } from "@/lib/mobile/live-fare-meter";
 import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
@@ -116,32 +118,66 @@ export function DriverActiveTripMap({
     }
   }, [driverCoords]);
 
-  // Direct continuous GPS watch on driver's mobile device during the trip
+  // Direct continuous GPS watch on driver's mobile device during the trip (Capacitor Native + Web)
   useEffect(() => {
-    if (typeof window === "undefined" || !navigator.geolocation) return;
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        if (latitude && longitude && latitude !== 0) {
-          const coords: [number, number] = [latitude, longitude];
-          setActiveDriverCoords(coords);
-          if (bookingId) {
-            fetch("/api/bookings", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "sync_live_trip",
-                bookingId,
-                currentCoords: coords,
-              }),
-            }).catch(() => {});
-          }
+    let watchId: number | null = null;
+    let capWatchId: string | null = null;
+    let isCancelled = false;
+
+    const handleCoords = (latitude: number, longitude: number) => {
+      if (latitude && longitude && latitude !== 0) {
+        const coords: [number, number] = [latitude, longitude];
+        setActiveDriverCoords(coords);
+        if (bookingId) {
+          fetch("/api/bookings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "sync_live_trip",
+              bookingId,
+              currentCoords: coords,
+            }),
+          }).catch(() => {});
         }
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
+      }
+    };
+
+    const startWatching = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          capWatchId = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, maximumAge: 0 },
+            (position, err) => {
+              if (isCancelled || err || !position?.coords) return;
+              handleCoords(position.coords.latitude, position.coords.longitude);
+            }
+          );
+        } catch {}
+      }
+
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            if (isCancelled || !pos?.coords) return;
+            handleCoords(pos.coords.latitude, pos.coords.longitude);
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      }
+    };
+
+    startWatching();
+
+    return () => {
+      isCancelled = true;
+      if (watchId !== null && typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (capWatchId) {
+        Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
+      }
+    };
   }, [bookingId]);
 
   const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;

@@ -21,6 +21,8 @@ import {
   IndianRupee,
   Layers,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   AlertTriangle,
   Star,
   LogOut,
@@ -28,6 +30,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
 
 function cleanLocation(text?: string | null): string {
@@ -90,7 +94,7 @@ export function DriverRadarPanel({
   // Map Tile Mode
   const [mapLayer, setMapLayer] = useState<"streets" | "satellite">("streets");
 
-  // Driver GPS Location (Strict: null/0 if permission denied, no fake Kakdwip)
+  // Driver GPS Location (Strict: null/0 if permission denied, no fake location)
   const [driverCoords, setDriverCoords] = useState<[number, number]>([0, 0]);
   const [driverLocationName, setDriverLocationName] = useState<string>("");
   const [hasValidLocation, setHasValidLocation] = useState(false);
@@ -101,6 +105,46 @@ export function DriverRadarPanel({
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
   const [pendingBookings, setPendingBookings] = useState<any[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+
+  // Draggable Bottom Slider Sheet State
+  const [sheetExpanded, setSheetExpanded] = useState(true);
+  const dragStartYRef = useRef<number | null>(null);
+  const hasMovedRef = useRef<boolean>(false);
+
+  const startDrag = (clientY: number) => {
+    dragStartYRef.current = clientY;
+    hasMovedRef.current = false;
+  };
+
+  const moveDrag = (clientY: number) => {
+    if (dragStartYRef.current === null) return;
+    const delta = clientY - dragStartYRef.current;
+    if (Math.abs(delta) > 8) {
+      hasMovedRef.current = true;
+    }
+  };
+
+  const endDrag = (clientY?: number) => {
+    if (dragStartYRef.current !== null && clientY !== undefined) {
+      const delta = clientY - dragStartYRef.current;
+      if (hasMovedRef.current) {
+        if (sheetExpanded && delta > 20) {
+          setSheetExpanded(false);
+        } else if (!sheetExpanded && delta < -20) {
+          setSheetExpanded(true);
+        }
+      }
+    }
+    dragStartYRef.current = null;
+    setTimeout(() => {
+      hasMovedRef.current = false;
+    }, 120);
+  };
+
+  const toggleSheet = () => {
+    if (hasMovedRef.current) return;
+    setSheetExpanded((prev) => !prev);
+  };
 
   // Trip History State
   const [driverTrips, setDriverTrips] = useState<any[]>([]);
@@ -120,143 +164,248 @@ export function DriverRadarPanel({
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [selectedTripDetail, setSelectedTripDetail] = useState<any | null>(null);
 
-  // 1. Fetch & update Driver's own real-time GPS location
-  const updateDriverLocation = useCallback(async (userInitiated = false) => {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      const msg = "আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়";
-      setLocationError(msg);
-      if (userInitiated) toast.error(msg);
-      return;
-    }
+  // 1. Fetch & update Driver's own real-time GPS location (Capacitor Native + Web)
+  const updateDriverLocation = useCallback(
+    async (userInitiated = false) => {
+      setIsUpdatingLocation(true);
+      const isNative = Capacitor.isNativePlatform();
 
-    setIsUpdatingLocation(true);
-
-    const handleDriverPosition = async (latitude: number, longitude: number) => {
-      const newCoords: [number, number] = [latitude, longitude];
-      setDriverCoords(newCoords);
-      setHasValidLocation(true);
-      setLocationError(null);
-
-      // Center map & update driver Toto marker
-      if (myMarkerRef.current) {
-        myMarkerRef.current.setLatLng(newCoords);
-      }
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.flyTo(newCoords, 16, { duration: 1.0 });
-      }
-
-      // Reverse geocode driver address
-      let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-      try {
-        const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
-        const data = await res.json();
-        if (data && data.name) {
-          resolvedName = data.name;
+      const handleDriverPosition = async (latitude: number, longitude: number) => {
+        if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
+          handleFail();
+          return;
         }
-      } catch {}
 
-      setDriverLocationName(resolvedName);
-      setIsUpdatingLocation(false);
-      if (userInitiated) {
-        toast.success(`📍 আপনার অবস্থান আপডেট হয়েছে: ${resolvedName}`);
-      }
+        const newCoords: [number, number] = [latitude, longitude];
+        setDriverCoords(newCoords);
+        setHasValidLocation(true);
+        setLocationError(null);
 
-      // Persist real location to driver record in database
-      if (driverSession?.driverId) {
+        // Center map & update driver Toto marker
+        if (mapInstanceRef.current) {
+          try {
+            const L = (await import("leaflet")).default || (await import("leaflet"));
+            if (myMarkerRef.current) {
+              myMarkerRef.current.setLatLng(newCoords);
+            } else {
+              const driverTotoIcon = L.divIcon({
+                className: "custom-driver-toto-pin",
+                html: `
+                  <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+                    <div style="position: absolute; width: 48px; height: 48px; background: rgba(16,185,129,0.25); border-radius: 50%; animation: ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
+                    <div style="width: 36px; height: 36px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 14px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 18px; color: white;">
+                      🛺
+                    </div>
+                  </div>
+                `,
+                iconSize: [0, 0],
+              });
+              myMarkerRef.current = L.marker(newCoords, { icon: driverTotoIcon }).addTo(mapInstanceRef.current);
+            }
+            mapInstanceRef.current.flyTo(newCoords, 16, { duration: 1.0 });
+          } catch {}
+        }
+
+        // Reverse geocode driver address
+        let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
         try {
-          await fetch("/api/drivers", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: driverSession.driverId,
-              latitude,
-              longitude,
-              current_location_name: resolvedName,
-              is_active: isOnline,
-            }),
-          });
-        } catch {}
-      }
-    };
-
-    const handleFail = (err: GeolocationPositionError) => {
-      setIsUpdatingLocation(false);
-      setHasValidLocation(false);
-      const msg =
-        err.code === 1
-          ? "⚠️ চালকের GPS পারমিশন বন্ধ আছে। রাইড পেতে ফোনের লোকেশন অন করুন।"
-          : "⚠️ GPS সিগন্যাল পাওয়া যাচ্ছে না। অনুগ্রহ করে ফোনের লোকেশন/GPS অন করুন।";
-      setLocationError(msg);
-      setDriverLocationName("লোকেশন বন্ধ");
-      // Do NOT set a fake random coordinate!
-      setDriverCoords([0, 0]);
-
-      if (userInitiated) {
-        toast.error(msg, { duration: 5000 });
-      }
-    };
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude),
-      (err) => {
-        navigator.geolocation.getCurrentPosition(
-          (fallbackPos) => handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-          (fallbackErr) => handleFail(fallbackErr),
-          { enableHighAccuracy: false, timeout: 8000 }
-        );
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
-  }, [driverSession?.driverId, isOnline]);
-
-  useEffect(() => {
-    updateDriverLocation(false);
-
-    if (typeof window === "undefined" || !navigator.geolocation) return;
-
-    // Continuous real live location tracking for driver radar
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        if (latitude && longitude && latitude !== 0) {
-          const newCoords: [number, number] = [latitude, longitude];
-          setDriverCoords(newCoords);
-          setHasValidLocation(true);
-          setLocationError(null);
-
-          if (myMarkerRef.current) {
-            myMarkerRef.current.setLatLng(newCoords);
+          const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
+          const data = await res.json();
+          if (data && data.name) {
+            resolvedName = data.name;
           }
+        } catch {}
 
-          // Persist real live coordinates to database periodically
-          if (driverSession?.driverId && isOnline) {
-            fetch("/api/drivers", {
+        setDriverLocationName(resolvedName);
+        setIsUpdatingLocation(false);
+        if (userInitiated) {
+          toast.success(`📍 আপনার অবস্থান আপডেট হয়েছে: ${resolvedName}`);
+        }
+
+        // Persist real location to driver record in database
+        const dId = driverSession?.driverId;
+        const dPhone = driverSession?.phone || driverSession?.driverPhone;
+        if (dId || dPhone) {
+          try {
+            await fetch("/api/drivers", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                id: driverSession.driverId,
+                id: dId,
+                phone: dPhone,
                 latitude,
                 longitude,
-                is_active: true,
+                current_location_name: resolvedName,
+                is_active: isOnline,
               }),
-            }).catch(() => {});
-          }
+            });
+          } catch {}
         }
-      },
-      (err) => {
-        console.warn("[DriverRadar] Continuous GPS watch notice:", err.message);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 4000,
-        timeout: 10000,
+      };
+
+      const handleFail = (msg?: string, isDenied = false) => {
+        setIsUpdatingLocation(false);
+        setHasValidLocation(false);
+        const defaultMsg = isNative
+          ? "⚠️ চালকের GPS পারমিশন প্রয়োজন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
+          : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ফোনের GPS অন করুন।";
+        const finalMsg = msg || defaultMsg;
+        setLocationError(finalMsg);
+        setDriverLocationName("লোকেশন মেলেনি");
+        setDriverCoords([0, 0]);
+
+        if (userInitiated || isDenied) {
+          toast.error(finalMsg, { duration: 5000 });
+        }
+      };
+
+      // 1. Try Native Capacitor Geolocation first
+      if (isNative) {
+        try {
+          const perm = await Geolocation.checkPermissions();
+          if (perm.location !== "granted") {
+            const req = await Geolocation.requestPermissions();
+            if (req.location !== "granted") {
+              handleFail(undefined, true);
+              return;
+            }
+          }
+
+          const position = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 20000,
+            maximumAge: 0,
+          });
+
+          if (position?.coords?.latitude && position?.coords?.longitude) {
+            await handleDriverPosition(position.coords.latitude, position.coords.longitude);
+            return;
+          }
+        } catch (capErr) {
+          console.warn("Capacitor Geolocation error on driver radar:", capErr);
+        }
       }
-    );
+
+      // 2. Web Geolocation Fallback
+      if (typeof window === "undefined" || !navigator.geolocation) {
+        handleFail("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude),
+        (err) => {
+          navigator.geolocation.getCurrentPosition(
+            (fallbackPos) => handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
+            () => handleFail(err.code === 1 ? undefined : "⚠️ GPS সিগন্যাল পাওয়া যাচ্ছে না। ফোনের লোকেশন অন করুন।", err.code === 1),
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    },
+    [driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]
+  );
+
+  // Real-time continuous GPS tracking for Driver
+  useEffect(() => {
+    updateDriverLocation(false);
+
+    let watchId: number | null = null;
+    let capWatchId: string | null = null;
+    let isCancelled = false;
+
+    const startContinuousTracking = async () => {
+      const isNative = Capacitor.isNativePlatform();
+
+      if (isNative) {
+        try {
+          capWatchId = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, maximumAge: 0 },
+            (position, err) => {
+              if (isCancelled || err || !position?.coords) return;
+              const { latitude, longitude } = position.coords;
+              if (latitude && longitude && latitude !== 0) {
+                const newCoords: [number, number] = [latitude, longitude];
+                setDriverCoords(newCoords);
+                setHasValidLocation(true);
+                setLocationError(null);
+
+                if (myMarkerRef.current) {
+                  myMarkerRef.current.setLatLng(newCoords);
+                }
+
+                const dId = driverSession?.driverId;
+                const dPhone = driverSession?.phone || driverSession?.driverPhone;
+                if ((dId || dPhone) && isOnline) {
+                  fetch("/api/drivers", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      id: dId,
+                      phone: dPhone,
+                      latitude,
+                      longitude,
+                      is_active: true,
+                    }),
+                  }).catch(() => {});
+                }
+              }
+            }
+          );
+        } catch {}
+      }
+
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            if (isCancelled || !pos?.coords) return;
+            const { latitude, longitude } = pos.coords;
+            if (latitude && longitude && latitude !== 0) {
+              const newCoords: [number, number] = [latitude, longitude];
+              setDriverCoords(newCoords);
+              setHasValidLocation(true);
+              setLocationError(null);
+
+              if (myMarkerRef.current) {
+                myMarkerRef.current.setLatLng(newCoords);
+              }
+
+              const dId = driverSession?.driverId;
+              const dPhone = driverSession?.phone || driverSession?.driverPhone;
+              if ((dId || dPhone) && isOnline) {
+                fetch("/api/drivers", {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    id: dId,
+                    phone: dPhone,
+                    latitude,
+                    longitude,
+                    is_active: true,
+                  }),
+                }).catch(() => {});
+              }
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+        );
+      }
+    };
+
+    startContinuousTracking();
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
+      isCancelled = true;
+      if (watchId !== null && typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (capWatchId) {
+        Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
+      }
     };
-  }, [updateDriverLocation, driverSession?.driverId, isOnline]);
+  }, [updateDriverLocation, driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]);
 
   // 2. Fetch Driver Trip History & Today's Earnings
   const fetchDriverTrips = useCallback(async () => {
@@ -312,9 +461,10 @@ export function DriverRadarPanel({
           setOtherDrivers(others);
         }
 
-        const qParams = hasValidLocation && driverCoords[0] !== 0
-          ? `?status=pending&driver_lat=${driverCoords[0]}&driver_lng=${driverCoords[1]}`
-          : `?status=pending`;
+        const qParams =
+          hasValidLocation && driverCoords[0] !== 0
+            ? `?status=pending&driver_lat=${driverCoords[0]}&driver_lng=${driverCoords[1]}`
+            : `?status=pending`;
         const bRes = await fetch(`/api/bookings${qParams}`);
         const bJson = await bRes.json();
         const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
@@ -343,7 +493,7 @@ export function DriverRadarPanel({
     pollTimer = setInterval(fetchRadarEntities, 3500);
 
     return () => clearInterval(pollTimer);
-  }, [driverSession?.driverId]);
+  }, [driverSession?.driverId, driverCoords, hasValidLocation]);
 
   // 4. Initialize Full-Screen Leaflet Map
   useEffect(() => {
@@ -365,9 +515,10 @@ export function DriverRadarPanel({
         (mapContainerRef.current as any)._leaflet_id = null;
       }
 
-      const initialCenter: [number, number] = hasValidLocation && driverCoords[0] !== 0
-        ? driverCoords
-        : [21.585, 88.251]; // Fraserganj region overview
+      const initialCenter: [number, number] =
+        hasValidLocation && driverCoords[0] !== 0
+          ? driverCoords
+          : [21.876, 88.192]; // Central Kakdwip Region
 
       const map = L.map(mapContainerRef.current, {
         center: initialCenter,
@@ -382,7 +533,7 @@ export function DriverRadarPanel({
       }).addTo(map);
       tileLayerRef.current = tiles;
 
-      // Driver's Live Toto Marker (Only added if valid GPS coordinates)
+      // Driver's Live Toto Marker
       if (hasValidLocation && driverCoords[0] !== 0) {
         const driverTotoIcon = L.divIcon({
           className: "custom-driver-toto-pin",
@@ -438,9 +589,10 @@ export function DriverRadarPanel({
         const lng = Number(b.pickup_lng);
         if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
-        const dist = hasValidLocation && driverCoords[0] !== 0
-          ? calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng)
-          : null;
+        const dist =
+          hasValidLocation && driverCoords[0] !== 0
+            ? calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng)
+            : null;
 
         const customerPin = L.divIcon({
           className: "custom-customer-pin",
@@ -462,6 +614,7 @@ export function DriverRadarPanel({
           const marker = L.marker([lat, lng], { icon: customerPin }).addTo(mapInstanceRef.current);
           marker.on("click", () => {
             setSelectedCustomer({ ...b, distanceKm: dist });
+            setSheetExpanded(true);
             if (mapInstanceRef.current) mapInstanceRef.current.flyTo([lat, lng], 16, { duration: 0.8 });
           });
           customerMarkersRef.current.push(marker);
@@ -486,7 +639,7 @@ export function DriverRadarPanel({
   };
 
   // -------------------------------------------------------------
-  // VIEW A: TRIP HISTORY & EARNINGS TAB (Matches Screenshot 2 Style)
+  // VIEW A: TRIP HISTORY & EARNINGS TAB
   // -------------------------------------------------------------
   if (activeTab === "trips") {
     return (
@@ -835,24 +988,101 @@ export function DriverRadarPanel({
         onClick={() => updateDriverLocation(true)}
         disabled={isUpdatingLocation}
         title="আমার অবস্থান"
-        className="absolute bottom-34 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white hover:bg-emerald-50 text-emerald-600 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+        className={`absolute bottom-34 right-3.5 z-20 pointer-events-auto w-11 h-11 rounded-2xl shadow-lg border flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
+          hasValidLocation
+            ? "bg-white hover:bg-emerald-50 text-emerald-600 border-slate-200"
+            : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-bounce"
+        }`}
       >
         {isUpdatingLocation ? (
           <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
         ) : (
-          <LocateFixed className="w-5 h-5 text-emerald-600" />
+          <LocateFixed className="w-5 h-5" />
         )}
       </button>
 
-      {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER */}
+      {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER (Smooth Touch Gestures & Tap Toggle) */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
-        <div className="pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-4 space-y-3 animate-in slide-in-from-bottom-6 duration-300">
-          {/* Drag Handle */}
-          <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto" />
+        <div
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
+            sheetExpanded
+              ? "max-h-[75dvh] overflow-y-auto"
+              : "max-h-24 overflow-hidden"
+          }`}
+        >
+          {/* Interactive Drag / Tap Handle */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={toggleSheet}
+            onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+            onTouchEnd={(e) => endDrag(e.changedTouches[0]?.clientY)}
+            onMouseDown={(e) => startDrag(e.clientY)}
+            onMouseUp={(e) => endDrag(e.clientY)}
+            className="w-full py-1 cursor-pointer flex flex-col items-center justify-center gap-1 select-none group touch-none"
+            title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag or tap to toggle)"
+          >
+            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+            <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
+              {sheetExpanded ? (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span>মানচিত্র দেখতে নিচে নামান (Tap to minimize)</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
+                  <span className="text-emerald-700 font-black">
+                    {pendingBookings.length > 0
+                      ? `🔔 ${pendingBookings.length}টি রাইড দেখতে ট্যাপ করুন ⌃`
+                      : "রাইডার স্ট্যাটাস দেখতে ট্যাপ বা উপরে তুলুন ⌃"}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
 
-          {selectedCustomer ? (
+          {!sheetExpanded ? (
+            /* Minimized Peek Mode */
+            <div
+              onClick={() => setSheetExpanded(true)}
+              className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
+                  🛺
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-black text-xs text-slate-900">
+                      {isOnline ? "অনলাইন চালক" : "অফলাইন"}
+                    </span>
+                    {pendingBookings.length > 0 && (
+                      <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.2 rounded-full animate-pulse">
+                        {pendingBookings.length}টি নতুন
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-bold truncate block">
+                    📍 {hasValidLocation && driverLocationName ? driverLocationName : "অবস্থান সনাক্ত হচ্ছে..."}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSheetExpanded(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>দেখুন ⌃</span>
+              </button>
+            </div>
+          ) : selectedCustomer ? (
             /* STATE A: A WAITING CUSTOMER HAS BEEN SELECTED ON MAP */
-            <div className="space-y-3">
+            <div className="space-y-3 animate-in fade-in">
               <div className="flex items-center justify-between pb-1 border-b border-slate-100">
                 <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1">
                   <User className="w-3 h-3" />
@@ -861,7 +1091,7 @@ export function DriverRadarPanel({
                 <button
                   type="button"
                   onClick={() => setSelectedCustomer(null)}
-                  className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
+                  className="text-xs text-slate-400 hover:text-slate-700 font-bold px-2 py-0.5 rounded-lg bg-slate-100 cursor-pointer"
                 >
                   ✕ বন্ধ করুন
                 </button>
@@ -908,7 +1138,7 @@ export function DriverRadarPanel({
             </div>
           ) : (
             /* STATE B: IDLE / DRIVER WAITING FOR RIDE (UBER CAPTAIN STYLE) */
-            <div className="space-y-2.5">
+            <div className="space-y-3 animate-in fade-in">
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-black text-base text-slate-900 leading-tight">
@@ -918,9 +1148,15 @@ export function DriverRadarPanel({
                     📍 {hasValidLocation && driverLocationName ? driverLocationName : "অবস্থান সনাক্ত হচ্ছে..."}
                   </p>
                 </div>
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-xl shrink-0">
-                  🛺
-                </div>
+                <button
+                  type="button"
+                  onClick={() => updateDriverLocation(true)}
+                  disabled={isUpdatingLocation}
+                  className="w-10 h-10 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl shrink-0 transition-all active:scale-95 cursor-pointer"
+                  title="জিপিএস রিফ্রেশ"
+                >
+                  {isUpdatingLocation ? <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" /> : "🛺"}
+                </button>
               </div>
 
               {/* Status Banner */}
@@ -941,6 +1177,59 @@ export function DriverRadarPanel({
                   </span>
                 )}
               </div>
+
+              {/* Nearby Pending Bookings List (Direct One-Tap Accept) */}
+              {pendingBookings.length > 0 && (
+                <div className="space-y-2 pt-1 border-t border-slate-100">
+                  <span className="text-[11px] font-black text-slate-700 block">
+                    নিকটবর্তী যাত্রীর অনুরোধ ({pendingBookings.length}):
+                  </span>
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5">
+                    {pendingBookings.map((booking) => {
+                      const pLat = Number(booking.pickup_lat);
+                      const pLng = Number(booking.pickup_lng);
+                      const dist =
+                        hasValidLocation && driverCoords[0] !== 0 && pLat && pLng
+                          ? calculateDistanceKm(driverCoords[0], driverCoords[1], pLat, pLng)
+                          : null;
+
+                      return (
+                        <div
+                          key={booking.id || booking.booking_number}
+                          className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between gap-2 shadow-2xs hover:bg-emerald-50 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-black text-slate-900 truncate">
+                                👤 {booking.customer_name || "যাত্রী"}
+                              </span>
+                              <span className="text-xs font-black font-mono text-emerald-700">
+                                ₹{booking.estimated_fare || 40}.০০
+                              </span>
+                            </div>
+                            <span className="text-[10.5px] text-slate-600 truncate block mt-0.5">
+                              📍 {cleanLocation(booking.pickup_location)} ➔ {cleanLocation(booking.drop_location)}
+                            </span>
+                            {dist !== null && (
+                              <span className="text-[9.5px] font-bold text-slate-400 block mt-0.5">
+                                🚀 ~{dist} কিমি দূরে
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => onAcceptRide(booking)}
+                            className="shrink-0 h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 cursor-pointer"
+                          >
+                            গ্রহণ
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

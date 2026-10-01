@@ -1131,16 +1131,18 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 2. TOP FLOATING UBER SEARCH CARD & QUICK SHORTCUTS            */}
       {/* ------------------------------------------------------------- */}
-      <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+      <div className={`absolute top-3 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
-          className={`pointer-events-auto rounded-3xl p-3 shadow-[0_12px_36px_rgba(0,0,0,0.14)] border border-slate-200/80 space-y-2 backdrop-blur-xl transition-all duration-300 ${
+          className={`pointer-events-auto rounded-3xl p-3 shadow-[0_12px_36px_rgba(0,0,0,0.18)] border border-slate-200/90 space-y-2 backdrop-blur-xl transition-all duration-300 ${
             topCardExpanded
-              ? "max-h-[70vh] overflow-y-auto"
+              ? activeSearchField
+                ? "max-h-[82vh] overflow-y-auto"
+                : "max-h-[70vh] overflow-y-auto"
               : "max-h-24 overflow-hidden"
           }`}
           style={{
-            background: "linear-gradient(135deg, rgba(255,255,255,0.97) 0%, rgba(248,250,252,0.95) 100%)",
+            background: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)",
           }}
         >
           {!topCardExpanded ? (
@@ -1224,7 +1226,11 @@ export function InteractiveBookingMap({
               )}
 
               {/* Pickup & Drop Inputs with Uber Connecting Line */}
-              <div className="relative flex flex-col gap-2">
+              <div
+                className="relative flex flex-col gap-2"
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchMove={(e) => e.stopPropagation()}
+              >
                 {/* Visual Connecting Line */}
                 <div className="absolute left-[18px] top-6 bottom-6 w-0.5 bg-slate-300 pointer-events-none z-10" />
 
@@ -1348,7 +1354,11 @@ export function InteractiveBookingMap({
 
               {/* Live Auto-Suggest Places Dropdown */}
               {activeSearchField && (placeSuggestions.length > 0 || isSearchingPlaces) && (
-                <div className="pt-2 border-t border-slate-200/80 max-h-56 overflow-y-auto space-y-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                  className="pt-2 border-t border-slate-200/80 max-h-60 overflow-y-auto space-y-1 divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-200"
+                >
                   <div className="px-1 pb-1 flex items-center justify-between text-[10.5px] font-bold text-slate-600">
                     <span className="flex items-center gap-1.5 text-emerald-800">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1356,7 +1366,11 @@ export function InteractiveBookingMap({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setActiveSearchField(null)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveSearchField(null);
+                        setPlaceSuggestions([]);
+                      }}
                       className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-1.5 py-0.5 rounded bg-slate-100 cursor-pointer"
                     >
                       ✕ বন্ধ
@@ -1369,8 +1383,11 @@ export function InteractiveBookingMap({
                       <button
                         key={idx}
                         type="button"
-                        onClick={() => handleSelectSuggestion(place)}
-                        className={`w-full p-2 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border shadow-2xs ${
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectSuggestion(place);
+                        }}
+                        className={`w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border shadow-2xs active:scale-[0.99] ${
                           inZone
                             ? "hover:bg-emerald-50 bg-white border-slate-100"
                             : "hover:bg-rose-50 bg-rose-50/50 border-rose-200 opacity-90"
@@ -1400,25 +1417,27 @@ export function InteractiveBookingMap({
                 </div>
               )}
 
-              {/* Top Card Slider Handle (Tap / Swipe Up to Minimize) */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setTopCardExpanded(false)}
-                onTouchStart={(e) => startTopDrag(e.touches[0].clientY)}
-                onTouchMove={(e) => moveTopDrag(e.touches[0].clientY)}
-                onTouchEnd={(e) => endTopDrag(e.changedTouches[0]?.clientY)}
-                onMouseDown={(e) => startTopDrag(e.clientY)}
-                onMouseUp={(e) => endTopDrag(e.clientY)}
-                className="w-full pt-2 pb-0.5 flex flex-col items-center justify-center gap-1 cursor-pointer select-none group border-t border-slate-100/90"
-                title="মানচিত্র বড় করে দেখতে উপরে তুলুন"
-              >
-                <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
-                <div className="flex items-center gap-1 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
-                  <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                  <span>মানচিত্র দেখতে উপরে তুলুন (Swipe up / Tap to minimize)</span>
+              {/* Top Card Slider Handle (Tap / Swipe Up to Minimize) - Only shown when not actively typing/searching */}
+              {!activeSearchField && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setTopCardExpanded(false)}
+                  onTouchStart={(e) => startTopDrag(e.touches[0].clientY)}
+                  onTouchMove={(e) => moveTopDrag(e.touches[0].clientY)}
+                  onTouchEnd={(e) => endTopDrag(e.changedTouches[0]?.clientY)}
+                  onMouseDown={(e) => startTopDrag(e.clientY)}
+                  onMouseUp={(e) => endTopDrag(e.clientY)}
+                  className="w-full pt-2 pb-0.5 flex flex-col items-center justify-center gap-1 cursor-pointer select-none group border-t border-slate-100/90"
+                  title="মানচিত্র বড় করে দেখতে উপরে তুলুন"
+                >
+                  <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
+                  <div className="flex items-center gap-1 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                    <span>মানচিত্র দেখতে উপরে তুলুন (Swipe up / Tap to minimize)</span>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           )}
         </div>

@@ -661,12 +661,13 @@ export async function GET(request: Request) {
       }
       driverUid = driverUid || "SR-DRV";
 
+      const meta = getBookingMeta(data);
       return NextResponse.json({
         booking: {
           ...enriched,
-          driver_name: d?.name || (data as any).driver_name || "সুন্দরবন চালক",
-          driver_phone: d?.phone || (data as any).driver_phone || null,
-          toto_number: d?.toto_number || (data as any).toto_number || "WB-96-T-8421",
+          driver_name: d?.name || meta.driver_name || (data as any).driver_name || "সুন্দরবন চালক",
+          driver_phone: d?.phone || meta.driver_phone || (data as any).driver_phone || null,
+          toto_number: d?.toto_number || meta.toto_number || (data as any).toto_number || "WB-96-T-8421",
           driver_unique_id: driverUid,
           unique_id: driverUid,
         },
@@ -1537,9 +1538,7 @@ export async function PATCH(request: Request) {
         .update({
           status: "completed",
           final_fare: calculatedFare,
-          actual_distance_km: distanceKm,
           feedback: JSON.stringify(cleanHistoryMeta),
-          notes: null, // Clear transient notes/state
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
@@ -1606,7 +1605,7 @@ export async function PATCH(request: Request) {
         .update({
           status: "cancelled",
           cancelled_by: cancelledBy,
-          notes: isSystemTimeout ? "Auto-cancelled: 3 minutes expired without driver accept" : undefined,
+          cancellation_reason: isSystemTimeout ? "Auto-cancelled: 3 minutes expired without driver accept" : (body.cancelReason || "Cancelled"),
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)

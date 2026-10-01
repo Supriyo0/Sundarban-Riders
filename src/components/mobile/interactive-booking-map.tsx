@@ -127,9 +127,19 @@ export function InteractiveBookingMap({
   const [isDropOutOfService, setIsDropOutOfService] = useState(false);
 
   // Coordinates (Only set when valid; never auto-fill default hub coordinates)
-  const [pickupCoords, setPickupCoords] = useState<[number, number]>(
-    initialPickupCoords && initialPickupCoords[0] !== 0 ? initialPickupCoords : [0, 0]
-  );
+  const [pickupCoords, setPickupCoords] = useState<[number, number]>(() => {
+    if (initialPickupCoords && initialPickupCoords[0] !== 0) return initialPickupCoords;
+    if (typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) return [lat, lng];
+      }
+    }
+    return [0, 0];
+  });
   const [dropCoords, setDropCoords] = useState<[number, number]>(
     initialDropCoords && initialDropCoords[0] !== 0 ? initialDropCoords : [0, 0]
   );
@@ -557,7 +567,7 @@ export function InteractiveBookingMap({
       } catch {}
     }
     loadRealDrivers();
-    const interval = setInterval(loadRealDrivers, 15000);
+    const interval = setInterval(loadRealDrivers, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -667,6 +677,12 @@ export function InteractiveBookingMap({
         const detectedName = preResolvedName || (await resolveLocationAddress(latitude, longitude));
         setPickupInputValue(detectedName);
 
+        try {
+          localStorage.setItem("sr_last_known_lat", latitude.toString());
+          localStorage.setItem("sr_last_known_lng", longitude.toString());
+          if (detectedName) localStorage.setItem("sr_last_known_name", detectedName);
+        } catch {}
+
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
           fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
           flyDuration: 1.2,
@@ -703,10 +719,23 @@ export function InteractiveBookingMap({
             }
           }
 
+          // Stage 1: Fast fused cached location
+          try {
+            const fastPos = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: false,
+              timeout: 3000,
+              maximumAge: 120000,
+            });
+            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
+              await handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
+            }
+          } catch {}
+
+          // Stage 2: Satellite high accuracy position
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 20000,
-            maximumAge: 0,
+            timeout: 12000,
+            maximumAge: 5000,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
@@ -724,6 +753,16 @@ export function InteractiveBookingMap({
         return;
       }
 
+      // Stage 1: Quick fused position
+      navigator.geolocation.getCurrentPosition(
+        (fastPos) => {
+          handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
+      );
+
+      // Stage 2: High accuracy satellite request
       navigator.geolocation.getCurrentPosition(
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
         (err) => {
@@ -740,10 +779,10 @@ export function InteractiveBookingMap({
                 handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
               }
             },
-            { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -769,7 +808,7 @@ export function InteractiveBookingMap({
       if (isNative) {
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 0 },
+            { enableHighAccuracy: true, maximumAge: 5000 },
             async (position, err) => {
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
@@ -781,6 +820,11 @@ export function InteractiveBookingMap({
                   setHasValidPickup(true);
                   setGpsDetected(true);
                   setLocationError(null);
+                  try {
+                    localStorage.setItem("sr_last_known_lat", latitude.toString());
+                    localStorage.setItem("sr_last_known_lng", longitude.toString());
+                    if (resolved) localStorage.setItem("sr_last_known_name", resolved);
+                  } catch {}
                   if (mapInstanceRef.current) {
                     mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
                   }
@@ -804,6 +848,11 @@ export function InteractiveBookingMap({
                 setHasValidPickup(true);
                 setGpsDetected(true);
                 setLocationError(null);
+                try {
+                  localStorage.setItem("sr_last_known_lat", latitude.toString());
+                  localStorage.setItem("sr_last_known_lng", longitude.toString());
+                  if (resolved) localStorage.setItem("sr_last_known_name", resolved);
+                } catch {}
                 if (mapInstanceRef.current) {
                   mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
                 }
@@ -811,7 +860,7 @@ export function InteractiveBookingMap({
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 0 }
+          { enableHighAccuracy: true, maximumAge: 5000 }
         );
       }
     };

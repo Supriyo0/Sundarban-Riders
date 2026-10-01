@@ -453,7 +453,18 @@ function MobileAppPageContent() {
   const hasCompletedNotifiedRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
-  const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(null);
+  const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(() => {
+    if (typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) return [lat, lng];
+      }
+    }
+    return null;
+  });
   const [showStartOtpModal, setShowStartOtpModal] = useState(false);
   const [startOtpInput, setStartOtpInput] = useState("");
   const [isVerifyingStartOtp, setIsVerifyingStartOtp] = useState(false);
@@ -1376,18 +1387,45 @@ function MobileAppPageContent() {
     return () => clearInterval(activeRidePollInterval);
   }, [phase, activeRide]);
 
-  // Proactively fetch customer real-time GPS location on app load with precise GPS
+  // Proactively fetch customer & driver real-time GPS location on app load
   useEffect(() => {
     if (typeof window !== "undefined" && navigator.geolocation) {
+      // Stage 1: Fast fused / cached position (returns immediately)
+      navigator.geolocation.getCurrentPosition(
+        (fastPos) => {
+          const { latitude, longitude } = fastPos.coords;
+          if (latitude && longitude && latitude !== 0) {
+            setPickupCoords([latitude, longitude]);
+            setDriverLiveCoords([latitude, longitude]);
+            try {
+              localStorage.setItem("sr_last_known_lat", latitude.toString());
+              localStorage.setItem("sr_last_known_lng", longitude.toString());
+            } catch {}
+          }
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
+      );
+
+      // Stage 2: Satellite high accuracy
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const { latitude, longitude } = pos.coords;
           setPickupCoords([latitude, longitude]);
           setDriverLiveCoords([latitude, longitude]);
+          try {
+            localStorage.setItem("sr_last_known_lat", latitude.toString());
+            localStorage.setItem("sr_last_known_lng", longitude.toString());
+          } catch {}
           fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
             .then((r) => r.json())
             .then((d) => {
-              if (d && d.name) setPickupText(d.name);
+              if (d && d.name) {
+                setPickupText(d.name);
+                try {
+                  localStorage.setItem("sr_last_known_name", d.name);
+                } catch {}
+              }
             })
             .catch(() => {});
         },
@@ -1398,18 +1436,27 @@ function MobileAppPageContent() {
               const { latitude, longitude } = pos2.coords;
               setPickupCoords([latitude, longitude]);
               setDriverLiveCoords([latitude, longitude]);
+              try {
+                localStorage.setItem("sr_last_known_lat", latitude.toString());
+                localStorage.setItem("sr_last_known_lng", longitude.toString());
+              } catch {}
               fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
                 .then((r) => r.json())
                 .then((d) => {
-                  if (d && d.name) setPickupText(d.name);
+                  if (d && d.name) {
+                    setPickupText(d.name);
+                    try {
+                      localStorage.setItem("sr_last_known_name", d.name);
+                    } catch {}
+                  }
                 })
                 .catch(() => {});
             },
             () => {},
-            { enableHighAccuracy: false, timeout: 8000 }
+            { enableHighAccuracy: false, timeout: 6000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
     }
   }, []);
@@ -1426,11 +1473,20 @@ function MobileAppPageContent() {
           const { latitude, longitude } = pos.coords;
           setPickupCoords([latitude, longitude]);
           setDriverLiveCoords([latitude, longitude]);
+          try {
+            localStorage.setItem("sr_last_known_lat", latitude.toString());
+            localStorage.setItem("sr_last_known_lng", longitude.toString());
+          } catch {}
           // Resolve initial address
           fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
             .then((r) => r.json())
             .then((d) => {
-              if (d && d.name) setPickupText(d.name);
+              if (d && d.name) {
+                setPickupText(d.name);
+                try {
+                  localStorage.setItem("sr_last_known_name", d.name);
+                } catch {}
+              }
             })
             .catch(() => {});
         },
@@ -1441,18 +1497,27 @@ function MobileAppPageContent() {
               const { latitude, longitude } = pos2.coords;
               setPickupCoords([latitude, longitude]);
               setDriverLiveCoords([latitude, longitude]);
+              try {
+                localStorage.setItem("sr_last_known_lat", latitude.toString());
+                localStorage.setItem("sr_last_known_lng", longitude.toString());
+              } catch {}
               fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
                 .then((r) => r.json())
                 .then((d) => {
-                  if (d && d.name) setPickupText(d.name);
+                  if (d && d.name) {
+                    setPickupText(d.name);
+                    try {
+                      localStorage.setItem("sr_last_known_name", d.name);
+                    } catch {}
+                  }
                 })
                 .catch(() => {});
             },
             () => {},
-            { enableHighAccuracy: false, timeout: 8000 }
+            { enableHighAccuracy: false, timeout: 6000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
     }
 
@@ -2736,6 +2801,8 @@ function MobileAppPageContent() {
               driverSession={session}
               isOnline={isOnline}
               initialTab={bottomNavTab === "trips" ? "trips" : "radar"}
+              initialCoords={driverLiveCoords?.[0] ? driverLiveCoords : (pickupCoords?.[0] ? pickupCoords : undefined)}
+              initialLocationName={pickupText}
               onToggleOnline={async (nextOnline) => {
                 setIsOnline(nextOnline);
                 if (!isSoundMuted) playSuccessSound();

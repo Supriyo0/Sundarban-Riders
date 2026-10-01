@@ -68,6 +68,8 @@ interface DriverRadarPanelProps {
   onToggleOnline?: (nextState: boolean) => void;
   onLogout?: () => void;
   initialTab?: "radar" | "trips";
+  initialCoords?: [number, number];
+  initialLocationName?: string;
 }
 
 export function DriverRadarPanel({
@@ -77,6 +79,8 @@ export function DriverRadarPanel({
   onToggleOnline,
   onLogout,
   initialTab = "radar",
+  initialCoords,
+  initialLocationName,
 }: DriverRadarPanelProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -94,12 +98,109 @@ export function DriverRadarPanel({
   // Map Tile Mode
   const [mapLayer, setMapLayer] = useState<"streets" | "satellite">("streets");
 
-  // Driver GPS Location (Strict: null/0 if permission denied, no fake location)
-  const [driverCoords, setDriverCoords] = useState<[number, number]>([0, 0]);
-  const [driverLocationName, setDriverLocationName] = useState<string>("");
-  const [hasValidLocation, setHasValidLocation] = useState(false);
+  // Driver GPS Location (Instant from initialCoords or shared device cache, refined live)
+  const [driverCoords, setDriverCoords] = useState<[number, number]>(() => {
+    if (initialCoords && initialCoords[0] && initialCoords[0] !== 0) return initialCoords;
+    if (typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          return [lat, lng];
+        }
+      }
+    }
+    return [0, 0];
+  });
+
+  const [driverLocationName, setDriverLocationName] = useState<string>(() => {
+    if (initialLocationName) return initialLocationName;
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sr_last_known_name") || "";
+    }
+    return "";
+  });
+
+  const [hasValidLocation, setHasValidLocation] = useState<boolean>(() => {
+    if (initialCoords && initialCoords[0] && initialCoords[0] !== 0) return true;
+    if (typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+      }
+    }
+    return false;
+  });
+
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
+
+  // Robust Toto Marker creation / update helper on map
+  const ensureDriverMarker = useCallback(async (coords: [number, number], pan = false) => {
+    if (!mapInstanceRef.current || !coords || coords[0] === 0 || coords[1] === 0) return;
+    try {
+      const L = (await import("leaflet")).default || (await import("leaflet"));
+      if (myMarkerRef.current) {
+        myMarkerRef.current.setLatLng(coords);
+      } else {
+        const driverTotoIcon = L.divIcon({
+          className: "custom-driver-toto-pin",
+          html: `
+            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+              <div style="position: absolute; width: 48px; height: 48px; background: rgba(16,185,129,0.25); border-radius: 50%; animation: ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
+              <div style="width: 36px; height: 36px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 14px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 18px; color: white;">
+                🛺
+              </div>
+            </div>
+          `,
+          iconSize: [0, 0],
+        });
+        myMarkerRef.current = L.marker(coords, { icon: driverTotoIcon }).addTo(mapInstanceRef.current);
+      }
+      if (pan) {
+        mapInstanceRef.current.flyTo(coords, 16, { duration: 0.9 });
+      }
+    } catch (err) {
+      console.warn("Failed to render driver marker:", err);
+    }
+  }, []);
+
+  // Ensure marker updates whenever driverCoords or map is ready
+  useEffect(() => {
+    if (mapInstanceRef.current && driverCoords[0] !== 0) {
+      ensureDriverMarker(driverCoords, false);
+    }
+  }, [driverCoords, ensureDriverMarker]);
+
+  // Sync real location to driver record in database
+  const syncDriverPositionToBackend = useCallback(
+    async (lat: number, lng: number, name?: string) => {
+      const dId = driverSession?.driverId;
+      const dPhone = driverSession?.phone || driverSession?.driverPhone;
+      if (dId || dPhone) {
+        try {
+          await fetch("/api/drivers", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: dId,
+              phone: dPhone,
+              latitude: lat,
+              longitude: lng,
+              ...(name ? { current_location_name: name } : {}),
+              is_active: isOnline,
+            }),
+          });
+        } catch {}
+      }
+    },
+    [driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]
+  );
 
   // Entities around driver
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
@@ -164,15 +265,15 @@ export function DriverRadarPanel({
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [selectedTripDetail, setSelectedTripDetail] = useState<any | null>(null);
 
-  // 1. Fetch & update Driver's own real-time GPS location (Capacitor Native + Web)
+  // 1. Fetch & update Driver's own real-time GPS location (Fast two-stage: cache/fused first, then satellite)
   const updateDriverLocation = useCallback(
     async (userInitiated = false) => {
       setIsUpdatingLocation(true);
       const isNative = Capacitor.isNativePlatform();
 
-      const handleDriverPosition = async (latitude: number, longitude: number) => {
+      const handleDriverPosition = async (latitude: number, longitude: number, isHighAccuracy = true) => {
         if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
-          handleFail();
+          handleFail("অবস্থান নির্ণয় করা যায়নি", false);
           return;
         }
 
@@ -181,81 +282,60 @@ export function DriverRadarPanel({
         setHasValidLocation(true);
         setLocationError(null);
 
-        // Center map & update driver Toto marker
-        if (mapInstanceRef.current) {
-          try {
-            const L = (await import("leaflet")).default || (await import("leaflet"));
-            if (myMarkerRef.current) {
-              myMarkerRef.current.setLatLng(newCoords);
-            } else {
-              const driverTotoIcon = L.divIcon({
-                className: "custom-driver-toto-pin",
-                html: `
-                  <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-                    <div style="position: absolute; width: 48px; height: 48px; background: rgba(16,185,129,0.25); border-radius: 50%; animation: ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
-                    <div style="width: 36px; height: 36px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 14px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 18px; color: white;">
-                      🛺
-                    </div>
-                  </div>
-                `,
-                iconSize: [0, 0],
-              });
-              myMarkerRef.current = L.marker(newCoords, { icon: driverTotoIcon }).addTo(mapInstanceRef.current);
-            }
-            mapInstanceRef.current.flyTo(newCoords, 16, { duration: 1.0 });
-          } catch {}
-        }
-
-        // Reverse geocode driver address
-        let resolvedName = `অবস্থান (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
         try {
-          const res = await fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`);
-          const data = await res.json();
-          if (data && data.name) {
-            resolvedName = data.name;
-          }
+          localStorage.setItem("sr_last_known_lat", latitude.toString());
+          localStorage.setItem("sr_last_known_lng", longitude.toString());
         } catch {}
 
-        setDriverLocationName(resolvedName);
+        // Center map & update driver Toto marker
+        ensureDriverMarker(newCoords, true);
+
+        // Reverse geocode driver address asynchronously
+        fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data && data.name) {
+              setDriverLocationName(data.name);
+              try {
+                localStorage.setItem("sr_last_known_name", data.name);
+              } catch {}
+              syncDriverPositionToBackend(latitude, longitude, data.name);
+            }
+          })
+          .catch(() => {});
+
         setIsUpdatingLocation(false);
         if (userInitiated) {
-          toast.success(`📍 আপনার অবস্থান আপডেট হয়েছে: ${resolvedName}`);
+          toast.success("📍 আপনার অবস্থান আপডেট হয়েছে");
         }
 
-        // Persist real location to driver record in database
-        const dId = driverSession?.driverId;
-        const dPhone = driverSession?.phone || driverSession?.driverPhone;
-        if (dId || dPhone) {
-          try {
-            await fetch("/api/drivers", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                id: dId,
-                phone: dPhone,
-                latitude,
-                longitude,
-                current_location_name: resolvedName,
-                is_active: isOnline,
-              }),
-            });
-          } catch {}
-        }
+        syncDriverPositionToBackend(latitude, longitude);
       };
 
       const handleFail = (msg?: string, isDenied = false) => {
         setIsUpdatingLocation(false);
+
+        // If we already have a valid position (e.g. from localStorage or previous fix),
+        // NEVER wipe it out and NEVER show false permission error!
+        if (driverCoords[0] !== 0) {
+          if (isDenied) {
+            toast.error(msg || "⚠️ লোকেশন পারমিশন প্রয়োজন");
+          }
+          return;
+        }
+
         setHasValidLocation(false);
-        const defaultMsg = isNative
-          ? "⚠️ চালকের GPS পারমিশন প্রয়োজন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
-          : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ফোনের GPS অন করুন।";
+        const defaultMsg = isDenied
+          ? (isNative
+              ? "⚠️ চালকের GPS পারমিশন প্রয়োজন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
+              : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ফোনের GPS অন করুন।")
+          : "🛰️ জিপিএস সিগন্যাল খোঁজা হচ্ছে... (ফোনের লোকেশন অন রাখুন)";
         const finalMsg = msg || defaultMsg;
         setLocationError(finalMsg);
         setDriverLocationName("লোকেশন মেলেনি");
-        setDriverCoords([0, 0]);
 
         if (userInitiated || isDenied) {
-          toast.error(finalMsg, { duration: 5000 });
+          toast.error(finalMsg, { duration: 4000 });
         }
       };
 
@@ -271,14 +351,27 @@ export function DriverRadarPanel({
             }
           }
 
+          // Stage 1: Fast fused / cached position (returns immediately)
+          try {
+            const fastPos = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: false,
+              timeout: 3000,
+              maximumAge: 120000,
+            });
+            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
+              await handleDriverPosition(fastPos.coords.latitude, fastPos.coords.longitude, false);
+            }
+          } catch {}
+
+          // Stage 2: Satellite high accuracy position
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 20000,
-            maximumAge: 0,
+            timeout: 12000,
+            maximumAge: 5000,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
-            await handleDriverPosition(position.coords.latitude, position.coords.longitude);
+            await handleDriverPosition(position.coords.latitude, position.coords.longitude, true);
             return;
           }
         } catch (capErr) {
@@ -288,23 +381,33 @@ export function DriverRadarPanel({
 
       // 2. Web Geolocation Fallback
       if (typeof window === "undefined" || !navigator.geolocation) {
-        handleFail("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়");
+        handleFail("আপনার ডিভাইসে GPS অবস্থান সমর্থিত নয়", false);
         return;
       }
 
+      // Stage 1: Instant cached / fused web position
       navigator.geolocation.getCurrentPosition(
-        (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude),
-        (err) => {
-          navigator.geolocation.getCurrentPosition(
-            (fallbackPos) => handleDriverPosition(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-            () => handleFail(err.code === 1 ? undefined : "⚠️ GPS সিগন্যাল পাওয়া যাচ্ছে না। ফোনের লোকেশন অন করুন।", err.code === 1),
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
-          );
+        (fastPos) => {
+          handleDriverPosition(fastPos.coords.latitude, fastPos.coords.longitude, false);
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        () => {},
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
+      );
+
+      // Stage 2: High accuracy satellite position
+      navigator.geolocation.getCurrentPosition(
+        (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude, true),
+        (err) => {
+          if (err.code === 1) {
+            handleFail(undefined, true);
+          } else {
+            handleFail("🛰️ দুর্বল GPS সিগন্যাল। ফোনের লোকেশন অন রাখুন।", false);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
     },
-    [driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]
+    [driverCoords, ensureDriverMarker, syncDriverPositionToBackend]
   );
 
   // Real-time continuous GPS tracking for Driver
@@ -321,7 +424,7 @@ export function DriverRadarPanel({
       if (isNative) {
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 0 },
+            { enableHighAccuracy: true, maximumAge: 5000 },
             (position, err) => {
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
@@ -330,26 +433,13 @@ export function DriverRadarPanel({
                 setDriverCoords(newCoords);
                 setHasValidLocation(true);
                 setLocationError(null);
+                try {
+                  localStorage.setItem("sr_last_known_lat", latitude.toString());
+                  localStorage.setItem("sr_last_known_lng", longitude.toString());
+                } catch {}
 
-                if (myMarkerRef.current) {
-                  myMarkerRef.current.setLatLng(newCoords);
-                }
-
-                const dId = driverSession?.driverId;
-                const dPhone = driverSession?.phone || driverSession?.driverPhone;
-                if ((dId || dPhone) && isOnline) {
-                  fetch("/api/drivers", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      id: dId,
-                      phone: dPhone,
-                      latitude,
-                      longitude,
-                      is_active: true,
-                    }),
-                  }).catch(() => {});
-                }
+                ensureDriverMarker(newCoords, false);
+                syncDriverPositionToBackend(latitude, longitude);
               }
             }
           );
@@ -366,30 +456,17 @@ export function DriverRadarPanel({
               setDriverCoords(newCoords);
               setHasValidLocation(true);
               setLocationError(null);
+              try {
+                localStorage.setItem("sr_last_known_lat", latitude.toString());
+                localStorage.setItem("sr_last_known_lng", longitude.toString());
+              } catch {}
 
-              if (myMarkerRef.current) {
-                myMarkerRef.current.setLatLng(newCoords);
-              }
-
-              const dId = driverSession?.driverId;
-              const dPhone = driverSession?.phone || driverSession?.driverPhone;
-              if ((dId || dPhone) && isOnline) {
-                fetch("/api/drivers", {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    id: dId,
-                    phone: dPhone,
-                    latitude,
-                    longitude,
-                    is_active: true,
-                  }),
-                }).catch(() => {});
-              }
+              ensureDriverMarker(newCoords, false);
+              syncDriverPositionToBackend(latitude, longitude);
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
         );
       }
     };
@@ -405,7 +482,7 @@ export function DriverRadarPanel({
         Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
     };
-  }, [updateDriverLocation, driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]);
+  }, [updateDriverLocation, ensureDriverMarker, syncDriverPositionToBackend]);
 
   // 2. Fetch Driver Trip History & Today's Earnings
   const fetchDriverTrips = useCallback(async () => {
@@ -533,26 +610,19 @@ export function DriverRadarPanel({
       }).addTo(map);
       tileLayerRef.current = tiles;
 
-      // Driver's Live Toto Marker
-      if (hasValidLocation && driverCoords[0] !== 0) {
-        const driverTotoIcon = L.divIcon({
-          className: "custom-driver-toto-pin",
-          html: `
-            <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
-              <div style="position: absolute; width: 48px; height: 48px; background: rgba(16,185,129,0.25); border-radius: 50%; animation: ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
-              <div style="width: 36px; height: 36px; background: #059669; border: 3px solid white; border-radius: 50%; box-shadow: 0 4px 14px rgba(5,150,105,0.6); display: flex; align-items: center; justify-content: center; font-size: 18px; color: white;">
-                🛺
-              </div>
-            </div>
-          `,
-          iconSize: [0, 0],
-        });
-        const dMarker = L.marker(driverCoords, { icon: driverTotoIcon }).addTo(map);
-        myMarkerRef.current = dMarker;
-      }
-
       if (isMounted) {
         mapInstanceRef.current = map;
+      }
+
+      // Immediately place and display driver toto marker if valid coordinates exist
+      const validC: [number, number] | null =
+        driverCoords[0] !== 0
+          ? driverCoords
+          : initialCenter[0] !== 21.876
+          ? initialCenter
+          : null;
+      if (validC) {
+        ensureDriverMarker(validC, false);
       }
 
       setTimeout(() => {
@@ -965,7 +1035,7 @@ export function DriverRadarPanel({
               className="shrink-0 text-[10.5px] font-black bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl shadow-xs cursor-pointer flex items-center gap-1 active:scale-95 transition-all"
             >
               {isUpdatingLocation ? <RefreshCw className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
-              <span>অনুমতি দিন</span>
+              <span>{locationError.includes("পারমিশন") ? "অনুমতি দিন" : "রিফ্রেশ"}</span>
             </button>
           </div>
         )}

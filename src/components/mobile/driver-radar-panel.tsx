@@ -500,15 +500,54 @@ export function DriverRadarPanel({
 
       setDriverTrips(serverTrips);
 
-      if (data.stats) {
-        setTripStats(data.stats);
-      }
+      // ACCURATELY CALCULATE STATS FROM ALL MERGED COMPLETED TRIPS:
+      const completedList = serverTrips.filter((t: any) => t.status === "completed" || t.fare || t.final_fare);
+      const totalEarned = completedList.reduce((sum: number, t: any) => {
+        const f = Number(t.final_fare) || Number(t.fare) || Number(t.estimated_fare) || 0;
+        return sum + f;
+      }, 0);
+
+      const todayStr = new Date().toDateString();
+      const todayList = completedList.filter((t: any) => {
+        const rawDate = t.created_at || t.completedAt || t.completed_at;
+        if (!rawDate) return true; // Default recent device trips to today
+        return new Date(rawDate).toDateString() === todayStr;
+      });
+      const todayEarned = todayList.reduce((sum: number, t: any) => {
+        const f = Number(t.final_fare) || Number(t.fare) || Number(t.estimated_fare) || 0;
+        return sum + f;
+      }, 0);
+
+      setTripStats({
+        totalTrips: serverTrips.length,
+        completedTrips: completedList.length,
+        totalEarnings: totalEarned > 0 ? totalEarned : (data.stats?.totalEarnings || 0),
+        todayTripsCount: todayList.length > 0 ? todayList.length : (data.stats?.todayTripsCount || 0),
+        todayEarnings: todayEarned > 0 ? todayEarned : (data.stats?.todayEarnings || 0),
+      });
     } catch (err) {
       console.warn("Error fetching driver trips, falling back to local device storage:", err);
       if (typeof window !== "undefined") {
         try {
           const localHist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
-          if (localHist.length > 0) setDriverTrips(localHist);
+          if (localHist.length > 0) {
+            setDriverTrips(localHist);
+            const completedList = localHist.filter((t: any) => t.status === "completed" || t.fare || t.final_fare);
+            const totalEarned = completedList.reduce((sum: number, t: any) => sum + (Number(t.final_fare) || Number(t.fare) || 0), 0);
+            const todayStr = new Date().toDateString();
+            const todayList = completedList.filter((t: any) => {
+              const d = t.created_at || t.completedAt;
+              return !d || new Date(d).toDateString() === todayStr;
+            });
+            const todayEarned = todayList.reduce((sum: number, t: any) => sum + (Number(t.final_fare) || Number(t.fare) || 0), 0);
+            setTripStats({
+              totalTrips: localHist.length,
+              completedTrips: completedList.length,
+              totalEarnings: totalEarned,
+              todayTripsCount: todayList.length,
+              todayEarnings: todayEarned,
+            });
+          }
         } catch {}
       }
     } finally {

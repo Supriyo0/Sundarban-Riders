@@ -134,11 +134,58 @@ export async function subscribeDriverToPushNotifications(options: {
 }
 
 /**
- * Fires a local test push alert notification with high-priority vibration
+ * Fires a local high-priority ride alert notification with sound & vibration
+ * Drops down Heads-Up banner even when driver is in another app or screen is off.
  */
 export async function showLocalRideAlertNotification(title: string, body: string, bookingId?: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
+  if (typeof window === "undefined") return;
+
+  // 1. Try Native Capacitor Local Notifications (Android Foreground & Background Heads-Up Banner)
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      const { LocalNotifications } = await import("@capacitor/local-notifications");
+
+      // Ensure high-priority heads-up channel
+      try {
+        await LocalNotifications.createChannel({
+          id: "ride_alerts",
+          name: "Ride Alerts",
+          description: "High priority heads-up incoming ride requests",
+          importance: 5, // MAX importance for Heads-Up drop-down banner
+          visibility: 1, // Public on lockscreen
+          vibration: true,
+          lights: true,
+          lightColor: "#059669",
+        });
+      } catch {}
+
+      const notifId = Math.abs(
+        parseInt((bookingId || "").replace(/\D/g, "").slice(-6), 10) || Math.floor(Math.random() * 90000 + 10000)
+      );
+
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: notifId,
+            title,
+            body,
+            channelId: "ride_alerts",
+            smallIcon: "ic_launcher",
+            largeIcon: "ic_launcher",
+            extra: { bookingId, url: "/app" },
+            schedule: { at: new Date(Date.now() + 50) },
+          },
+        ],
+      });
+      return;
+    }
+  } catch (nativeErr) {
+    console.warn("[LocalNotifications] native dispatch error:", nativeErr);
+  }
+
+  // 2. Web Push / Service Worker fallback
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
 
   try {
     const reg = await navigator.serviceWorker?.getRegistration();

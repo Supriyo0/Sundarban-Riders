@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2, Clock, Navigation, MapPin } from "lucide-react";
+import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2, Clock, Navigation, MapPin, ChevronDown, ChevronUp } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { LiveFareMeter } from "@/lib/mobile/live-fare-meter";
 import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
@@ -41,7 +41,7 @@ interface LiveRideTrackingMapProps {
   pricingConfig?: TotoPricingConfig;
   onCancelRide?: () => void;
   onSosClick?: () => void;
-  onTripFinished?: () => void;
+  onTripFinished?: (completedData?: any) => void;
 }
 
 export function LiveRideTrackingMap({
@@ -82,6 +82,47 @@ export function LiveRideTrackingMap({
   // Live timer states: Real-time duration & clock
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentClockTime, setCurrentClockTime] = useState("");
+
+  // Draggable Bottom Slider Sheet State (Tap + Swipe gesture)
+  const [sheetExpanded, setSheetExpanded] = useState(true);
+  const dragStartYRef = useRef<number | null>(null);
+  const hasMovedRef = useRef<boolean>(false);
+
+  const startDrag = (clientY: number) => {
+    dragStartYRef.current = clientY;
+    hasMovedRef.current = false;
+  };
+
+  const moveDrag = (clientY: number) => {
+    if (dragStartYRef.current === null) return;
+    const delta = clientY - dragStartYRef.current;
+    if (Math.abs(delta) > 8) {
+      hasMovedRef.current = true;
+    }
+  };
+
+  const endDrag = (clientY?: number) => {
+    if (dragStartYRef.current !== null && clientY !== undefined) {
+      const delta = clientY - dragStartYRef.current;
+      if (hasMovedRef.current) {
+        if (sheetExpanded && delta > 20) {
+          setSheetExpanded(false);
+        } else if (!sheetExpanded && delta < -20) {
+          setSheetExpanded(true);
+        }
+      }
+    }
+    dragStartYRef.current = null;
+    setTimeout(() => {
+      hasMovedRef.current = false;
+    }, 120);
+  };
+
+  const toggleSheet = () => {
+    if (hasMovedRef.current) return;
+    setSheetExpanded((prev) => !prev);
+  };
+
 
   const formatDuration = (totalSec: number) => {
     const mins = Math.floor(totalSec / 60);
@@ -164,7 +205,7 @@ export function LiveRideTrackingMap({
 
         // If booking was completed or cancelled, trigger trip finish
         if (b.status === "completed" || b.status === "cancelled") {
-          onTripFinished?.();
+          onTripFinished?.(b);
           return;
         }
 
@@ -431,159 +472,239 @@ export function LiveRideTrackingMap({
         )}
       </div>
 
-      {/* ── 3. BOTTOM DRIVER & TRIP CARD (Uber style) ── */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 p-3 pb-4 pointer-events-none">
+      {/* ── 3. BOTTOM DRIVER & TRIP CARD (Uber style draggable slider) ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 p-2 sm:p-3 pb-3 pointer-events-none">
         <div
-          className="pointer-events-auto rounded-3xl overflow-hidden shadow-2xl border border-white/80"
+          className={`pointer-events-auto rounded-3xl overflow-hidden shadow-2xl border border-white/80 transition-all duration-300 ease-in-out select-none ${
+            sheetExpanded ? "max-h-[82dvh] overflow-y-auto" : "max-h-[110px] overflow-hidden"
+          }`}
           style={{ background: "rgba(255,255,255,0.98)", backdropFilter: "blur(24px)" }}
         >
-          {/* ── 4-PILLAR LIVE TRAVELING HUD: DURATION, DISTANCE, TIME, FARE (When in_trip) ── */}
-          {rideStep === "in_trip" && (
-            <div className="px-3.5 pt-3 pb-2.5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white rounded-t-3xl border-b border-white/10">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          {/* Interactive Drag / Tap Slider Handle */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={toggleSheet}
+            onTouchStart={(e) => startDrag(e.touches[0].clientY)}
+            onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
+            onTouchEnd={(e) => endDrag(e.changedTouches[0]?.clientY)}
+            onMouseDown={(e) => startDrag(e.clientY)}
+            onMouseUp={(e) => endDrag(e.clientY)}
+            className="w-full py-2 cursor-pointer flex flex-col items-center justify-center gap-1 select-none group touch-none bg-slate-100/90 hover:bg-slate-200/90 border-b border-slate-200/80 transition-colors"
+            title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag or tap to toggle)"
+          >
+            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+            <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-600 transition-colors">
+              {sheetExpanded ? (
+                <>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span>মানচিত্র দেখতে নিচে নামান (Slide down for map)</span>
+                </>
+              ) : (
+                <>
+                  <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
+                  <span className="text-emerald-700 font-black">
+                    {rideStep === "in_trip"
+                      ? `ভাড়া ₹${displayFare} • ${displayKm} কিমি • বিবরণ দেখতে উপরে তুলুন ⌃`
+                      : "চালকের বিবরণ ও OTP দেখতে উপরে তুলুন ⌃"}
                   </span>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                    লাইভ ট্রিপ মিটার (Live Meter)
-                  </span>
-                </div>
-                <span className="text-[9.5px] font-mono font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
-                  GPS রিয়েলটাইম সিঙ্ক
-                </span>
-              </div>
-
-              {/* 4 STATS GRID: Duration, Distance, Clock/Time, Fare */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {/* 1. Travelling Duration */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
-                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">সময়কাল</span>
-                  <p className="text-base sm:text-lg font-black font-mono text-sky-400 tabular-nums leading-tight mt-0.5">
-                    {formatDuration(elapsedSeconds)}
-                  </p>
-                  <span className="text-[8px] text-slate-400 block font-medium">মি : সে</span>
-                </div>
-
-                {/* 2. Travelling Distance */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
-                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">দূরত্ব</span>
-                  <p className="text-base sm:text-lg font-black font-mono text-emerald-400 tabular-nums leading-tight mt-0.5">
-                    {displayKm}
-                  </p>
-                  <span className="text-[8px] text-slate-400 block font-medium">কিমি</span>
-                </div>
-
-                {/* 3. Time (Current Clock) */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
-                  <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">বর্তমান ঘড়ি</span>
-                  <p className="text-xs sm:text-sm font-black font-mono text-amber-300 leading-tight mt-1 truncate">
-                    {currentClockTime ? currentClockTime.replace(/:\d\d\s/, " ") : "--:--"}
-                  </p>
-                  <span className="text-[8px] text-amber-400/80 block font-medium truncate">
-                    {etaMinutes ? `~${etaMinutes}মি গন্তব্য` : "লাইভ সময়"}
-                  </span>
-                </div>
-
-                {/* 4. Live Fare */}
-                <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-2 text-center">
-                  <span className="text-[8.5px] font-black text-emerald-300 uppercase tracking-tight block">ভাড়া</span>
-                  <p className="text-base sm:text-lg font-black font-mono text-emerald-300 tabular-nums leading-tight mt-0.5">
-                    ₹{displayFare}
-                  </p>
-                  <span className="text-[8px] text-emerald-400 block font-bold">নগদ প্রদেয়</span>
-                </div>
-              </div>
+                </>
+              )}
             </div>
-          )}
+          </div>
 
-          <div className="p-4 space-y-3">
-            {/* Driver header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-2xl shadow-md shrink-0">
+          {!sheetExpanded ? (
+            /* COMPACT MINIMIZED STRIP */
+            <div
+              onClick={toggleSheet}
+              className="p-3 flex items-center justify-between cursor-pointer bg-white/95 hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-xl shadow-xs shrink-0">
                   🛺
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h3 className="text-sm font-black text-slate-900">{driverName}</h3>
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">★ 4.9</span>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-black text-slate-900 truncate">{driverName}</p>
+                    <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                      {totoNum}
+                    </span>
                   </div>
-                  <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
-                    {totoNum}
-                  </span>
+                  <p className="text-[10.5px] font-bold text-emerald-600 truncate mt-0.5">
+                    {rideStep === "in_trip"
+                      ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • লাইভ মিটার`
+                      : `রাইড OTP: ${otp || "5821"}`}
+                  </p>
                 </div>
               </div>
 
-              {/* Call & WhatsApp buttons */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5 shrink-0">
+                <div className="text-right">
+                  <span className="text-sm font-black text-slate-900 block leading-tight">₹{displayFare}</span>
+                  <span className="text-[9px] font-bold text-emerald-600">নগদ ভাড়া</span>
+                </div>
                 <a
                   href={`tel:${driverPhone}`}
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
-                  style={{ background: "linear-gradient(135deg,#059669,#10b981)" }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shadow-xs bg-emerald-600 active:scale-95 transition-transform"
                   title="কল করুন"
                 >
-                  <Phone className="w-4.5 h-4.5 text-white fill-white" />
-                </a>
-                <a
-                  href={`https://wa.me/91${driverPhone}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
-                  style={{ background: "linear-gradient(135deg,#25d366,#128c7e)" }}
-                  title="WhatsApp"
-                >
-                  <MessageCircle className="w-4.5 h-4.5 text-white fill-white" />
+                  <Phone className="w-4 h-4 text-white fill-white" />
                 </a>
               </div>
             </div>
+          ) : (
+            /* FULL EXPANDED VIEW */
+            <>
+              {/* ── 4-PILLAR LIVE TRAVELING HUD: DURATION, DISTANCE, TIME, FARE (When in_trip) ── */}
+              {rideStep === "in_trip" && (
+                <div className="px-3.5 pt-3 pb-2.5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white border-b border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
+                        লাইভ ট্রিপ মিটার (Live Meter)
+                      </span>
+                    </div>
+                    <span className="text-[9.5px] font-mono font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
+                      GPS রিয়েলটাইম সিঙ্ক
+                    </span>
+                  </div>
 
-            {/* Ride OTP + Fare row */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded-2xl flex items-center gap-2.5 shadow-2xs">
-                <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
-                <div>
-                  <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
-                  <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                  {/* 4 STATS GRID: Duration, Distance, Clock/Time, Fare */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {/* 1. Travelling Duration */}
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                      <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">সময়কাল</span>
+                      <p className="text-base sm:text-lg font-black font-mono text-sky-400 tabular-nums leading-tight mt-0.5">
+                        {formatDuration(elapsedSeconds)}
+                      </p>
+                      <span className="text-[8px] text-slate-400 block font-medium">মি : সে</span>
+                    </div>
+
+                    {/* 2. Travelling Distance */}
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                      <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">দূরত্ব</span>
+                      <p className="text-base sm:text-lg font-black font-mono text-emerald-400 tabular-nums leading-tight mt-0.5">
+                        {displayKm}
+                      </p>
+                      <span className="text-[8px] text-slate-400 block font-medium">কিমি</span>
+                    </div>
+
+                    {/* 3. Time (Current Clock) */}
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-2 text-center">
+                      <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-tight block">বর্তমান ঘড়ি</span>
+                      <p className="text-xs sm:text-sm font-black font-mono text-amber-300 leading-tight mt-1 truncate">
+                        {currentClockTime ? currentClockTime.replace(/:\d\d\s/, " ") : "--:--"}
+                      </p>
+                      <span className="text-[8px] text-amber-400/80 block font-medium truncate">
+                        {etaMinutes ? `~${etaMinutes}মি গন্তব্য` : "লাইভ সময়"}
+                      </span>
+                    </div>
+
+                    {/* 4. Live Fare */}
+                    <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-2xl p-2 text-center">
+                      <span className="text-[8.5px] font-black text-emerald-300 uppercase tracking-tight block">ভাড়া</span>
+                      <p className="text-base sm:text-lg font-black font-mono text-emerald-300 tabular-nums leading-tight mt-0.5">
+                        ₹{displayFare}
+                      </p>
+                      <span className="text-[8px] text-emerald-400 block font-bold">নগদ প্রদেয়</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
-                    {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "নির্ধারিত ভাড়া"}
-                  </span>
-                  <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
+              )}
+
+              <div className="p-4 space-y-3">
+                {/* Driver header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center text-2xl shadow-md shrink-0">
+                      🛺
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="text-sm font-black text-slate-900">{driverName}</h3>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">★ 4.9</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                        {totoNum}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Call & WhatsApp buttons */}
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`tel:${driverPhone}`}
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
+                      style={{ background: "linear-gradient(135deg,#059669,#10b981)" }}
+                      title="কল করুন"
+                    >
+                      <Phone className="w-4.5 h-4.5 text-white fill-white" />
+                    </a>
+                    <a
+                      href={`https://wa.me/91${driverPhone}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-md active:scale-95 transition-all cursor-pointer"
+                      style={{ background: "linear-gradient(135deg,#25d366,#128c7e)" }}
+                      title="WhatsApp"
+                    >
+                      <MessageCircle className="w-4.5 h-4.5 text-white fill-white" />
+                    </a>
+                  </div>
                 </div>
-                <span className="text-[10px] font-bold text-slate-500">{displayKm} কিমি</span>
-              </div>
-            </div>
 
-            {/* Pickup / Drop Route preview */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
-              <div className="flex items-start gap-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 mt-1" />
-                <p className="text-xs font-semibold text-slate-800 line-clamp-1">{pickupText}</p>
-              </div>
-              <div className="w-px h-2.5 bg-slate-300 ml-1" />
-              <div className="flex items-start gap-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 mt-1" />
-                <p className="text-xs font-semibold text-slate-800 line-clamp-1">{dropText}</p>
-              </div>
-            </div>
+                {/* Ride OTP + Fare row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded-2xl flex items-center gap-2.5 shadow-2xs">
+                    <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
+                      <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
+                        {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "নির্ধারিত ভাড়া"}
+                      </span>
+                      <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500">{displayKm} কিমি</span>
+                  </div>
+                </div>
 
-            {/* Cancel (only before trip starts) */}
-            {rideStep !== "in_trip" && onCancelRide && (
-              <button
-                type="button"
-                onClick={onCancelRide}
-                className="w-full py-3 rounded-2xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-                রাইড বাতিল করুন
-              </button>
-            )}
-          </div>
+                {/* Pickup / Drop Route preview */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 mt-1" />
+                    <p className="text-xs font-semibold text-slate-800 line-clamp-1">{pickupText}</p>
+                  </div>
+                  <div className="w-px h-2.5 bg-slate-300 ml-1" />
+                  <div className="flex items-start gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 mt-1" />
+                    <p className="text-xs font-semibold text-slate-800 line-clamp-1">{dropText}</p>
+                  </div>
+                </div>
+
+                {/* Cancel (only before trip starts) */}
+                {rideStep !== "in_trip" && onCancelRide && (
+                  <button
+                    type="button"
+                    onClick={onCancelRide}
+                    className="w-full py-3 rounded-2xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                    রাইড বাতিল করুন
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

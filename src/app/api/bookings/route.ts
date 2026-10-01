@@ -633,11 +633,14 @@ export async function GET(request: Request) {
     const admin = supabaseAdmin();
 
     if (id) {
-      const { data, error } = await admin
-        .from("bookings")
-        .select("*, drivers(*)")
-        .or(`id.eq.${id},booking_number.eq.${id}`)
-        .maybeSingle();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      let query = admin.from("bookings").select("*, drivers(*)");
+      if (isUuid) {
+        query = query.or(`id.eq.${id},booking_number.eq.${id}`);
+      } else {
+        query = query.eq("booking_number", id);
+      }
+      const { data, error } = await query.maybeSingle();
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       if (!data) return NextResponse.json({ booking: null });
@@ -797,12 +800,27 @@ export async function GET(request: Request) {
           });
         }
 
-        const { data, error } = await admin
+        const orClauses: string[] = [];
+        if (matchedDriverIds.length > 0) {
+          orClauses.push(`driver_id.in.(${matchedDriverIds.join(",")})`);
+        }
+        if (last10Driver.length >= 10) {
+          orClauses.push(`driver_phone.ilike.%${last10Driver}%`);
+        }
+
+        let histQuery = admin
           .from("bookings")
           .select("*, drivers(*)")
-          .in("driver_id", matchedDriverIds)
           .order("created_at", { ascending: false })
           .limit(50);
+
+        if (orClauses.length > 0) {
+          histQuery = histQuery.or(orClauses.join(","));
+        } else {
+          histQuery = histQuery.in("driver_id", matchedDriverIds);
+        }
+
+        const { data, error } = await histQuery;
 
         if (error) {
           console.error("[api/bookings] driver history query error:", error);
@@ -1470,10 +1488,11 @@ export async function PATCH(request: Request) {
         : (enriched.drop_lat && enriched.drop_lng ? [enriched.drop_lat, enriched.drop_lng] : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
 
       let distanceKm = 1.0;
-      if (body.finalDistanceKm && typeof body.finalDistanceKm === "number" && body.finalDistanceKm > 0) {
-        distanceKm = Math.round(body.finalDistanceKm * 10) / 10;
+      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number") {
+        // Driver completed trip with GPS odometer reading: minimum billable distance is 1.0 km
+        distanceKm = Math.max(1.0, Math.round(body.finalDistanceKm * 10) / 10);
       } else if (meta.live_distance_km && typeof meta.live_distance_km === "number" && meta.live_distance_km > 0) {
-        distanceKm = Math.round(meta.live_distance_km * 10) / 10;
+        distanceKm = Math.max(1.0, Math.round(meta.live_distance_km * 10) / 10);
       } else if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
         distanceKm = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
       }

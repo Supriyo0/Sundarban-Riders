@@ -51,7 +51,7 @@ export const DEFAULT_TOTO_SLABS: TotoSlabConfig[] = [
 
 export const DEFAULT_TOTO_PRICING: TotoPricingConfig = {
   perKmRate: 12,
-  minBillableKm: 2,
+  minBillableKm: 1, // Minimum billable distance: 1 km (1 x ₹12 = ₹12 + ₹10 booking charge = ₹22 base fare)
   includedPassengers: 3,
   extraPassengerRatePerKm: 2,
   nightStartTime: "21:30",

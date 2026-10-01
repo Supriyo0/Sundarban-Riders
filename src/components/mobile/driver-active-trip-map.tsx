@@ -582,7 +582,7 @@ export function DriverActiveTripMap({
                   label="যাত্রার শেষ প্রান্তে সোয়াইপ করুন 🏁"
                   confirmedLabel="ট্রিপ সম্পন্ন হচ্ছে..."
                   onConfirm={async () => {
-                    await onCompleteTrip?.(meterReading.totalKm > 0 ? meterReading.totalKm : undefined);
+                    await onCompleteTrip?.(typeof meterReading.totalKm === "number" ? meterReading.totalKm : 0);
                   }}
                 />
               </div>

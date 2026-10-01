@@ -452,6 +452,7 @@ function MobileAppPageContent() {
   });
   const hasCompletedNotifiedRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
+  const alertedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(() => {
     if (typeof window !== "undefined") {
@@ -578,16 +579,6 @@ function MobileAppPageContent() {
       setStartOtpInput("");
       playSuccessSound();
       toast.success("ওটিপি যাচাই সফল! যাত্রা শুরু হয়েছে। সাবধানে ড্রাইভ করুন।");
-
-      // Rapido Captain style: auto-open Google Maps navigation to drop after OTP success
-      setTimeout(() => {
-        const drop: [number, number] = activeRide.dropCoords || dropCoords || [21.8680, 88.1630];
-        const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
-        const navUrl = isAndroid
-          ? `google.navigation:q=${drop[0]},${drop[1]}&mode=d`
-          : `https://www.google.com/maps/dir/?api=1&destination=${drop[0]},${drop[1]}&travelmode=driving&dir_action=navigate`;
-        window.open(navUrl, "_blank");
-      }, 800);
     } catch {
       toast.error("সার্ভার সংযোগ সমস্যা। আবার চেষ্টা করুন।");
     } finally {
@@ -738,7 +729,7 @@ function MobileAppPageContent() {
             if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
             if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
             setPassengerBooking({
-              id: b.booking_number || b.id.slice(0, 8),
+              id: b.id,
               bookingNumber: b.booking_number,
               driverName: b.driver_name || "টোটো চালক",
               driverPhone: b.driver_phone || "",
@@ -844,10 +835,10 @@ function MobileAppPageContent() {
               localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
             } catch {}
           }
+          setRideStep("arrived");
+          setPhase("passenger_trip_completed");
           if (hasCompletedNotifiedRef.current !== b.id) {
             hasCompletedNotifiedRef.current = b.id;
-            setRideStep("arrived");
-            setPhase("passenger_trip_completed");
             playSuccessSound();
             toast.success("আপনার ট্রিপ সফলভাবে সম্পন্ন হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
           }
@@ -1154,7 +1145,7 @@ function MobileAppPageContent() {
               if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
               if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
               const restoredPassenger = {
-                id: b.booking_number || b.id.slice(0, 8),
+                id: b.id,
                 bookingNumber: b.booking_number,
                 driverName: b.driver_name || "টোটো চালক",
                 driverPhone: b.driver_phone || "",
@@ -1249,6 +1240,10 @@ function MobileAppPageContent() {
           if (prev <= 1) {
             clearInterval(interval);
             clearInterval(soundInterval);
+            if (incomingRide?.id) {
+              alertedBookingIdsRef.current.add(incomingRide.id);
+              declinedBookingIdsRef.current.add(incomingRide.id);
+            }
             setIncomingRide(null);
             toast.error("রাইডের সময়সীমা শেষ হয়েছে");
             return 30;
@@ -1365,7 +1360,8 @@ function MobileAppPageContent() {
           const data = await res.json();
           if (data.booking && data.booking.status === "pending" && !data.booking.driver_id) {
             const b = data.booking;
-            if (!declinedBookingIdsRef.current.has(b.id)) {
+            if (!declinedBookingIdsRef.current.has(b.id) && !alertedBookingIdsRef.current.has(b.id)) {
+              alertedBookingIdsRef.current.add(b.id);
               // Strict 5 km client-side distance check
               if (driverLiveCoords && driverLiveCoords[0] !== 0) {
                 const pLat = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lat) : Number(b.start_coords?.[0]);
@@ -2965,7 +2961,7 @@ function MobileAppPageContent() {
                       bookingId: activeRide.id,
                       driverId: session?.driverId,
                       endCoords: driverLiveCoords || null,
-                      finalDistanceKm: finalKm && finalKm > 0 ? finalKm : undefined,
+                      finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
                     }),
                   });
                   const data = await res.json();
@@ -3169,6 +3165,7 @@ function MobileAppPageContent() {
                   onClick={() => {
                     if (incomingRide?.id) {
                       declinedBookingIdsRef.current.add(incomingRide.id);
+                      alertedBookingIdsRef.current.add(incomingRide.id);
                     }
                     setIncomingRide(null);
                     toast.info("রাইড প্রত্যাখ্যান করা হয়েছে");
@@ -3775,22 +3772,28 @@ function MobileAppPageContent() {
                   tripFare={tripFare}
                   onCancelRide={() => setShowCancelModal(true)}
                   onSosClick={() => setShowSosModal(true)}
-                  onTripFinished={() => {
+                  onTripFinished={(completedServerBooking?: any) => {
+                    const b = completedServerBooking;
+                    const finalFare = b?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
+                    const finalKm = b?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
                     const completedData = {
-                      id: passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
-                      bookingNumber: passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
-                      pickup: passengerBooking?.pickup || pickupText,
-                      drop: passengerBooking?.drop || dropText,
-                      fare: passengerBooking?.fare || tripFare,
-                      distanceKm: passengerBooking?.distanceKm || tripDistance,
-                      driverName: passengerBooking?.driverName || "টোটো চালক",
-                      driverPhone: passengerBooking?.driverPhone || "",
-                      totoNumber: passengerBooking?.totoNumber || "SR-DRV",
+                      ...b,
+                      id: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                      bookingNumber: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                      pickup: b?.pickup_location || passengerBooking?.pickup || pickupText,
+                      drop: b?.drop_location || passengerBooking?.drop || dropText,
+                      fare: finalFare,
+                      distanceKm: finalKm,
+                      driverName: b?.driver_name || passengerBooking?.driverName || "টোটো চালক",
+                      driverPhone: b?.driver_phone || passengerBooking?.driverPhone || "",
+                      totoNumber: b?.toto_number || passengerBooking?.totoNumber || "SR-DRV",
                       completedAt: new Date().toISOString(),
                     };
                     setPassengerCompletedRide(completedData);
                     setPassengerBooking(null);
                     setActiveBookingId(null);
+                    setRideStep("arrived");
+                    setPhase("passenger_trip_completed");
                     if (typeof window !== "undefined") {
                       localStorage.removeItem("sr_passenger_booking");
                       localStorage.removeItem("sr_active_booking_id");
@@ -3804,7 +3807,6 @@ function MobileAppPageContent() {
                         localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
                       } catch {}
                     }
-                    setPhase("passenger_trip_completed");
                     playSuccessSound();
                     toast.success("যাত্রা সফলভাবে সম্পন্ন হয়েছে! সুন্দরবন রাইডার্সে ধন্যবাদ।");
                   }}

@@ -518,13 +518,30 @@ function MobileAppPageContent() {
         : `/api/bookings?history=true&all=true`;
       const res = await fetch(url);
       const data = await res.json();
-      if (data?.bookings && Array.isArray(data.bookings)) {
-        setCustomerHistory(data.bookings);
-      } else if (data?.trips && Array.isArray(data.trips)) {
-        setCustomerHistory(data.trips);
+      const rawList = (data?.bookings && Array.isArray(data.bookings))
+        ? data.bookings
+        : (data?.trips && Array.isArray(data.trips))
+        ? data.trips
+        : [];
+
+      let merged = [...rawList];
+      if (typeof window !== "undefined") {
+        try {
+          const localHist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
+          const existingIds = new Set(merged.map((b: any) => b.booking_number || b.id));
+          const fresh = localHist.filter((lh: any) => !existingIds.has(lh.id) && !existingIds.has(lh.bookingNumber));
+          merged = [...fresh, ...merged];
+        } catch {}
       }
+      setCustomerHistory(merged);
     } catch (err) {
-      console.warn("Failed to fetch customer history:", err);
+      console.warn("Failed to fetch customer history, falling back to local device storage:", err);
+      if (typeof window !== "undefined") {
+        try {
+          const localHist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
+          if (localHist.length > 0) setCustomerHistory(localHist);
+        } catch {}
+      }
     } finally {
       setIsLoadingHistory(false);
     }
@@ -795,13 +812,22 @@ function MobileAppPageContent() {
           });
         } else if (b.status === "completed") {
           if (pollInterval) clearInterval(pollInterval);
-          // Store completed trip details for receipt
-          setPassengerCompletedRide({
+          // Store completed trip details for receipt & local device persistent history
+          const completedData = {
             ...b,
-            driverName: b.driver_name || passengerBooking?.driverName,
-            driverPhone: b.driver_phone || passengerBooking?.driverPhone,
-            totoNumber: b.toto_number || passengerBooking?.totoNumber,
-          });
+            id: b.booking_number || b.id,
+            bookingNumber: b.booking_number,
+            pickup: b.pickup_location || pickupText,
+            drop: b.drop_location || dropText,
+            fare: b.final_fare || b.estimated_fare || tripFare,
+            distanceKm: b.actual_distance_km || b.estimated_distance_km || tripDistance,
+            driverName: b.driver_name || passengerBooking?.driverName || "টোটো চালক",
+            driverPhone: b.driver_phone || passengerBooking?.driverPhone || "",
+            totoNumber: b.toto_number || passengerBooking?.totoNumber || "SR-DRV",
+            completedAt: new Date().toISOString(),
+          };
+          setPassengerCompletedRide(completedData);
+
           // Clear active passenger booking immediately so customer panel does not show live ride
           setPassengerBooking(null);
           setActiveBookingId(null);
@@ -809,6 +835,14 @@ function MobileAppPageContent() {
             localStorage.removeItem("sr_passenger_booking");
             localStorage.removeItem("sr_active_booking_id");
             localStorage.removeItem("sr_search_status");
+            localStorage.setItem("sr_passenger_completed_ride", JSON.stringify(completedData));
+
+            // Persist full ride history locally on device
+            try {
+              const hist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
+              const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+              localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
+            } catch {}
           }
           if (hasCompletedNotifiedRef.current !== b.id) {
             hasCompletedNotifiedRef.current = b.id;
@@ -872,6 +906,14 @@ function MobileAppPageContent() {
           if (typeof window !== "undefined") {
             localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
             localStorage.removeItem("sr_active_ride");
+            localStorage.removeItem("sr_live_driver_loc");
+
+            // Persist full ride history locally on driver's device
+            try {
+              const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+              const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+              localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+            } catch {}
           }
           setPhase("rider_trip_completed");
           playSuccessSound();
@@ -2948,6 +2990,14 @@ function MobileAppPageContent() {
                   if (typeof window !== "undefined") {
                     localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
                     localStorage.removeItem("sr_active_ride");
+                    localStorage.removeItem("sr_live_driver_loc");
+
+                    // Persist full ride history locally on driver's device
+                    try {
+                      const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+                      const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                      localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+                    } catch {}
                   }
                   setActiveRide(null);
                   setPhase("rider_trip_completed");
@@ -2964,11 +3014,19 @@ function MobileAppPageContent() {
                     estimatedFare: activeRide.fare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
+                    completedAt: new Date().toISOString(),
                   };
                   setDriverCompletedRide(completedData);
                   if (typeof window !== "undefined") {
                     localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
                     localStorage.removeItem("sr_active_ride");
+                    localStorage.removeItem("sr_live_driver_loc");
+
+                    try {
+                      const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+                      const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                      localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+                    } catch {}
                   }
                   setActiveRide(null);
                   setPhase("rider_trip_completed");
@@ -3718,13 +3776,36 @@ function MobileAppPageContent() {
                   onCancelRide={() => setShowCancelModal(true)}
                   onSosClick={() => setShowSosModal(true)}
                   onTripFinished={() => {
+                    const completedData = {
+                      id: passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                      bookingNumber: passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                      pickup: passengerBooking?.pickup || pickupText,
+                      drop: passengerBooking?.drop || dropText,
+                      fare: passengerBooking?.fare || tripFare,
+                      distanceKm: passengerBooking?.distanceKm || tripDistance,
+                      driverName: passengerBooking?.driverName || "টোটো চালক",
+                      driverPhone: passengerBooking?.driverPhone || "",
+                      totoNumber: passengerBooking?.totoNumber || "SR-DRV",
+                      completedAt: new Date().toISOString(),
+                    };
+                    setPassengerCompletedRide(completedData);
                     setPassengerBooking(null);
                     setActiveBookingId(null);
                     if (typeof window !== "undefined") {
                       localStorage.removeItem("sr_passenger_booking");
                       localStorage.removeItem("sr_active_booking_id");
                       localStorage.removeItem("sr_search_status");
+                      localStorage.setItem("sr_passenger_completed_ride", JSON.stringify(completedData));
+
+                      // Persist full ride history locally on device
+                      try {
+                        const hist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
+                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                        localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
+                      } catch {}
                     }
+                    setPhase("passenger_trip_completed");
+                    playSuccessSound();
                     toast.success("যাত্রা সফলভাবে সম্পন্ন হয়েছে! সুন্দরবন রাইডার্সে ধন্যবাদ।");
                   }}
                 />

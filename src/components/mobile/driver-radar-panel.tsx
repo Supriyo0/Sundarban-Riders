@@ -486,14 +486,31 @@ export function DriverRadarPanel({
         `/api/bookings?driver_id=${encodeURIComponent(dId)}&driver_phone=${encodeURIComponent(dPhone)}&unique_id=${encodeURIComponent(dUniqueId)}&history=true`
       );
       const data = await res.json();
-      if (data.trips && Array.isArray(data.trips)) {
-        setDriverTrips(data.trips);
+      let serverTrips = (data.trips && Array.isArray(data.trips)) ? data.trips : [];
+
+      // Merge with local device persistent trip history
+      if (typeof window !== "undefined") {
+        try {
+          const localHist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+          const existingIds = new Set(serverTrips.map((t: any) => t.booking_number || t.id));
+          const fresh = localHist.filter((lh: any) => !existingIds.has(lh.id) && !existingIds.has(lh.bookingId));
+          serverTrips = [...fresh, ...serverTrips];
+        } catch {}
       }
+
+      setDriverTrips(serverTrips);
+
       if (data.stats) {
         setTripStats(data.stats);
       }
     } catch (err) {
-      console.warn("Error fetching driver trips:", err);
+      console.warn("Error fetching driver trips, falling back to local device storage:", err);
+      if (typeof window !== "undefined") {
+        try {
+          const localHist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+          if (localHist.length > 0) setDriverTrips(localHist);
+        } catch {}
+      }
     } finally {
       setLoadingTrips(false);
     }

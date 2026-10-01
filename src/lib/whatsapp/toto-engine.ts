@@ -834,12 +834,15 @@ export async function processTotoMessage(
     const fareResult = calculateTotoFare(distKm, passengerCount, pricingConfig, rideStartTime);
     const finalFare = Number(booking?.final_fare) || Number(booking?.estimated_fare) || fareResult.totalFare;
 
+    // Sanitize: Purge transient tracking telemetry and keep only essential history records
     const updatedMeta = JSON.stringify({
-      ...meta,
       actual_distance_km: distKm,
       calculated_fare: finalFare,
       fare_breakdown: fareResult,
+      passenger_count: passengerCount,
+      trip_start_time: meta.trip_start_time || booking?.created_at,
       trip_end_time: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
     });
 
     if (booking) {

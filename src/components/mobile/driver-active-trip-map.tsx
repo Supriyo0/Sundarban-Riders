@@ -119,6 +119,8 @@ export function DriverActiveTripMap({
   }, [driverCoords]);
 
   // Direct continuous GPS watch on driver's mobile device during the trip (Capacitor Native + Web)
+  const lastSyncRef = useRef<{ ts: number; coords: [number, number]; km: number }>({ ts: 0, coords: [0, 0], km: 0 });
+
   useEffect(() => {
     let watchId: number | null = null;
     let capWatchId: string | null = null;
@@ -128,16 +130,22 @@ export function DriverActiveTripMap({
       if (latitude && longitude && latitude !== 0) {
         const coords: [number, number] = [latitude, longitude];
         setActiveDriverCoords(coords);
-        if (bookingId) {
-          fetch("/api/bookings", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "sync_live_trip",
-              bookingId,
-              currentCoords: coords,
-            }),
-          }).catch(() => {});
+
+        // When heading to pickup, sync location to backend at most once every 4 seconds
+        if (status === "heading_pickup" && bookingId) {
+          const now = Date.now();
+          if (now - lastSyncRef.current.ts >= 4000) {
+            lastSyncRef.current.ts = now;
+            fetch("/api/bookings", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "sync_live_trip",
+                bookingId,
+                currentCoords: coords,
+              }),
+            }).catch(() => {});
+          }
         }
       }
     };
@@ -152,6 +160,7 @@ export function DriverActiveTripMap({
               handleCoords(position.coords.latitude, position.coords.longitude);
             }
           );
+          return; // CRITICAL: Stop here on native platform to avoid dual-watcher conflict
         } catch {}
       }
 
@@ -178,7 +187,7 @@ export function DriverActiveTripMap({
         Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
     };
-  }, [bookingId]);
+  }, [bookingId, status]);
 
   const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;
   const origin = activeDriverCoords?.[0] ? activeDriverCoords : pickupCoords;
@@ -208,17 +217,24 @@ export function DriverActiveTripMap({
       const reading = meterRef.current.addGpsReading(activeDriverCoords[0], activeDriverCoords[1]);
       setMeterReading(reading);
       onOdometerUpdate?.(reading);
+
       if (bookingId && reading.totalKm > 0) {
-        fetch("/api/bookings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "update_odometer",
-            bookingId,
-            distanceKm: reading.totalKm,
-            currentCoords: activeDriverCoords,
-          }),
-        }).catch(() => {});
+        const now = Date.now();
+        const kmDiff = Math.abs(reading.totalKm - lastSyncRef.current.km);
+        if (now - lastSyncRef.current.ts >= 3500 || kmDiff >= 0.02) {
+          lastSyncRef.current.ts = now;
+          lastSyncRef.current.km = reading.totalKm;
+          fetch("/api/bookings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "update_odometer",
+              bookingId,
+              distanceKm: reading.totalKm,
+              currentCoords: activeDriverCoords,
+            }),
+          }).catch(() => {});
+        }
       }
     }
   }, [activeDriverCoords, status, bookingId, onOdometerUpdate]);

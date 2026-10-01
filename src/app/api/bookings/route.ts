@@ -1488,27 +1488,33 @@ export async function PATCH(request: Request) {
       const initialEstDist = booking.estimated_distance_km || meta.estimated_distance_km || meta.initial_distance_km || distanceKm;
       const initialEstFare = booking.estimated_fare || meta.estimated_fare || meta.initial_fare || calculatedFare;
 
-      const updatedMeta = updateBookingMeta(booking.feedback, {
+      // PURGE TRANSIENT TELEMETRY:
+      // Strip out ephemeral live coordinates, continuous odometer ticks, temporary OTP codes, and polling timestamps.
+      // Store ONLY essential audit data required for administrative records and trip history.
+      const cleanHistoryMeta = {
         actual_distance_km: distanceKm,
         calculated_fare: calculatedFare,
         estimated_distance_km: initialEstDist,
         estimated_fare: initialEstFare,
         fare_breakdown: fareResult,
         passenger_count: passengerCount,
-        end_coords: eCoords,
+        trip_start_time: meta.trip_start_time || booking.created_at,
         trip_end_time: new Date().toISOString(),
-      });
+        completed_at: new Date().toISOString(),
+      };
 
       const { data: updated, error: compErr } = await admin
         .from("bookings")
         .update({
           status: "completed",
           final_fare: calculatedFare,
-          feedback: updatedMeta,
+          actual_distance_km: distanceKm,
+          feedback: JSON.stringify(cleanHistoryMeta),
+          notes: null, // Clear transient notes/state
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
-        .select()
+        .select("*, drivers(*)")
         .single();
 
       if (compErr) {
@@ -1528,7 +1534,31 @@ export async function PATCH(request: Request) {
       if (updated) {
         const enrichedUpdated = enrichBookingCoords(updated);
         void notifyTripCompleted(admin, enrichedUpdated);
-        return NextResponse.json({ success: true, booking: enrichedUpdated });
+
+        // Rich payload containing full trip details for local device storage
+        const localTripRecord = {
+          id: enrichedUpdated.id,
+          bookingNumber: enrichedUpdated.booking_number,
+          pickup: enrichedUpdated.pickup_location,
+          drop: enrichedUpdated.drop_location,
+          distanceKm: distanceKm,
+          fare: calculatedFare,
+          fareBreakdown: fareResult,
+          passengerName: enrichedUpdated.customer_name,
+          passengerPhone: enrichedUpdated.customer_phone,
+          driverName: enrichedUpdated.drivers?.name || enrichedUpdated.driver_name || "টোটো চালক",
+          driverPhone: enrichedUpdated.drivers?.phone || enrichedUpdated.driver_phone || "",
+          totoNumber: enrichedUpdated.drivers?.toto_number || enrichedUpdated.toto_number || "SR-DRV",
+          completedAt: new Date().toISOString(),
+          tripStartTime: meta.trip_start_time || booking.created_at,
+          tripEndTime: new Date().toISOString(),
+        };
+
+        return NextResponse.json({
+          success: true,
+          booking: enrichedUpdated,
+          localTripRecord,
+        });
       }
 
       return NextResponse.json({ success: true });

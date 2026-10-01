@@ -86,7 +86,7 @@ export function DriverRadarPanel({
   const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
   const myMarkerRef = useRef<any>(null);
-  const customerMarkersRef = useRef<any[]>([]);
+  const customerMarkersRef = useRef<{ id: string; marker: any }[]>([]);
 
   // Tab between Radar & Trip History
   const [activeTab, setActiveTab] = useState<"radar" | "trips">(initialTab);
@@ -140,7 +140,14 @@ export function DriverRadarPanel({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
 
-  // Robust Toto Marker creation / update helper on map
+  // Anti-jitter & throttling refs (prevents map and icon wobbling)
+  const lastCoordsRef = useRef<[number, number]>(driverCoords);
+  const driverCoordsRef = useRef<[number, number]>(driverCoords);
+  driverCoordsRef.current = driverCoords;
+  const lastBackendSyncTimeRef = useRef<number>(0);
+  const lastBackendSyncedCoordsRef = useRef<[number, number]>([0, 0]);
+
+  // Robust Toto Marker creation / update helper on map (smooth, zero camera shake)
   const ensureDriverMarker = useCallback(async (coords: [number, number], pan = false) => {
     if (!mapInstanceRef.current || !coords || coords[0] === 0 || coords[1] === 0) return;
     try {
@@ -162,15 +169,15 @@ export function DriverRadarPanel({
         });
         myMarkerRef.current = L.marker(coords, { icon: driverTotoIcon }).addTo(mapInstanceRef.current);
       }
-      if (pan) {
-        mapInstanceRef.current.flyTo(coords, 16, { duration: 0.9 });
+      if (pan && mapInstanceRef.current) {
+        mapInstanceRef.current.flyTo(coords, 16, { duration: 0.8 });
       }
     } catch (err) {
       console.warn("Failed to render driver marker:", err);
     }
   }, []);
 
-  // Ensure marker updates whenever driverCoords or map is ready
+  // Ensure marker updates whenever driverCoords or map is ready (without panning)
   useEffect(() => {
     if (mapInstanceRef.current && driverCoords[0] !== 0) {
       ensureDriverMarker(driverCoords, false);
@@ -200,6 +207,61 @@ export function DriverRadarPanel({
       }
     },
     [driverSession?.driverId, driverSession?.phone, driverSession?.driverPhone, isOnline]
+  );
+
+  // Throttled sync: Prevents flooding database and triggering admin panel reloads
+  const throttledSyncDriverPosition = useCallback(
+    (lat: number, lng: number, name?: string, force = false) => {
+      const now = Date.now();
+      const timeSinceLast = now - lastBackendSyncTimeRef.current;
+      const prev = lastBackendSyncedCoordsRef.current;
+      const distKm = prev[0] !== 0 ? calculateDistanceKm(prev[0], prev[1], lat, lng) : 999;
+
+      // Only send PATCH to database if forced, or at least 15s passed, or moved >= 20m (0.02km)
+      if (!force && timeSinceLast < 15000 && distKm < 0.02) {
+        return;
+      }
+
+      lastBackendSyncTimeRef.current = now;
+      lastBackendSyncedCoordsRef.current = [lat, lng];
+      syncDriverPositionToBackend(lat, lng, name);
+    },
+    [syncDriverPositionToBackend]
+  );
+
+  // Smooth incoming coordinate handler with dead-zone noise filtering
+  const handleIncomingCoords = useCallback(
+    (latitude: number, longitude: number, isUserAction = false) => {
+      if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) return;
+
+      const prev = lastCoordsRef.current;
+      // Filter out GPS micro-jitter (under 8 meters) when stationary unless user clicked recenter
+      if (!isUserAction && prev && prev[0] !== 0) {
+        const movedKm = calculateDistanceKm(prev[0], prev[1], latitude, longitude);
+        if (movedKm < 0.008) {
+          // Stationary jitter: do NOT trigger React re-render or marker bounce!
+          return;
+        }
+      }
+
+      lastCoordsRef.current = [latitude, longitude];
+      const newCoords: [number, number] = [latitude, longitude];
+      setDriverCoords(newCoords);
+      setHasValidLocation(true);
+      setLocationError(null);
+
+      try {
+        localStorage.setItem("sr_last_known_lat", latitude.toString());
+        localStorage.setItem("sr_last_known_lng", longitude.toString());
+      } catch {}
+
+      // Move marker smoothly WITHOUT shaking the map camera
+      ensureDriverMarker(newCoords, isUserAction);
+
+      // Throttled sync to backend (stops database & admin panel flood)
+      throttledSyncDriverPosition(latitude, longitude);
+    },
+    [ensureDriverMarker, throttledSyncDriverPosition]
   );
 
   // Entities around driver
@@ -271,53 +333,12 @@ export function DriverRadarPanel({
       setIsUpdatingLocation(true);
       const isNative = Capacitor.isNativePlatform();
 
-      const handleDriverPosition = async (latitude: number, longitude: number, isHighAccuracy = true) => {
-        if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
-          handleFail("অবস্থান নির্ণয় করা যায়নি", false);
-          return;
-        }
-
-        const newCoords: [number, number] = [latitude, longitude];
-        setDriverCoords(newCoords);
-        setHasValidLocation(true);
-        setLocationError(null);
-
-        try {
-          localStorage.setItem("sr_last_known_lat", latitude.toString());
-          localStorage.setItem("sr_last_known_lng", longitude.toString());
-        } catch {}
-
-        // Center map & update driver Toto marker
-        ensureDriverMarker(newCoords, true);
-
-        // Reverse geocode driver address asynchronously
-        fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-          .then((r) => r.json())
-          .then((data) => {
-            if (data && data.name) {
-              setDriverLocationName(data.name);
-              try {
-                localStorage.setItem("sr_last_known_name", data.name);
-              } catch {}
-              syncDriverPositionToBackend(latitude, longitude, data.name);
-            }
-          })
-          .catch(() => {});
-
-        setIsUpdatingLocation(false);
-        if (userInitiated) {
-          toast.success("📍 আপনার অবস্থান আপডেট হয়েছে");
-        }
-
-        syncDriverPositionToBackend(latitude, longitude);
-      };
-
       const handleFail = (msg?: string, isDenied = false) => {
         setIsUpdatingLocation(false);
 
         // If we already have a valid position (e.g. from localStorage or previous fix),
         // NEVER wipe it out and NEVER show false permission error!
-        if (driverCoords[0] !== 0) {
+        if (driverCoordsRef.current[0] !== 0) {
           if (isDenied) {
             toast.error(msg || "⚠️ লোকেশন পারমিশন প্রয়োজন");
           }
@@ -351,27 +372,19 @@ export function DriverRadarPanel({
             }
           }
 
-          // Stage 1: Fast fused / cached position (returns immediately)
-          try {
-            const fastPos = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: false,
-              timeout: 3000,
-              maximumAge: 120000,
-            });
-            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
-              await handleDriverPosition(fastPos.coords.latitude, fastPos.coords.longitude, false);
-            }
-          } catch {}
-
-          // Stage 2: Satellite high accuracy position
+          // Single clean check with 10s maximumAge
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 12000,
-            maximumAge: 5000,
+            timeout: 10000,
+            maximumAge: 10000,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
-            await handleDriverPosition(position.coords.latitude, position.coords.longitude, true);
+            handleIncomingCoords(position.coords.latitude, position.coords.longitude, userInitiated);
+            setIsUpdatingLocation(false);
+            if (userInitiated) {
+              toast.success("📍 অবস্থান আপডেট হয়েছে");
+            }
             return;
           }
         } catch (capErr) {
@@ -385,32 +398,29 @@ export function DriverRadarPanel({
         return;
       }
 
-      // Stage 1: Instant cached / fused web position
       navigator.geolocation.getCurrentPosition(
-        (fastPos) => {
-          handleDriverPosition(fastPos.coords.latitude, fastPos.coords.longitude, false);
+        (pos) => {
+          handleIncomingCoords(pos.coords.latitude, pos.coords.longitude, userInitiated);
+          setIsUpdatingLocation(false);
+          if (userInitiated) {
+            toast.success("📍 অবস্থান আপডেট হয়েছে");
+          }
         },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
-      );
-
-      // Stage 2: High accuracy satellite position
-      navigator.geolocation.getCurrentPosition(
-        (pos) => handleDriverPosition(pos.coords.latitude, pos.coords.longitude, true),
         (err) => {
+          setIsUpdatingLocation(false);
           if (err.code === 1) {
             handleFail(undefined, true);
           } else {
             handleFail("🛰️ দুর্বল GPS সিগন্যাল। ফোনের লোকেশন অন রাখুন।", false);
           }
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
       );
     },
-    [driverCoords, ensureDriverMarker, syncDriverPositionToBackend]
+    [handleIncomingCoords]
   );
 
-  // Real-time continuous GPS tracking for Driver
+  // Real-time continuous GPS tracking for Driver (Single active watcher, no fighting)
   useEffect(() => {
     updateDriverLocation(false);
 
@@ -429,20 +439,11 @@ export function DriverRadarPanel({
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
               if (latitude && longitude && latitude !== 0) {
-                const newCoords: [number, number] = [latitude, longitude];
-                setDriverCoords(newCoords);
-                setHasValidLocation(true);
-                setLocationError(null);
-                try {
-                  localStorage.setItem("sr_last_known_lat", latitude.toString());
-                  localStorage.setItem("sr_last_known_lng", longitude.toString());
-                } catch {}
-
-                ensureDriverMarker(newCoords, false);
-                syncDriverPositionToBackend(latitude, longitude);
+                handleIncomingCoords(latitude, longitude, false);
               }
             }
           );
+          return; // CRITICAL: Stop here on native! Do NOT start Web watcher!
         } catch {}
       }
 
@@ -452,17 +453,7 @@ export function DriverRadarPanel({
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude } = pos.coords;
             if (latitude && longitude && latitude !== 0) {
-              const newCoords: [number, number] = [latitude, longitude];
-              setDriverCoords(newCoords);
-              setHasValidLocation(true);
-              setLocationError(null);
-              try {
-                localStorage.setItem("sr_last_known_lat", latitude.toString());
-                localStorage.setItem("sr_last_known_lng", longitude.toString());
-              } catch {}
-
-              ensureDriverMarker(newCoords, false);
-              syncDriverPositionToBackend(latitude, longitude);
+              handleIncomingCoords(latitude, longitude, false);
             }
           },
           () => {},
@@ -482,7 +473,7 @@ export function DriverRadarPanel({
         Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
     };
-  }, [updateDriverLocation, ensureDriverMarker, syncDriverPositionToBackend]);
+  }, [handleIncomingCoords, updateDriverLocation]);
 
   // 2. Fetch Driver Trip History & Today's Earnings
   const fetchDriverTrips = useCallback(async () => {
@@ -512,12 +503,13 @@ export function DriverRadarPanel({
     fetchDriverTrips();
   }, [fetchDriverTrips]);
 
-  // 3. Poll for active drivers & waiting customers
+  // 3. Poll for active drivers & waiting customers (stable 5s timer, doesn't restart on coordinate jitter)
   useEffect(() => {
     let pollTimer: NodeJS.Timeout;
 
     const fetchRadarEntities = async () => {
       try {
+        const curCoords = driverCoordsRef.current;
         const dRes = await fetch("/api/drivers");
         const dJson = await dRes.json();
         if (dJson.drivers && Array.isArray(dJson.drivers)) {
@@ -539,8 +531,8 @@ export function DriverRadarPanel({
         }
 
         const qParams =
-          hasValidLocation && driverCoords[0] !== 0
-            ? `?status=pending&driver_lat=${driverCoords[0]}&driver_lng=${driverCoords[1]}`
+          curCoords[0] !== 0
+            ? `?status=pending&driver_lat=${curCoords[0]}&driver_lng=${curCoords[1]}`
             : `?status=pending`;
         const bRes = await fetch(`/api/bookings${qParams}`);
         const bJson = await bRes.json();
@@ -550,11 +542,11 @@ export function DriverRadarPanel({
           if (b.status !== "pending") return false;
           if (b.driver_id) return false;
           if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 180 * 1000) return false;
-          if (hasValidLocation && driverCoords[0] !== 0) {
+          if (curCoords[0] !== 0) {
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
-              const dKm = calculateDistanceKm(driverCoords[0], driverCoords[1], pLat, pLng);
+              const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
               if (dKm > 5.0) return false;
             }
           }
@@ -567,10 +559,10 @@ export function DriverRadarPanel({
     };
 
     fetchRadarEntities();
-    pollTimer = setInterval(fetchRadarEntities, 3500);
+    pollTimer = setInterval(fetchRadarEntities, 5000);
 
     return () => clearInterval(pollTimer);
-  }, [driverSession?.driverId, driverCoords, hasValidLocation]);
+  }, [driverSession?.driverId]);
 
   // 4. Initialize Full-Screen Leaflet Map
   useEffect(() => {
@@ -637,31 +629,49 @@ export function DriverRadarPanel({
     return () => {
       isMounted = false;
       if (mapInstanceRef.current) {
+        customerMarkersRef.current.forEach((item) => item.marker.remove());
+        customerMarkersRef.current = [];
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
         myMarkerRef.current = null;
       }
     };
-  }, [activeTab]);
+  }, [activeTab, ensureDriverMarker, hasValidLocation, driverCoords]);
 
-  // Update Pending Customer Requests on Map
+  // Update Pending Customer Requests on Map with intelligent diffing (no blinking/wobbling)
   useEffect(() => {
     if (!mapInstanceRef.current || activeTab !== "radar") return;
 
     import("leaflet").then((mod) => {
       const L = (mod as any).default || mod;
+      if (!mapInstanceRef.current) return;
 
-      customerMarkersRef.current.forEach((m) => m.remove());
-      customerMarkersRef.current = [];
+      const curCoords = driverCoordsRef.current;
+      const currentIds = new Set(pendingBookings.map((b) => b.id || b.booking_number));
 
+      // 1. Remove markers no longer in pendingBookings
+      customerMarkersRef.current = customerMarkersRef.current.filter(({ id, marker }) => {
+        if (!currentIds.has(id)) {
+          marker.remove();
+          return false;
+        }
+        return true;
+      });
+
+      const existingIds = new Set(customerMarkersRef.current.map((item) => item.id));
+
+      // 2. Add only brand-new bookings without destroying existing markers
       pendingBookings.forEach((b) => {
+        const bId = b.id || b.booking_number;
+        if (existingIds.has(bId)) return;
+
         const lat = Number(b.pickup_lat);
         const lng = Number(b.pickup_lng);
         if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
 
         const dist =
-          hasValidLocation && driverCoords[0] !== 0
-            ? calculateDistanceKm(driverCoords[0], driverCoords[1], lat, lng)
+          curCoords[0] !== 0
+            ? calculateDistanceKm(curCoords[0], curCoords[1], lat, lng)
             : null;
 
         const customerPin = L.divIcon({
@@ -687,11 +697,11 @@ export function DriverRadarPanel({
             setSheetExpanded(true);
             if (mapInstanceRef.current) mapInstanceRef.current.flyTo([lat, lng], 16, { duration: 0.8 });
           });
-          customerMarkersRef.current.push(marker);
+          customerMarkersRef.current.push({ id: bId, marker });
         } catch {}
       });
     });
-  }, [pendingBookings, driverCoords, hasValidLocation, activeTab]);
+  }, [pendingBookings, activeTab]);
 
   // Toggle Map Style
   const toggleMapLayer = () => {

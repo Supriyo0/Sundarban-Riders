@@ -187,10 +187,10 @@ export default function RidersPage() {
     return "online";
   };
 
-  // Load Drivers
-  const loadDrivers = async () => {
+  // Load Drivers (Silent updates prevent UI flickering on live GPS changes)
+  const loadDrivers = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent && drivers.length === 0) setLoading(true);
       const res = await fetch("/api/drivers");
       if (res.ok) {
         const json = await res.json();
@@ -223,30 +223,38 @@ export default function RidersPage() {
         setDrivers(parsed);
       }
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : "Failed to load drivers";
-      console.error("Error loading drivers:", errorMsg);
-      toast.error("চালক তালিকা লোড করা যায়নি");
+      if (!isSilent) {
+        const errorMsg = err instanceof Error ? err.message : "Failed to load drivers";
+        console.error("Error loading drivers:", errorMsg);
+        toast.error("চালক তালিকা লোড করা যায়নি");
+      }
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDrivers();
+    loadDrivers(false);
 
-    // Realtime listener for live driver status updates
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    // Realtime listener for live driver status updates (debounced & silent to avoid reloads)
     const channel = supabase
       .channel("drivers_realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "drivers" },
         () => {
-          loadDrivers();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            loadDrivers(true);
+          }, 3000);
         }
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [supabase]);
@@ -506,7 +514,7 @@ export default function RidersPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={loadDrivers}
+            onClick={() => loadDrivers(false)}
             className="border-border text-foreground hover:bg-muted"
           >
             <RefreshCw className="mr-1.5 h-4 w-4" />

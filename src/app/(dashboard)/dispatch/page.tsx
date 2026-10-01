@@ -49,9 +49,9 @@ export default function DispatchRadarPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const loadBookings = async () => {
+  const loadBookings = async (isSilent = false) => {
     try {
-      setLoading(true);
+      if (!isSilent && bookings.length === 0) setLoading(true);
       const res = await fetch("/api/bookings?history=true&all=true");
       const data = await res.json();
       if (data?.bookings && Array.isArray(data.bookings)) {
@@ -67,27 +67,32 @@ export default function DispatchRadarPage() {
     } catch (err: unknown) {
       console.error("Error loading bookings:", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBookings();
+    loadBookings(false);
 
+    let debounceTimer: NodeJS.Timeout | null = null;
     const channel = supabase
       .channel("bookings_radar")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bookings" },
         () => {
-          loadBookings();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            loadBookings(true);
+          }, 2000);
         }
       )
       .subscribe();
 
-    const interval = setInterval(loadBookings, 4000);
+    const interval = setInterval(() => loadBookings(true), 6000);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
@@ -137,7 +142,7 @@ export default function DispatchRadarPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={loadBookings}
+          onClick={() => loadBookings(false)}
           className="border-border text-foreground hover:bg-muted"
         >
           <RefreshCw className="mr-1.5 h-4 w-4" />

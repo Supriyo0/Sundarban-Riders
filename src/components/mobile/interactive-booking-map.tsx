@@ -108,7 +108,7 @@ export function InteractiveBookingMap({
   const dropMarkerRef = useRef<any>(null);
   const routeLineBorderRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
-  const driverMarkersRef = useRef<any[]>([]);
+  const driverMarkersRef = useRef<{ id: string; marker: any }[]>([]);
   const onRouteSelectedRef = useRef(onRouteSelected);
   onRouteSelectedRef.current = onRouteSelected;
 
@@ -567,23 +567,43 @@ export function InteractiveBookingMap({
       } catch {}
     }
     loadRealDrivers();
-    const interval = setInterval(loadRealDrivers, 4000);
+    const interval = setInterval(loadRealDrivers, 8000);
     return () => clearInterval(interval);
   }, []);
 
-  // Update Driver Markers on Map (Strictly within 5 km of user's pickup)
+  // Update Driver Markers on Map (Smooth update, no blinking/wobbling)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
     getLeaflet().then((L: any) => {
-      driverMarkersRef.current.forEach((m) => m.remove());
-      driverMarkersRef.current = [];
+      if (!mapInstanceRef.current) return;
 
-      if (nearbyDrivers.length > 0 && mapInstanceRef.current) {
+      const currentIds = new Set(nearbyDrivers.map((d) => d.id || d.phone || d.name));
+
+      // 1. Remove markers no longer nearby
+      driverMarkersRef.current = driverMarkersRef.current.filter(({ id, marker }) => {
+        if (!currentIds.has(id)) {
+          marker.remove();
+          return false;
+        }
+        return true;
+      });
+
+      const existingMap = new Map(driverMarkersRef.current.map((item) => [item.id, item.marker]));
+
+      if (nearbyDrivers.length > 0) {
         nearbyDrivers.forEach((driver) => {
+          const dId = driver.id || driver.phone || driver.name;
           const lat = Number(driver.latitude);
           const lng = Number(driver.longitude);
           if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
+          const existingMarker = existingMap.get(dId);
+          if (existingMarker) {
+            // Smoothly move existing marker without destroying it
+            existingMarker.setLatLng([lat, lng]);
+            return;
+          }
 
           const totoIcon = L.divIcon({
             className: "toto-real-driver-icon",
@@ -602,7 +622,7 @@ export function InteractiveBookingMap({
 
           try {
             const dm = L.marker([lat, lng], { icon: totoIcon }).addTo(mapInstanceRef.current);
-            driverMarkersRef.current.push(dm);
+            driverMarkersRef.current.push({ id: dId, marker: dm });
           } catch {}
         });
       }
@@ -832,6 +852,7 @@ export function InteractiveBookingMap({
               }
             }
           );
+          return; // CRITICAL: Stop here on native! Do not also start Web watcher!
         } catch {}
       }
 
@@ -1000,6 +1021,8 @@ export function InteractiveBookingMap({
 
     return () => {
       isMounted = false;
+      driverMarkersRef.current.forEach((item) => item.marker.remove());
+      driverMarkersRef.current = [];
     };
   }, []);
 

@@ -79,7 +79,18 @@ export function LiveRideTrackingMap({
   const [rating, setRating] = useState(5);
   const [rated, setRated] = useState(false);
 
-  // Live timer states: Real-time duration & clock
+  // Live timer states: Real-time duration & clock synchronized to server trip_start_time
+  const [syncedTripStartTime, setSyncedTripStartTime] = useState<string | null>(
+    booking?.trip_start_time || booking?.tripStartTime || null
+  );
+
+  useEffect(() => {
+    const s = booking?.trip_start_time || booking?.tripStartTime;
+    if (s && s !== syncedTripStartTime) {
+      setSyncedTripStartTime(s);
+    }
+  }, [booking?.trip_start_time, booking?.tripStartTime]);
+
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentClockTime, setCurrentClockTime] = useState("");
 
@@ -138,7 +149,7 @@ export function LiveRideTrackingMap({
   // Real-time ticking interval for Travelling Duration & Clock
   useEffect(() => {
     if (rideStep !== "in_trip") return;
-    const startStr = booking?.trip_start_time || booking?.tripStartTime;
+    const startStr = syncedTripStartTime || booking?.trip_start_time || booking?.tripStartTime;
     const startTs = startStr ? new Date(startStr).getTime() : Date.now();
 
     const updateTimer = () => {
@@ -158,7 +169,7 @@ export function LiveRideTrackingMap({
     updateTimer();
     const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
-  }, [rideStep, booking?.trip_start_time, booking?.tripStartTime]);
+  }, [rideStep, syncedTripStartTime, booking?.trip_start_time, booking?.tripStartTime]);
 
   // Haversine distance for ETA calc
   const haversineKm = (a: [number, number], b: [number, number]) => {
@@ -207,6 +218,13 @@ export function LiveRideTrackingMap({
         if (b.status === "completed" || b.status === "cancelled") {
           onTripFinished?.(b);
           return;
+        }
+
+        // Live trip start time synchronization
+        if (b.trip_start_time) {
+          setSyncedTripStartTime((prev) => prev || b.trip_start_time);
+        } else if (b.feedback?.trip_start_time) {
+          setSyncedTripStartTime((prev) => prev || b.feedback.trip_start_time);
         }
 
         // Live distance & fare synchronization from backend
@@ -474,9 +492,30 @@ export function LiveRideTrackingMap({
 
       {/* ── 3. BOTTOM DRIVER & TRIP CARD (Uber style draggable slider) ── */}
       <div className="absolute bottom-0 left-0 right-0 z-20 p-2 sm:p-3 pb-3 pointer-events-none">
+        {/* Floating Quick Map / Details Toggle Button */}
+        <div className="flex justify-center mb-1.5">
+          <button
+            type="button"
+            onClick={toggleSheet}
+            className="pointer-events-auto bg-slate-900/95 hover:bg-black text-white text-[11px] font-bold px-3.5 py-1 rounded-full shadow-lg border border-white/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer backdrop-blur-md"
+          >
+            {sheetExpanded ? (
+              <>
+                <ChevronDown className="w-3.5 h-3.5 text-emerald-400" />
+                <span>ম্যাপ দেখুন (View Map)</span>
+              </>
+            ) : (
+              <>
+                <ChevronUp className="w-3.5 h-3.5 text-emerald-400 animate-bounce" />
+                <span>বিস্তারিত তথ্য (Trip Details)</span>
+              </>
+            )}
+          </button>
+        </div>
+
         <div
           className={`pointer-events-auto rounded-3xl overflow-hidden shadow-2xl border border-white/80 transition-all duration-300 ease-in-out select-none ${
-            sheetExpanded ? "max-h-[82dvh] overflow-y-auto" : "max-h-[110px] overflow-hidden"
+            sheetExpanded ? "max-h-[86dvh] pb-8 overflow-y-auto" : "max-h-[150px] overflow-hidden"
           }`}
           style={{ background: "rgba(255,255,255,0.98)", backdropFilter: "blur(24px)" }}
         >

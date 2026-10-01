@@ -1588,10 +1588,10 @@ export function InteractiveBookingMap({
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
-              ? "max-h-[75dvh] overflow-y-auto"
+              ? "max-h-[86dvh] pb-10 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
-              ? "max-h-26 overflow-hidden"
-              : "max-h-20 overflow-hidden"
+              ? "max-h-[140px] overflow-hidden"
+              : "max-h-[110px] overflow-hidden"
           }`}
         >
           {/* Interactive Drag / Tap Handle */}

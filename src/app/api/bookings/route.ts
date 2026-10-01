@@ -616,6 +616,7 @@ function enrichBookingCoords(booking: any) {
     actual_distance_km: meta.actual_distance_km || meta.live_distance_km || booking.actual_distance_km || null,
     final_fare: booking.final_fare || meta.calculated_fare || meta.live_fare || booking.estimated_fare,
     trip_start_time: meta.trip_start_time || null,
+    tripStartTime: meta.trip_start_time || null,
   };
 }
 
@@ -1181,8 +1182,14 @@ export async function PATCH(request: Request) {
     if (action === "logout_cleanup") {
       const cleanPhone = (phone || driverPhone || "").replace(/\D/g, "").slice(-10);
       if (bookingId) {
-        await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
-          .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`);
+        const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId);
+        if (isBIdUuid) {
+          await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
+            .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`);
+        } else {
+          await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
+            .eq("booking_number", bookingId);
+        }
       }
       if (cleanPhone) {
         await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
@@ -1199,12 +1206,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "bookingId and action required" }, { status: 400 });
     }
 
-    // 1. Fetch current booking state
-    const { data: booking, error: fetchErr } = await admin
-      .from("bookings")
-      .select("*")
-      .or(`id.eq.${bookingId},booking_number.eq.${bookingId}`)
-      .maybeSingle();
+    // 1. Fetch current booking state safely without invalid UUID cast errors
+    const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId);
+    let fetchBookingQuery = admin.from("bookings").select("*");
+    if (isBIdUuid) {
+      fetchBookingQuery = fetchBookingQuery.or(`id.eq.${bookingId},booking_number.eq.${bookingId}`);
+    } else {
+      fetchBookingQuery = fetchBookingQuery.eq("booking_number", bookingId);
+    }
+    const { data: booking, error: fetchErr } = await fetchBookingQuery.maybeSingle();
 
     if (fetchErr || !booking) {
       return NextResponse.json({ error: "বুকিং পাওয়া যায়নি" }, { status: 404 });

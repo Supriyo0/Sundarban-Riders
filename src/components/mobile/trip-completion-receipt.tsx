@@ -169,7 +169,15 @@ export function TripCompletionReceipt({
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-300">
       <div className="space-y-4 max-w-md mx-auto w-full">
         {/* Header Status */}
-        <div className="text-center pt-2">
+        <div className="relative text-center pt-2">
+          <button
+            type="button"
+            onClick={onBookAnother}
+            className="absolute top-0 right-0 w-8 h-8 rounded-full bg-slate-200/80 hover:bg-slate-300 flex items-center justify-center text-slate-700 cursor-pointer shadow-xs transition-colors"
+            title="বন্ধ করুন"
+          >
+            <X className="w-4 h-4" />
+          </button>
           <div className="w-16 h-16 rounded-full bg-emerald-100 border-2 border-emerald-300 text-emerald-600 flex items-center justify-center mx-auto mb-2 shadow-md animate-in zoom-in-50 duration-300">
             <CheckCircle2 className="w-9 h-9 stroke-[2.5]" />
           </div>

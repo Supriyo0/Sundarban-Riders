@@ -436,7 +436,16 @@ function MobileAppPageContent() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("sr_driver_completed_ride");
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const time = parsed.completedAt || parsed.completed_at || parsed.created_at;
+          const ageMs = time ? Date.now() - new Date(time).getTime() : Infinity;
+          if (ageMs > 5 * 60 * 1000) {
+            localStorage.removeItem("sr_driver_completed_ride");
+            return null;
+          }
+          return parsed;
+        }
       } catch {}
     }
     return null;
@@ -445,7 +454,16 @@ function MobileAppPageContent() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem("sr_passenger_completed_ride");
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          const time = parsed.completedAt || parsed.completed_at || parsed.created_at;
+          const ageMs = time ? Date.now() - new Date(time).getTime() : Infinity;
+          if (ageMs > 5 * 60 * 1000) {
+            localStorage.removeItem("sr_passenger_completed_ride");
+            return null;
+          }
+          return parsed;
+        }
       } catch {}
     }
     return null;
@@ -574,7 +592,20 @@ function MobileAppPageContent() {
         setIsVerifyingStartOtp(false);
         return;
       }
-      setActiveRide((prev: any) => (prev ? { ...prev, status: "on_trip" } : null));
+      const tripStartTime = data.booking?.trip_start_time || data.booking?.tripStartTime || new Date().toISOString();
+      setActiveRide((prev: any) => {
+        if (!prev) return null;
+        const updated = {
+          ...prev,
+          status: "on_trip",
+          tripStartTime,
+          trip_start_time: tripStartTime,
+        };
+        if (typeof window !== "undefined") {
+          localStorage.setItem("sr_active_ride", JSON.stringify(updated));
+        }
+        return updated;
+      });
       setShowStartOtpModal(false);
       setStartOtpInput("");
       playSuccessSound();
@@ -784,6 +815,10 @@ function MobileAppPageContent() {
 
         // When driver starts the trip:
         if (b.status === "in_progress") {
+          const startTime = b.trip_start_time || b.tripStartTime || b.feedback?.trip_start_time;
+          if (startTime) {
+            setPassengerBooking((prev: any) => (prev ? { ...prev, tripStartTime: startTime, trip_start_time: startTime } : prev));
+          }
           setRideStep((prev) => {
             if (prev !== "in_trip") {
               playSuccessSound();
@@ -1074,6 +1109,8 @@ function MobileAppPageContent() {
               pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : [21.8760, 88.1920],
               dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : [21.8680, 88.1630],
               status: b.status === "in_progress" ? "on_trip" : "heading_pickup",
+              tripStartTime: b.trip_start_time || b.tripStartTime,
+              trip_start_time: b.trip_start_time || b.tripStartTime,
             };
             setActiveRide(restoredRide);
             if (typeof window !== "undefined") {
@@ -1085,15 +1122,6 @@ function MobileAppPageContent() {
             setActiveRide(null);
             if (typeof window !== "undefined") {
               localStorage.removeItem("sr_active_ride");
-              const savedCompleted = localStorage.getItem("sr_driver_completed_ride");
-              if (savedCompleted) {
-                try {
-                  const parsed = JSON.parse(savedCompleted);
-                  setDriverCompletedRide(parsed);
-                  setPhase("rider_trip_completed");
-                  return;
-                } catch {}
-              }
             }
           }
         } catch (err) {
@@ -1168,10 +1196,6 @@ function MobileAppPageContent() {
                 localStorage.removeItem("sr_passenger_booking");
                 localStorage.removeItem("sr_active_booking_id");
                 localStorage.removeItem("sr_search_status");
-              }
-              if (b.status === "completed") {
-                setPassengerCompletedRide(b);
-                setPhase("passenger_trip_completed");
               }
             }
           } else {
@@ -2945,6 +2969,7 @@ function MobileAppPageContent() {
             <DriverActiveTripMap
               bookingId={activeRide.id}
               bookingNumber={activeRide.bookingNumber}
+              tripStartTime={activeRide.tripStartTime || activeRide.trip_start_time}
               pickup={activeRide.pickup}
               drop={activeRide.drop}
               pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
@@ -3761,6 +3786,9 @@ function MobileAppPageContent() {
                 <LiveRideTrackingMap
                   booking={{
                     id: passengerBooking.id,
+                    bookingNumber: passengerBooking.bookingNumber,
+                    trip_start_time: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
+                    tripStartTime: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
                     driverName: passengerBooking.driverName || passengerBooking.driver_name || "টোটো চালক",
                     driverPhone: passengerBooking.driverPhone || passengerBooking.driver_phone || "",
                     totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || passengerBooking.toto_number || "",

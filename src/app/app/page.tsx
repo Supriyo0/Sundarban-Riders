@@ -765,19 +765,9 @@ function MobileAppPageContent() {
         const res = await fetch(`/api/bookings?id=${bId}`);
         const data = await res.json();
         const b = data.booking;
-        if (!b) {
-          // Booking does not exist in DB -> clean up immediately
-          if (pollInterval) clearInterval(pollInterval);
-          setPassengerBooking(null);
-          setActiveBookingId(null);
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("sr_passenger_booking");
-            localStorage.removeItem("sr_active_booking_id");
-            localStorage.removeItem("sr_search_status");
-          }
+        if (!b || !isMounted) {
           return;
         }
-        if (!isMounted) return;
 
         // Keep locations and coordinates synchronized
         if (b.pickup_location) setPickupText(b.pickup_location);
@@ -803,6 +793,8 @@ function MobileAppPageContent() {
           });
         } else if (b.status === "completed") {
           if (pollInterval) clearInterval(pollInterval);
+          const finalFare = b.final_fare || b.estimated_fare || tripFare;
+          const finalKm = b.actual_distance_km || b.estimated_distance_km || tripDistance;
           // Store completed trip details for receipt & local device persistent history
           const completedData = {
             ...b,
@@ -810,8 +802,14 @@ function MobileAppPageContent() {
             bookingNumber: b.booking_number,
             pickup: b.pickup_location || pickupText,
             drop: b.drop_location || dropText,
-            fare: b.final_fare || b.estimated_fare || tripFare,
-            distanceKm: b.actual_distance_km || b.estimated_distance_km || tripDistance,
+            fare: finalFare,
+            final_fare: finalFare,
+            distanceKm: finalKm,
+            actual_distance_km: finalKm,
+            estimatedDistanceKm: b.estimated_distance_km || tripDistance,
+            estimated_distance_km: b.estimated_distance_km || tripDistance,
+            estimatedFare: b.estimated_fare || tripFare,
+            estimated_fare: b.estimated_fare || tripFare,
             driverName: b.driver_name || passengerBooking?.driverName || "টোটো চালক",
             driverPhone: b.driver_phone || passengerBooking?.driverPhone || "",
             totoNumber: b.toto_number || passengerBooking?.totoNumber || "SR-DRV",
@@ -1173,6 +1171,7 @@ function MobileAppPageContent() {
               }
               if (b.status === "completed") {
                 setPassengerCompletedRide(b);
+                setPhase("passenger_trip_completed");
               }
             }
           } else {
@@ -1358,10 +1357,21 @@ function MobileAppPageContent() {
             : `?status=pending`;
           const res = await fetch(`/api/bookings${queryParams}`);
           const data = await res.json();
-          if (data.booking && data.booking.status === "pending" && !data.booking.driver_id) {
-            const b = data.booking;
-            if (!declinedBookingIdsRef.current.has(b.id) && !alertedBookingIdsRef.current.has(b.id)) {
-              alertedBookingIdsRef.current.add(b.id);
+          const pendingList = Array.isArray(data.bookings)
+            ? data.bookings
+            : data.booking
+            ? [data.booking]
+            : [];
+          const b = pendingList.find(
+            (item: any) =>
+              item &&
+              item.status === "pending" &&
+              !item.driver_id &&
+              !declinedBookingIdsRef.current.has(item.id) &&
+              !alertedBookingIdsRef.current.has(item.id)
+          );
+          if (b) {
+            alertedBookingIdsRef.current.add(b.id);
               // Strict 5 km client-side distance check
               if (driverLiveCoords && driverLiveCoords[0] !== 0) {
                 const pLat = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lat) : Number(b.start_coords?.[0]);
@@ -1392,7 +1402,6 @@ function MobileAppPageContent() {
                 dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.end_coords || [21.8680, 88.1630]),
               });
             }
-          }
         } catch {
           // Ignore transient network errors
         }
@@ -2973,14 +2982,20 @@ function MobileAppPageContent() {
                   playSuccessSound();
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,
+                    bookingNumber: activeRide.bookingNumber,
                     pickup: activeRide.pickup,
                     drop: activeRide.drop,
                     fare: finalFare,
+                    final_fare: finalFare,
                     distanceKm: distKm,
+                    actual_distance_km: distKm,
                     estimatedDistanceKm: estDist,
                     estimatedFare: estFare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
+                    status: "completed",
+                    completedAt: new Date().toISOString(),
+                    created_at: activeRide.created_at || new Date().toISOString(),
                   };
                   setDriverCompletedRide(completedData);
                   if (typeof window !== "undefined") {
@@ -3425,12 +3440,12 @@ function MobileAppPageContent() {
         driverName={passengerCompletedRide?.driverName || passengerBooking?.driverName || "টোটো চালক"}
         driverPhone={passengerCompletedRide?.driverPhone || passengerBooking?.driverPhone || ""}
         totoNumber={passengerCompletedRide?.totoNumber || passengerBooking?.totoNumber || ""}
-        pickup={passengerCompletedRide?.pickup_location || pickupText}
-        drop={passengerCompletedRide?.drop_location || dropText}
-        distanceKm={passengerCompletedRide?.actual_distance_km || tripDistance}
-        fare={passengerCompletedRide?.final_fare || passengerCompletedRide?.estimated_fare || tripFare}
-        estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km || tripDistance}
-        estimatedFare={passengerCompletedRide?.estimated_fare || tripFare}
+        pickup={passengerCompletedRide?.pickup_location || passengerCompletedRide?.pickup || pickupText}
+        drop={passengerCompletedRide?.drop_location || passengerCompletedRide?.drop || dropText}
+        distanceKm={passengerCompletedRide?.actual_distance_km ?? passengerCompletedRide?.distanceKm ?? tripDistance}
+        fare={passengerCompletedRide?.final_fare ?? passengerCompletedRide?.fare ?? passengerCompletedRide?.estimated_fare ?? tripFare}
+        estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km ?? passengerCompletedRide?.estimatedDistanceKm ?? tripDistance}
+        estimatedFare={passengerCompletedRide?.estimated_fare ?? passengerCompletedRide?.estimatedFare ?? tripFare}
         durationMinutes={passengerCompletedRide?.duration_minutes || 12}
         onBookAnother={() => {
           hasCompletedNotifiedRef.current = null;

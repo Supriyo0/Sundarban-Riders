@@ -51,9 +51,26 @@ import {
   subscribeDriverToPushNotifications,
   showLocalRideAlertNotification,
 } from "@/lib/mobile/push-notifications";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import dynamic from "next/dynamic";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
+
+// Haversine distance calculator in km
+function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
 
 const InteractiveBookingMap = dynamic(
   () => import("@/components/mobile/interactive-booking-map").then((mod) => mod.InteractiveBookingMap),
@@ -638,7 +655,23 @@ function MobileAppPageContent() {
       setPhase("otp_login");
       return;
     }
-    if (!pickupText || !pickupText.trim() || pickupCoords[0] === 0) {
+
+    // Auto-recover coordinates from localStorage if state was temporarily 0
+    let effectivePickupCoords = pickupCoords;
+    if (effectivePickupCoords[0] === 0 && typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          effectivePickupCoords = [lat, lng];
+          setPickupCoords(effectivePickupCoords);
+        }
+      }
+    }
+
+    if (!pickupText || !pickupText.trim() || effectivePickupCoords[0] === 0) {
       toast.error("⚠️ সঠিক পিকআপ স্থান নির্বাচন করুন! জিপিএস সক্রিয় করুন অথবা ওপরে পিকআপ লিখুন।");
       return;
     }
@@ -674,14 +707,21 @@ function MobileAppPageContent() {
       if (!res.ok && data.error === "customer_blocked") {
         setIsCustomerBlocked(true);
         setCustomerStrikes(data.cancellation_count || 3);
+        setSearchStatus("idle");
         setPhase("passenger_home");
         toast.error(data.message || "৩ বার বাতিল করায় আপনার অ্যাকাউন্ট স্থগিত করা হয়েছে।", { duration: 6000 });
+        return;
+      }
+      if (!res.ok) {
+        setSearchStatus("idle");
+        toast.error(data.error || "বুকিং তৈরি করা যায়নি। আবার চেষ্টা করুন।");
         return;
       }
       if (data.booking && data.booking.id) {
         setActiveBookingId(data.booking.id);
       }
     } catch (err) {
+      setSearchStatus("idle");
       console.warn("[app] Failed to create live booking:", err);
     }
   }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, passengerCount, selectedTier, session, isCustomerBlocked, customerStrikes]);
@@ -1265,10 +1305,10 @@ function MobileAppPageContent() {
             clearInterval(soundInterval);
             if (incomingRide?.id) {
               alertedBookingIdsRef.current.add(incomingRide.id);
-              declinedBookingIdsRef.current.add(incomingRide.id);
+              // Do NOT permanently decline! Keep available in bottom slider drawer so driver can still accept
             }
             setIncomingRide(null);
-            toast.error("রাইডের সময়সীমা শেষ হয়েছে");
+            toast.info("রাইড অনুরোধটি নিচের স্লাইডারে উপলব্ধ রয়েছে। আপনি চাইলে গ্রহণ করতে পারেন।");
             return 30;
           }
           return prev - 1;
@@ -1375,10 +1415,27 @@ function MobileAppPageContent() {
             return;
           }
 
-          // Otherwise check for newly posted pending bookings strictly within 5 km of driver
-          const queryParams = driverLiveCoords && driverLiveCoords[0] !== 0
-            ? `?status=pending&driver_lat=${driverLiveCoords[0]}&driver_lng=${driverLiveCoords[1]}`
-            : `?status=pending`;
+          // Get driver coords (live or from device cache)
+          let coords = driverLiveCoords;
+          if (!coords || coords[0] === 0) {
+            if (typeof window !== "undefined") {
+              const latStr = localStorage.getItem("sr_last_known_lat");
+              const lngStr = localStorage.getItem("sr_last_known_lng");
+              if (latStr && lngStr) {
+                const lat = parseFloat(latStr);
+                const lng = parseFloat(lngStr);
+                if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                  coords = [lat, lng];
+                  setDriverLiveCoords(coords);
+                }
+              }
+            }
+          }
+
+          // If driver coordinates are unknown, DO NOT poll or alert random bookings!
+          if (!coords || coords[0] === 0) return;
+
+          const queryParams = `?status=pending&driver_lat=${coords[0]}&driver_lng=${coords[1]}`;
           const res = await fetch(`/api/bookings${queryParams}`);
           const data = await res.json();
           const pendingList = Array.isArray(data.bookings)
@@ -1395,37 +1452,36 @@ function MobileAppPageContent() {
               !alertedBookingIdsRef.current.has(item.id)
           );
           if (b) {
-            alertedBookingIdsRef.current.add(b.id);
-              // Strict 5 km client-side distance check
-              if (driverLiveCoords && driverLiveCoords[0] !== 0) {
-                const pLat = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lat) : Number(b.start_coords?.[0]);
-                const pLng = b.pickup_lat && b.pickup_lng ? Number(b.pickup_lng) : Number(b.start_coords?.[1]);
-                if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
-                  const R = 6371;
-                  const dLat = ((pLat - driverLiveCoords[0]) * Math.PI) / 180;
-                  const dLon = ((pLng - driverLiveCoords[1]) * Math.PI) / 180;
-                  const a = Math.sin(dLat / 2) ** 2 + Math.cos((driverLiveCoords[0] * Math.PI) / 180) * Math.cos((pLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-                  const dKm = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                  if (dKm > 5.0) return; // Ignore bookings farther than 5 km
-                }
-              }
+            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+            if (!pLat || !pLng || isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) return;
 
-              setAlertCountdown(30);
-              setIncomingRide({
-                id: b.id,
-                bookingNumber: b.booking_number,
-                fare: b.estimated_fare || 0,
-                passengerName: b.customer_name || "যাত্রী",
-                passengerRating: 5.0,
-                passengerPhone: b.customer_phone || "",
-                pickup: b.pickup_location || "পিকআপ লোকেশন",
-                pickupDistance: "",
-                drop: b.drop_location || "গন্তব্য",
-                tripDistance: b.trip_distance_km ? `${b.trip_distance_km} কিমি ট্রিপ` : "",
-                pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.start_coords || [21.8760, 88.1920]),
-                dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.end_coords || [21.8680, 88.1630]),
-              });
-            }
+            // Strict 5.0 km client-side distance check
+            const dKm = calculateDistanceKm(coords[0], coords[1], pLat, pLng);
+            if (dKm > 5.0) return; // Ignore bookings farther than 5 km
+
+            alertedBookingIdsRef.current.add(b.id);
+
+            const dDropLat = Number(b.drop_lat || b.end_coords?.[0]);
+            const dDropLng = Number(b.drop_lng || b.end_coords?.[1]);
+            const tripDistKm = Number(b.trip_distance_km) || (pLat && dDropLat ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
+
+            setAlertCountdown(30);
+            setIncomingRide({
+              id: b.id,
+              bookingNumber: b.booking_number || b.id?.slice(0, 8),
+              fare: b.estimated_fare || b.fare || 0,
+              passengerName: b.customer_name || "যাত্রী",
+              passengerRating: 5.0,
+              passengerPhone: b.customer_phone || "",
+              pickup: b.pickup_location || "পিকআপ লোকেশন",
+              pickupDistance: `${dKm.toFixed(1)} কিমি দূরে`,
+              drop: b.drop_location || "গন্তব্য",
+              tripDistance: `${tripDistKm.toFixed(1)} কিমি ট্রিপ`,
+              pickupCoords: [pLat, pLng],
+              dropCoords: dDropLat && dDropLng ? [dDropLat, dDropLng] : [21.8680, 88.1630],
+            });
+          }
         } catch {
           // Ignore transient network errors
         }
@@ -1460,84 +1516,98 @@ function MobileAppPageContent() {
 
   // Proactively fetch customer & driver real-time GPS location on app load
   useEffect(() => {
+    // Fast Two-Stage GPS fetch with Native Capacitor first
+    const isNative = Capacitor.isNativePlatform();
+
+    const applyLocationFix = (lat: number, lng: number) => {
+      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+      setPickupCoords([lat, lng]);
+      setDriverLiveCoords([lat, lng]);
+      try {
+        localStorage.setItem("sr_last_known_lat", lat.toString());
+        localStorage.setItem("sr_last_known_lng", lng.toString());
+      } catch {}
+      fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d && d.name) {
+            setPickupText(d.name);
+            try {
+              localStorage.setItem("sr_last_known_name", d.name);
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (isNative) {
+      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 })
+        .then((pos) => {
+          if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude);
+        })
+        .catch(() => {});
+    }
+
     if (typeof window !== "undefined" && navigator.geolocation) {
       // Stage 1: Fast fused / cached position (returns immediately)
       navigator.geolocation.getCurrentPosition(
-        (fastPos) => {
-          const { latitude, longitude } = fastPos.coords;
-          if (latitude && longitude && latitude !== 0) {
-            setPickupCoords([latitude, longitude]);
-            setDriverLiveCoords([latitude, longitude]);
-            try {
-              localStorage.setItem("sr_last_known_lat", latitude.toString());
-              localStorage.setItem("sr_last_known_lng", longitude.toString());
-            } catch {}
-          }
-        },
+        (fastPos) => applyLocationFix(fastPos.coords.latitude, fastPos.coords.longitude),
         () => {},
         { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
       );
 
       // Stage 2: Satellite high accuracy
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setPickupCoords([latitude, longitude]);
-          setDriverLiveCoords([latitude, longitude]);
-          try {
-            localStorage.setItem("sr_last_known_lat", latitude.toString());
-            localStorage.setItem("sr_last_known_lng", longitude.toString());
-          } catch {}
-          fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-            .then((r) => r.json())
-            .then((d) => {
-              if (d && d.name) {
-                setPickupText(d.name);
-                try {
-                  localStorage.setItem("sr_last_known_name", d.name);
-                } catch {}
-              }
-            })
-            .catch(() => {});
-        },
-        (err) => {
-          console.warn("[App] High accuracy satellite GPS fix failed, falling back to network:", err.message);
-          navigator.geolocation.getCurrentPosition(
-            (pos2) => {
-              const { latitude, longitude } = pos2.coords;
-              setPickupCoords([latitude, longitude]);
-              setDriverLiveCoords([latitude, longitude]);
-              try {
-                localStorage.setItem("sr_last_known_lat", latitude.toString());
-                localStorage.setItem("sr_last_known_lng", longitude.toString());
-              } catch {}
-              fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-                .then((r) => r.json())
-                .then((d) => {
-                  if (d && d.name) {
-                    setPickupText(d.name);
-                    try {
-                      localStorage.setItem("sr_last_known_name", d.name);
-                    } catch {}
-                  }
-                })
-                .catch(() => {});
-            },
-            () => {},
-            { enableHighAccuracy: false, timeout: 6000 }
-          );
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+        (pos) => applyLocationFix(pos.coords.latitude, pos.coords.longitude),
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
       );
     }
   }, []);
 
-  // Handle Permissions
-  const handleGrantPermissions = () => {
+  // Handle Permissions (Native Capacitor single-tap authorization)
+  const handleGrantPermissions = async () => {
     localStorage.setItem("sr_permissions_granted", "true");
     setPermissionsGranted(true);
 
-    // Explicitly prompt the browser for GPS location permission on user gesture
+    const isNative = Capacitor.isNativePlatform();
+    if (isNative) {
+      try {
+        const perm = await Geolocation.requestPermissions();
+        if (perm.location === "granted") {
+          const pos = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 8000,
+            maximumAge: 10000,
+          });
+          if (pos?.coords) {
+            const { latitude, longitude } = pos.coords;
+            setPickupCoords([latitude, longitude]);
+            setDriverLiveCoords([latitude, longitude]);
+            try {
+              localStorage.setItem("sr_last_known_lat", latitude.toString());
+              localStorage.setItem("sr_last_known_lng", longitude.toString());
+            } catch {}
+            fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+              .then((r) => r.json())
+              .then((d) => {
+                if (d && d.name) {
+                  setPickupText(d.name);
+                  try {
+                    localStorage.setItem("sr_last_known_name", d.name);
+                  } catch {}
+                }
+              })
+              .catch(() => {});
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Native GPS permission error:", err);
+      }
+    }
+
+    // Explicitly prompt browser geolocation on user gesture
     if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -1548,7 +1618,6 @@ function MobileAppPageContent() {
             localStorage.setItem("sr_last_known_lat", latitude.toString());
             localStorage.setItem("sr_last_known_lng", longitude.toString());
           } catch {}
-          // Resolve initial address
           fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
             .then((r) => r.json())
             .then((d) => {
@@ -1561,34 +1630,8 @@ function MobileAppPageContent() {
             })
             .catch(() => {});
         },
-        (err) => {
-          console.warn("Precise GPS failed, falling back:", err.message);
-          navigator.geolocation.getCurrentPosition(
-            (pos2) => {
-              const { latitude, longitude } = pos2.coords;
-              setPickupCoords([latitude, longitude]);
-              setDriverLiveCoords([latitude, longitude]);
-              try {
-                localStorage.setItem("sr_last_known_lat", latitude.toString());
-                localStorage.setItem("sr_last_known_lng", longitude.toString());
-              } catch {}
-              fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-                .then((r) => r.json())
-                .then((d) => {
-                  if (d && d.name) {
-                    setPickupText(d.name);
-                    try {
-                      localStorage.setItem("sr_last_known_name", d.name);
-                    } catch {}
-                  }
-                })
-                .catch(() => {});
-            },
-            () => {},
-            { enableHighAccuracy: false, timeout: 6000 }
-          );
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
       );
     }
 
@@ -2927,6 +2970,7 @@ function MobileAppPageContent() {
                     return;
                   }
 
+                  const startMs = Date.now();
                   setActiveRide({
                     id: b.id,
                     bookingNumber: b.booking_number,
@@ -2938,11 +2982,14 @@ function MobileAppPageContent() {
                     pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
                     dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
                     status: "heading_pickup",
+                    tripStartTime: startMs,
+                    trip_start_time: startMs,
                   });
                   setIncomingRide(null);
                   playSuccessSound();
                   toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
                 } catch {
+                  const startMs = Date.now();
                   setActiveRide({
                     id: b.id,
                     bookingNumber: b.booking_number,
@@ -2954,6 +3001,8 @@ function MobileAppPageContent() {
                     pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
                     dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
                     status: "heading_pickup",
+                    tripStartTime: startMs,
+                    trip_start_time: startMs,
                   });
                   setIncomingRide(null);
                   toast.success("রাইড গ্রহণ করা হয়েছে!");
@@ -2974,7 +3023,7 @@ function MobileAppPageContent() {
               drop={activeRide.drop}
               pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
               dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
-              driverCoords={driverLiveCoords || [21.8770, 88.1930]}
+              driverCoords={driverLiveCoords || undefined}
               status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
               passengerName={activeRide.passengerName}
               passengerPhone={activeRide.passengerPhone}
@@ -2987,6 +3036,9 @@ function MobileAppPageContent() {
               }}
               onCompleteTrip={async (finalKm) => {
                 try {
+                  const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
+                  const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+
                   const res = await fetch("/api/bookings", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
@@ -2996,6 +3048,7 @@ function MobileAppPageContent() {
                       driverId: session?.driverId,
                       endCoords: driverLiveCoords || null,
                       finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
+                      durationMinutes: actualDurationMinutes,
                     }),
                   });
                   const data = await res.json();
@@ -3014,6 +3067,8 @@ function MobileAppPageContent() {
                     final_fare: finalFare,
                     distanceKm: distKm,
                     actual_distance_km: distKm,
+                    durationMinutes: actualDurationMinutes,
+                    duration_minutes: actualDurationMinutes,
                     estimatedDistanceKm: estDist,
                     estimatedFare: estFare,
                     passengerName: activeRide.passengerName,
@@ -3040,12 +3095,16 @@ function MobileAppPageContent() {
                   toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
                 } catch {
                   playSuccessSound();
+                  const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
+                  const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,
                     pickup: activeRide.pickup,
                     drop: activeRide.drop,
                     fare: activeRide.fare || 50,
                     distanceKm: finalKm || 1.0,
+                    durationMinutes: actualDurationMinutes,
+                    duration_minutes: actualDurationMinutes,
                     estimatedDistanceKm: activeRide.distanceKm,
                     estimatedFare: activeRide.fare,
                     passengerName: activeRide.passengerName,
@@ -3123,7 +3182,7 @@ function MobileAppPageContent() {
                     </span>
                   </div>
                 </div>
-                <span className="text-xs text-slate-500 font-mono font-bold">#{incomingRide.id}</span>
+                <span className="text-xs text-slate-500 font-mono font-bold">#{incomingRide.bookingNumber || incomingRide.id?.slice(0, 8)}</span>
               </div>
 
               {/* Route Preview */}
@@ -3173,6 +3232,7 @@ function MobileAppPageContent() {
                       }
 
                       const currentBooking = data?.booking || incomingRide;
+                      const startMs = Date.now();
                       setActiveRide({
                         ...incomingRide,
                         pickup: currentBooking.pickup_location || incomingRide.pickup,
@@ -3184,14 +3244,19 @@ function MobileAppPageContent() {
                           ? [Number(currentBooking.drop_lat), Number(currentBooking.drop_lng)]
                           : incomingRide.dropCoords,
                         status: "heading_pickup",
+                        tripStartTime: startMs,
+                        trip_start_time: startMs,
                       });
                       setIncomingRide(null);
                       playSuccessSound();
                       toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর অবস্থানে যান।");
                     } catch {
+                      const startMs = Date.now();
                       setActiveRide({
                         ...incomingRide,
                         status: "heading_pickup",
+                        tripStartTime: startMs,
+                        trip_start_time: startMs,
                       });
                       setIncomingRide(null);
                       toast.success("রাইড গ্রহণ করা হয়েছে!");
@@ -3439,7 +3504,7 @@ function MobileAppPageContent() {
         fare={driverCompletedRide.fare || 50}
         estimatedDistanceKm={driverCompletedRide.estimatedDistanceKm}
         estimatedFare={driverCompletedRide.estimatedFare}
-        durationMinutes={driverCompletedRide.durationMinutes || 12}
+        durationMinutes={driverCompletedRide.durationMinutes || 1}
         onBookAnother={() => {
           setDriverCompletedRide(null);
           if (typeof window !== "undefined") {
@@ -3471,7 +3536,7 @@ function MobileAppPageContent() {
         fare={passengerCompletedRide?.final_fare ?? passengerCompletedRide?.fare ?? passengerCompletedRide?.estimated_fare ?? tripFare}
         estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km ?? passengerCompletedRide?.estimatedDistanceKm ?? tripDistance}
         estimatedFare={passengerCompletedRide?.estimated_fare ?? passengerCompletedRide?.estimatedFare ?? tripFare}
-        durationMinutes={passengerCompletedRide?.duration_minutes || 12}
+        durationMinutes={passengerCompletedRide?.duration_minutes || passengerCompletedRide?.durationMinutes || 1}
         onBookAnother={() => {
           hasCompletedNotifiedRef.current = null;
           setPassengerCompletedRide(null);
@@ -4185,10 +4250,20 @@ function MobileAppPageContent() {
 
                     setCustomerStrikes(newCancels);
                     setIsCustomerBlocked(isBlocked);
+                    setSearchStatus("idle");
                     setPassengerBooking(null);
                     setActiveBookingId(null);
                     setShowCancelModal(false);
                     setPhase("passenger_home");
+
+                    if (typeof window !== "undefined") {
+                      try {
+                        localStorage.removeItem("sr_active_passenger_booking");
+                        localStorage.removeItem("sr_passenger_booking");
+                        localStorage.removeItem("sr_active_booking_id");
+                        localStorage.removeItem("sr_search_status");
+                      } catch {}
+                    }
 
                     if (isBlocked) {
                       toast.error(

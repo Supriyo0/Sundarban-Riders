@@ -34,9 +34,9 @@ export function DriverActiveTripMap({
   bookingNumber,
   pickup,
   drop,
-  pickupCoords = [21.876, 88.192],
-  dropCoords = [21.868, 88.163],
-  driverCoords = [21.877, 88.193],
+  pickupCoords = [21.5698, 88.2518],
+  dropCoords = [21.5650, 88.2550],
+  driverCoords,
   status,
   passengerName = "যাত্রী",
   passengerPhone = "",
@@ -105,15 +105,24 @@ export function DriverActiveTripMap({
     return () => clearInterval(interval);
   }, [status, tripStartTime]);
 
-  // Active continuous driver GPS tracking
+  // Active continuous driver GPS tracking: Prioritize real live location over hardcoded defaults
   const [activeDriverCoords, setActiveDriverCoords] = useState<[number, number]>(() => {
-    if (driverCoords && driverCoords[0] && driverCoords[0] !== 0) return driverCoords;
+    if (driverCoords && driverCoords[0] && driverCoords[0] !== 0 && driverCoords[0] !== 21.877) return driverCoords;
+    if (typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0 && lat !== 21.877) return [lat, lng];
+      }
+    }
     if (pickupCoords && pickupCoords[0] && pickupCoords[0] !== 0) return pickupCoords;
-    return [21.876, 88.192];
+    return [21.5698, 88.2518];
   });
 
   useEffect(() => {
-    if (driverCoords && driverCoords[0] && driverCoords[0] !== 0) {
+    if (driverCoords && driverCoords[0] && driverCoords[0] !== 0 && driverCoords[0] !== 21.877) {
       setActiveDriverCoords(driverCoords);
     }
   }, [driverCoords]);
@@ -151,7 +160,16 @@ export function DriverActiveTripMap({
     };
 
     const startWatching = async () => {
+      // Immediate one-shot position fetch to lock driver's location instantaneously
       if (Capacitor.isNativePlatform()) {
+        Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 6000 })
+          .then((pos) => {
+            if (!isCancelled && pos?.coords) {
+              handleCoords(pos.coords.latitude, pos.coords.longitude);
+            }
+          })
+          .catch(() => {});
+
         try {
           capWatchId = await Geolocation.watchPosition(
             { enableHighAccuracy: true, maximumAge: 0 },
@@ -160,14 +178,24 @@ export function DriverActiveTripMap({
               handleCoords(position.coords.latitude, position.coords.longitude);
             }
           );
-          return; // CRITICAL: Stop here on native platform to avoid dual-watcher conflict
+          return; // Stop here on native platform to avoid dual-watcher conflict
         } catch {}
       }
 
       if (typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (!isCancelled && pos?.coords) {
+              handleCoords(pos.coords.latitude, pos.coords.longitude);
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
-            if (isCancelled || !pos?.coords) return;
+            if (!isCancelled || !pos?.coords) return;
             handleCoords(pos.coords.latitude, pos.coords.longitude);
           },
           () => {},
@@ -190,7 +218,7 @@ export function DriverActiveTripMap({
   }, [bookingId, status]);
 
   const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;
-  const origin = activeDriverCoords?.[0] ? activeDriverCoords : pickupCoords;
+  const origin = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : pickupCoords;
 
   // Build Google Maps turn-by-turn navigation URL
   const getNavUrl = (target: [number, number]) => {
@@ -239,10 +267,10 @@ export function DriverActiveTripMap({
     }
   }, [activeDriverCoords, status, bookingId, onOdometerUpdate]);
 
-  // Fetch real street road route from /api/route
+  // Fetch real street road route from /api/route starting from actual live driver location
   useEffect(() => {
     let cancelled = false;
-    const from: [number, number] = driverCoords?.[0] ? driverCoords : pickupCoords;
+    const from: [number, number] = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : pickupCoords;
     const to: [number, number] = status === "heading_pickup" ? pickupCoords : dropCoords;
     fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${to[0]}&toLng=${to[1]}`)
       .then((r) => r.json())
@@ -260,7 +288,7 @@ export function DriverActiveTripMap({
     return () => {
       cancelled = true;
     };
-  }, [status, driverCoords, pickupCoords, dropCoords]);
+  }, [status, activeDriverCoords?.[0], activeDriverCoords?.[1], pickupCoords, dropCoords]);
 
   // Leaflet map initialization with street-level zoom
   useEffect(() => {
@@ -271,7 +299,7 @@ export function DriverActiveTripMap({
       const L = (LMod as any).default || LMod;
       if (!mounted) return;
 
-      const currentFrom = driverCoords?.[0] ? driverCoords : (status === "heading_pickup" ? pickupCoords : dropCoords);
+      const currentFrom = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : (status === "heading_pickup" ? pickupCoords : dropCoords);
 
       if (!mapInstanceRef.current) {
         (mapContainerRef.current as any)._leaflet_id = null;

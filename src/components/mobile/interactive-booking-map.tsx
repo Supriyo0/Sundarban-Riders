@@ -112,11 +112,10 @@ export function InteractiveBookingMap({
   const onRouteSelectedRef = useRef(onRouteSelected);
   onRouteSelectedRef.current = onRouteSelected;
 
-  // Validation
+  // Validation: Live GPS location is valid whenever coordinates are non-zero
   const isInitialValid = Boolean(
     initialPickup &&
     initialPickup.trim() !== "" &&
-    initialPickup !== "আপনার বর্তমান অবস্থান (Live GPS)" &&
     initialPickupCoords &&
     initialPickupCoords[0] !== 0
   );
@@ -147,6 +146,21 @@ export function InteractiveBookingMap({
   // Input states
   const [pickupInputValue, setPickupInputValue] = useState(initialPickup || "");
   const [dropInputValue, setDropInputValue] = useState(initialDrop || "");
+
+  // Reactive sync when parent updates initial coordinates or address
+  useEffect(() => {
+    if (initialPickupCoords && initialPickupCoords[0] !== 0 && initialPickupCoords[1] !== 0) {
+      setPickupCoords((prev) => {
+        if (prev[0] === initialPickupCoords[0] && prev[1] === initialPickupCoords[1]) return prev;
+        return initialPickupCoords;
+      });
+      setHasValidPickup(true);
+      setLocationError(null);
+    }
+    if (initialPickup && initialPickup.trim() !== "") {
+      setPickupInputValue((prev) => (prev ? prev : initialPickup));
+    }
+  }, [initialPickupCoords, initialPickup]);
 
   // Active Map View Style
   const [mapLayer, setMapLayer] = useState<"streets" | "satellite">("streets");
@@ -703,6 +717,19 @@ export function InteractiveBookingMap({
           if (detectedName) localStorage.setItem("sr_last_known_name", detectedName);
         } catch {}
 
+        // Immediately update parent state with accurate live pickup coordinates
+        onRouteSelectedRef.current?.({
+          pickup: detectedName,
+          drop: dropInputRef.current,
+          pickupCoords: newPickup,
+          dropCoords: dropCoordsRef.current,
+          distanceKm: distanceKm || 0,
+          estimatedFare: fareResult.totalFare || 30,
+          rideTier: "standard",
+          paymentMode: "cash",
+          passengerCount,
+        });
+
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
           fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
           flyDuration: 1.2,
@@ -1169,7 +1196,23 @@ export function InteractiveBookingMap({
   const handleConfirmClick = () => {
     if (isBlocked) return;
 
-    if (!hasValidPickup || !pickupInputValue.trim() || pickupCoords[0] === 0) {
+    // Auto-recover coordinates from localStorage if pickupCoords was still 0
+    let currentPCoords = pickupCoords;
+    if (currentPCoords[0] === 0 && typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          currentPCoords = [lat, lng];
+          setPickupCoords(currentPCoords);
+          setHasValidPickup(true);
+        }
+      }
+    }
+
+    if (!pickupInputValue.trim() || currentPCoords[0] === 0) {
       const msg = "⚠️ সঠিক পিকআপ স্থান নির্বাচন করুন! জিপিএস অন করুন অথবা ওপরে পিকআপ স্থান লিখুন।";
       setLocationError(msg);
       toast.error(msg);
@@ -1886,7 +1929,7 @@ export function InteractiveBookingMap({
                     <span>
                       {nearbyDrivers.length > 0
                         ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমির মধ্যে)`
-                        : "⚠️ ৫ কিমির মধ্যে কোনো সক্রিয় টোটো নেই"}
+                        : "🔔 ৫ কিমির মধ্যে চালকের অনুসন্ধান সক্রিয় (বুকিং রিকোয়েস্ট পাঠান)"}
                     </span>
                   </span>
                   <span className="text-slate-500 font-semibold">⚡ দ্রুত পিকআপ</span>

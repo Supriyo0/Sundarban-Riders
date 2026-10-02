@@ -990,18 +990,26 @@ export async function GET(request: Request) {
       });
     }
 
-    // Default: return recent pending bookings strictly within 5 km and within 3 minutes
+    // Default: return recent pending bookings strictly within 5.0 km and within 3 minutes
     const driverLatStr = searchParams.get("driver_lat") || searchParams.get("lat");
     const driverLngStr = searchParams.get("driver_lng") || searchParams.get("lng");
     const dLat = driverLatStr ? parseFloat(driverLatStr) : null;
     const dLng = driverLngStr ? parseFloat(driverLngStr) : null;
+
+    // Strict safety check: If driver coordinates are unknown or 0, do NOT dispatch random bookings worldwide!
+    if (dLat === null || dLng === null || isNaN(dLat) || isNaN(dLng) || dLat === 0 || dLng === 0) {
+      return NextResponse.json({
+        booking: null,
+        bookings: [],
+      });
+    }
 
     const { data, error } = await admin
       .from("bookings")
       .select("*")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(30);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -1011,14 +1019,19 @@ export async function GET(request: Request) {
       if (b.status !== "pending") return false;
       if (b.driver_id) return false;
       if (b.created_at && now - new Date(b.created_at).getTime() > 180 * 1000) return false;
-      if (dLat !== null && dLng !== null && !isNaN(dLat) && !isNaN(dLng) && dLat !== 0 && dLng !== 0) {
-        const pLat = b.pickup_lat || b.start_coords?.[0];
-        const pLng = b.pickup_lng || b.start_coords?.[1];
-        if (pLat && pLng) {
-          const distKm = calculateDistanceKm(dLat, dLng, pLat, pLng);
-          if (distKm > 5.0) return false;
-        }
+
+      // Extract pickup coordinates
+      const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+      const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+      if (!pLat || !pLng || isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) {
+        return false; // Cannot dispatch ride with unverified coordinates
       }
+
+      // Calculate distance from driver to passenger pickup
+      const distKm = calculateDistanceKm(dLat, dLng, pLat, pLng);
+      // Strictly enforce maximum 5.0 km radius
+      if (distKm > 5.0) return false;
+
       return true;
     });
 
@@ -1596,6 +1609,16 @@ export async function PATCH(request: Request) {
     // ACTION: CANCEL
     // -------------------------------------------------------------
     if (action === "cancel") {
+      // If booking is ALREADY cancelled, return immediately without re-penalizing
+      if (booking.status === "cancelled") {
+        return NextResponse.json({
+          success: true,
+          message: "বুকিং ইতিমধ্যে বাতিল করা হয়েছে",
+          cancellation_count: 0,
+          is_blocked: false,
+        });
+      }
+
       const isSystemTimeout = Boolean(body.isSystemTimeout) || body.cancelReason === "3_min_timeout_expired";
       const isCancelledByDriver = Boolean(driverId);
       const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
@@ -1616,12 +1639,14 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
 
-      // If customer cancelled manually: increment customer cancellation_count in customers table
-      // (System 3-minute timeouts are NEVER penalized!)
+      // Customer cancellation strikes:
+      // STRICT RULE: Cancelling while searching for driver (pending) is 100% FREE (0 strike)!
+      // Only penalize if a driver had ALREADY accepted and was assigned/heading to pickup.
       let newCancels = 0;
       let isBlocked = false;
+      const wasDriverAssigned = Boolean(booking.driver_id && (booking.status === "assigned" || booking.status === "accepted"));
 
-      if (!isCancelledByDriver && !isSystemTimeout && booking.customer_phone) {
+      if (!isCancelledByDriver && !isSystemTimeout && wasDriverAssigned && booking.customer_phone) {
         const cleanCustPhone = booking.customer_phone.replace(/[^0-9]/g, "");
         if (cleanCustPhone) {
           const { data: cust } = await admin

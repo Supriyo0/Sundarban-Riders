@@ -1535,10 +1535,14 @@ export async function processTotoMessage(
         };
       });
 
+      const statusLine = nearbyDrivers.length > 0
+        ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে জানানো হবে।`
+        : `⚠️ বর্তমানে আপনার ৫ কিমির মধ্যে কোনো সক্রিয় চালক অনলাইনে নেই। তবে আপনার বুকিংটি লাইভ রাখা হয়েছে, কাছাকাছি কোনো চালক ডিউটিতে এলে অনুরোধ পৌঁছে যাবে।`;
+
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\n🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
+        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\n${statusLine}`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],

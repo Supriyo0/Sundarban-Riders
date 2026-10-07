@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
-import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -15,10 +14,9 @@ import {
   THEME_IDS,
 } from "@/lib/themes";
 
-const inter = Inter({
+const inter = {
   variable: "--font-sans",
-  subsets: ["latin"],
-});
+};
 
 export const metadata: Metadata = {
   title: {

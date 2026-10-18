@@ -140,6 +140,14 @@ export function DriverActiveTripMap({
         const coords: [number, number] = [latitude, longitude];
         setActiveDriverCoords(coords);
 
+        // Cache last valid location in localStorage for low connection recovery
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_last_known_lat", latitude.toString());
+            localStorage.setItem("sr_last_known_lng", longitude.toString());
+          }
+        } catch {}
+
         // When heading to pickup, sync location to backend at most once every 4 seconds
         if (status === "heading_pickup" && bookingId) {
           const now = Date.now();
@@ -160,7 +168,7 @@ export function DriverActiveTripMap({
     };
 
     const startWatching = async () => {
-      // Immediate one-shot position fetch to lock driver's location instantaneously
+      // 1. Native platform (Capacitor) with resilient low-connection fallback
       if (Capacitor.isNativePlatform()) {
         Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 6000 })
           .then((pos) => {
@@ -168,38 +176,63 @@ export function DriverActiveTripMap({
               handleCoords(pos.coords.latitude, pos.coords.longitude);
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            // Low-connection fallback: standard accuracy cell/WiFi
+            Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 })
+              .then((pos) => {
+                if (!isCancelled && pos?.coords) {
+                  handleCoords(pos.coords.latitude, pos.coords.longitude);
+                }
+              })
+              .catch(() => {});
+          });
 
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 0 },
+            { enableHighAccuracy: true, maximumAge: 5000 },
             (position, err) => {
-              if (isCancelled || err || !position?.coords) return;
+              if (isCancelled || err || !position?.coords) {
+                // If high accuracy watch drops in low connection, try reading cached or non-high accuracy
+                return;
+              }
               handleCoords(position.coords.latitude, position.coords.longitude);
             }
           );
-          return; // Stop here on native platform to avoid dual-watcher conflict
+          return;
         } catch {}
       }
 
+      // 2. Web / Browser platform with 2-tier fallback
       if (typeof window !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (!isCancelled && pos?.coords) {
-              handleCoords(pos.coords.latitude, pos.coords.longitude);
-            }
-          },
-          () => {},
-          { enableHighAccuracy: true, timeout: 6000 }
-        );
+        const fetchOneShot = (highAcc: boolean) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (!isCancelled && pos?.coords) {
+                handleCoords(pos.coords.latitude, pos.coords.longitude);
+              }
+            },
+            () => {
+              if (highAcc) {
+                // Retry with standard accuracy (works under low signal/cell towers)
+                fetchOneShot(false);
+              }
+            },
+            { enableHighAccuracy: highAcc, timeout: highAcc ? 6000 : 12000, maximumAge: highAcc ? 0 : 30000 }
+          );
+        };
+
+        fetchOneShot(true);
 
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             if (!isCancelled || !pos?.coords) return;
             handleCoords(pos.coords.latitude, pos.coords.longitude);
           },
-          () => {},
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+          () => {
+            // In case of watch error, attempt non-high accuracy one-shot
+            fetchOneShot(false);
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
         );
       }
     };
@@ -450,7 +483,7 @@ export function DriverActiveTripMap({
             </div>
           </div>
 
-          {/* Quick Google Maps Button */}
+          {/* Quick Google Maps Button in HUD */}
           <a
             href={navUrl}
             target="_blank"
@@ -465,6 +498,28 @@ export function DriverActiveTripMap({
           >
             <Navigation className="w-3.5 h-3.5" />
             <span>নেভিগেশন</span>
+          </a>
+        </div>
+
+        {/* ── PROMINENT FLOATING GOOGLE MAPS NAVIGATION BANNER (ABOVE INBUILT MAP) ── */}
+        <div className="flex justify-center pointer-events-auto">
+          <a
+            href={navUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`w-full max-w-sm py-3 px-4 rounded-2xl font-black text-xs sm:text-sm text-white shadow-2xl flex items-center justify-center gap-2 border-2 border-white/90 active:scale-95 transition-all cursor-pointer ${
+              status === "heading_pickup"
+                ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 shadow-blue-500/40 ring-4 ring-blue-400/20"
+                : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-500/40 ring-4 ring-emerald-400/20"
+            }`}
+          >
+            <Navigation className="w-4 h-4 fill-white shrink-0 animate-pulse" />
+            <span className="truncate">
+              {status === "heading_pickup"
+                ? "🗺️ গুগল ম্যাপে পিকআপে যান (Go to Pickup) ↗"
+                : "🗺️ গুগল ম্যাপে গন্তব্যে যান (Go to Drop in Google Maps) ↗"}
+            </span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
           </a>
         </div>
       </div>
@@ -586,11 +641,12 @@ export function DriverActiveTripMap({
                     onClick={() => {
                       setHasArrived(true);
                       onArrivedAtPickup?.();
+                      onRequestOtpModal?.();
                     }}
-                    className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    পিকআপ লোকেশনে পৌঁছেছি (I Have Arrived)
+                    📍 পিকআপে পৌঁছেছি • যাত্রী ওটিপি নিশ্চিত করুন
                   </button>
                 ) : (
                   <button
@@ -599,7 +655,7 @@ export function DriverActiveTripMap({
                     className="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer animate-pulse"
                   >
                     <KeyRound className="w-4 h-4" />
-                    যাত্রা শুরু ওটিপি লিখুন (Enter Ride OTP)
+                    যাত্রা শুরু ওটিপি / পিন লিখুন (Enter Ride PIN)
                   </button>
                 )}
               </div>

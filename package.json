@@ -61,6 +61,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "h3-js": "^4.5.0",
     "jimp": "^1.6.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.30.0",

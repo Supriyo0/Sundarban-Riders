@@ -44,14 +44,10 @@ export const SERVICE_UNAVAILABLE_MESSAGE =
   "⚠️ সুন্দরবন রাইডার্স পরিষেবা বর্তমানে কেবলমাত্র দক্ষিণ ২৪ পরগনার দক্ষিণ অংশে (ডায়মন্ড হারবার থেকে লক্ষ্মীকান্তপুর, কুলপি, কাকদ্বীপ, নামখানা, সাগরদ্বীপ ও বকখালি অঞ্চলে) উপলব্ধ। এই স্থানে এখনো পরিষেবা চালু হয়নি।";
 
 /**
- * Returns true if the coordinates fall within the official South Section territory.
+ * Returns true for all valid geographic locations to remove address locking.
  */
 export function isLocationInServiceArea(lat: number, lng: number): boolean {
   if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return false;
-  return (
-    lat >= SUNDARBAN_SERVICE_BOUNDS.minLat &&
-    lat <= SUNDARBAN_SERVICE_BOUNDS.maxLat &&
-    lng >= SUNDARBAN_SERVICE_BOUNDS.minLng &&
-    lng <= SUNDARBAN_SERVICE_BOUNDS.maxLng
-  );
+  // Broad coordinate range covering Bengal and Eastern India
+  return lat >= 15.0 && lat <= 32.0 && lng >= 75.0 && lng <= 98.0;
 }

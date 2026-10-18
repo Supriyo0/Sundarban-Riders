@@ -6,6 +6,8 @@ import {
   SERVICE_UNAVAILABLE_MESSAGE,
 } from "@/lib/pricing/service-area";
 
+const geocodeCache = new Map<string, { timestamp: number; data: any }>();
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -82,180 +84,227 @@ export async function GET(req: Request) {
     }
 
     // -------------------------------------------------------------
+    // -------------------------------------------------------------
     // CASE 1: FORWARD SEARCH (Live Real Places Suggestions from Map)
     // -------------------------------------------------------------
     if (query !== null) {
       const cleanQ = (query || "").trim();
+      const biasLat = parseFloat(lat || "21.876");
+      const biasLng = parseFloat(lng || "88.192");
+      const cacheKey = `${cleanQ.toLowerCase()}_${biasLat.toFixed(2)}_${biasLng.toFixed(2)}`;
+
+      // Check In-Memory Cache (Instant 1ms response for repeated/similar queries)
+      const cached = geocodeCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
+        return NextResponse.json(cached.data);
+      }
+
+      if (!cleanQ || cleanQ.length < 2) {
+        return NextResponse.json({ suggestions: [] });
+      }
+
       const suggestions: Array<{
         name: string;
         full_address: string;
         lat: number;
         lng: number;
         source?: string;
+        isInServiceArea: boolean;
       }> = [];
 
-      // If empty query or single character, return empty suggestions list (no hardcoded defaults)
-      if (!cleanQ || cleanQ.length < 2) {
-        return NextResponse.json({
-          suggestions: [],
-        });
-      }
-
-      // 1. Query Google Maps Geocoding if API key is present
-      const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (googleKey) {
-        try {
-          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-            cleanQ + ", West Bengal, India"
-          )}&key=${googleKey}`;
-          const gRes = await fetch(url);
-          const gData = await gRes.json();
-          if (gData.status === "OK" && gData.results?.length) {
-            gData.results.slice(0, 6).forEach((r: any) => {
-              const placeName = r.formatted_address.split(",")[0];
-              if (!suggestions.some((s) => s.name.toLowerCase() === placeName.toLowerCase())) {
-                suggestions.push({
-                  name: placeName,
-                  full_address: r.formatted_address,
-                  lat: r.geometry.location.lat,
-                  lng: r.geometry.location.lng,
-                  source: "google_maps",
-                });
-              }
-            });
-          }
-        } catch (err) {
-          console.warn("[geocode] Google Maps error:", err);
-        }
-      }
-
-      // 2. Query OpenStreetMap Nominatim with English headers (Real, Live Google Maps-style addresses)
-      try {
-        const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          cleanQ
-        )}&format=json&addressdetails=1&countrycodes=in&limit=10`;
-        const nRes = await fetch(nUrl, {
-          headers: {
-            "User-Agent": "SundarbanRiders/1.0 (contact@sundarbanriders.com)",
-            "Accept-Language": "en",
-          },
-        });
-        if (nRes.ok) {
-          const nData = await nRes.json();
-          if (Array.isArray(nData)) {
-            nData.forEach((item: any) => {
-              const addr = item.address || {};
-              const mainName =
-                item.name ||
-                addr.amenity ||
-                addr.tourism ||
-                addr.railway ||
-                addr.shop ||
-                addr.road ||
-                addr.village ||
-                addr.town ||
-                addr.city ||
-                item.display_name.split(",")[0];
-
-              const addrParts = [
-                mainName,
-                addr.suburb || addr.neighbourhood || addr.village,
-                addr.city || addr.town || addr.county || addr.state_district,
-                addr.state,
-                addr.postcode,
-              ].filter(Boolean);
-
-              const fullAddress = addrParts.length > 2 ? addrParts.join(", ") : item.display_name;
-
-              const isDuplicate = suggestions.some(
-                (s) =>
-                  s.name.toLowerCase() === mainName.toLowerCase() ||
-                  (Math.abs(s.lat - parseFloat(item.lat)) < 0.001 &&
-                    Math.abs(s.lng - parseFloat(item.lon)) < 0.001)
-              );
-
-              if (!isDuplicate) {
-                suggestions.push({
-                  name: mainName,
-                  full_address: fullAddress,
-                  lat: parseFloat(item.lat),
-                  lng: parseFloat(item.lon),
-                  source: "osm_nominatim",
-                });
-              }
-            });
-          }
-        }
-      } catch (nErr) {
-        console.warn("[geocode] Nominatim search error:", nErr);
-      }
-
-      // 3. Query Photon Geocoder (Fast Live Map Data in English)
-      try {
-        const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          cleanQ
-        )}&lang=en&limit=10`;
-        const pRes = await fetch(photonUrl);
-        if (pRes.ok) {
-          const pData = await pRes.json();
-          (pData.features || []).forEach((f: any) => {
-            const props = f.properties || {};
-            const placeName = props.name || props.street || props.city || cleanQ;
-            const fullAddr = [
-              props.name,
-              props.street,
-              props.district || props.county,
-              props.city,
-              props.state,
-              props.postcode,
-              props.country || "India",
-            ]
-              .filter(Boolean)
-              .join(", ");
-
-            const isDuplicate = suggestions.some(
-              (s) =>
-                s.name.toLowerCase() === placeName.toLowerCase() ||
-                (Math.abs(s.lat - f.geometry.coordinates[1]) < 0.001 &&
-                  Math.abs(s.lng - f.geometry.coordinates[0]) < 0.001)
-            );
-
-            if (!isDuplicate) {
-              suggestions.push({
-                name: placeName,
-                full_address: fullAddr,
-                lat: f.geometry.coordinates[1],
-                lng: f.geometry.coordinates[0],
-                source: "photon",
-              });
-            }
+      // 1. Instant 0ms Match: Local Landmarks & Regional Hubs
+      const qLower = cleanQ.toLowerCase();
+      for (const lm of SUNDARBAN_LANDMARKS) {
+        const matchesName = lm.name.toLowerCase().includes(qLower);
+        const matchesAlias = lm.aliases?.some((a) => a.toLowerCase().includes(qLower) || qLower.includes(a.toLowerCase()));
+        if (matchesName || matchesAlias) {
+          suggestions.push({
+            name: lm.name,
+            full_address: `${lm.name}, দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`,
+            lat: lm.lat,
+            lng: lm.lng,
+            source: "local_landmark",
+            isInServiceArea: true,
           });
         }
-      } catch (pErr) {
-        console.warn("[geocode] Photon search error:", pErr);
       }
 
-      // Tag each suggestion with isInServiceArea
-      const taggedSuggestions = suggestions.map((s) => ({
-        ...s,
-        isInServiceArea: isLocationInServiceArea(s.lat, s.lng),
-      }));
+      // 2. Parallel Remote Providers (Photon + Google Maps + OSM with tight timeouts)
+      const tasks: Promise<void>[] = [];
 
-      // Sort: local service territory suggestions come first
-      taggedSuggestions.sort((a, b) => {
-        if (a.isInServiceArea && !b.isInServiceArea) return -1;
-        if (!a.isInServiceArea && b.isInServiceArea) return 1;
-        return 0;
+      // Provider A: Fast Photon Geocoder with Location Biasing (Uber/Rapido style local proximity)
+      tasks.push(
+        (async () => {
+          try {
+            const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
+              cleanQ
+            )}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=10`;
+            const pRes = await fetch(photonUrl, { signal: AbortSignal.timeout(1800) });
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              (pData.features || []).forEach((f: any) => {
+                const props = f.properties || {};
+                const placeName = props.name || props.street || props.city || cleanQ;
+                const fullAddr = [
+                  props.name,
+                  props.street,
+                  props.district || props.county,
+                  props.city,
+                  props.state,
+                  props.postcode,
+                  props.country || "India",
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+
+                const pLat = f.geometry?.coordinates?.[1];
+                const pLng = f.geometry?.coordinates?.[0];
+                if (!pLat || !pLng) return;
+
+                const isDup = suggestions.some(
+                  (s) =>
+                    s.name.toLowerCase() === placeName.toLowerCase() ||
+                    (Math.abs(s.lat - pLat) < 0.0015 && Math.abs(s.lng - pLng) < 0.0015)
+                );
+                if (!isDup) {
+                  suggestions.push({
+                    name: placeName,
+                    full_address: fullAddr,
+                    lat: pLat,
+                    lng: pLng,
+                    source: "photon",
+                    isInServiceArea: true,
+                  });
+                }
+              });
+            }
+          } catch {}
+        })()
+      );
+
+      // Provider B: Google Maps Geocoding if API key configured
+      const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (googleKey) {
+        tasks.push(
+          (async () => {
+            try {
+              const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+                cleanQ + ", West Bengal, India"
+              )}&key=${googleKey}`;
+              const gRes = await fetch(url, { signal: AbortSignal.timeout(2000) });
+              const gData = await gRes.json();
+              if (gData.status === "OK" && gData.results?.length) {
+                gData.results.slice(0, 6).forEach((r: any) => {
+                  const placeName = r.formatted_address.split(",")[0];
+                  if (!suggestions.some((s) => s.name.toLowerCase() === placeName.toLowerCase())) {
+                    suggestions.push({
+                      name: placeName,
+                      full_address: r.formatted_address,
+                      lat: r.geometry.location.lat,
+                      lng: r.geometry.location.lng,
+                      source: "google_maps",
+                      isInServiceArea: true,
+                    });
+                  }
+                });
+              }
+            } catch {}
+          })()
+        );
+      }
+
+      // Provider C: OpenStreetMap Nominatim with strict timeout (1500ms max)
+      tasks.push(
+        (async () => {
+          try {
+            const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+              cleanQ
+            )}&format=json&addressdetails=1&countrycodes=in&limit=8`;
+            const nRes = await fetch(nUrl, {
+              headers: {
+                "User-Agent": "SundarbanRiders/2.0 (contact@sundarbanriders.com)",
+                "Accept-Language": "en,bn",
+              },
+              signal: AbortSignal.timeout(1600),
+            });
+            if (nRes.ok) {
+              const nData = await nRes.json();
+              if (Array.isArray(nData)) {
+                nData.forEach((item: any) => {
+                  const addr = item.address || {};
+                  const mainName =
+                    item.name ||
+                    addr.amenity ||
+                    addr.tourism ||
+                    addr.railway ||
+                    addr.shop ||
+                    addr.road ||
+                    addr.village ||
+                    addr.town ||
+                    addr.city ||
+                    item.display_name.split(",")[0];
+
+                  const addrParts = [
+                    mainName,
+                    addr.suburb || addr.neighbourhood || addr.village,
+                    addr.city || addr.town || addr.county || addr.state_district,
+                    addr.state,
+                    addr.postcode,
+                  ].filter(Boolean);
+
+                  const fullAddress = addrParts.length > 2 ? addrParts.join(", ") : item.display_name;
+                  const itemLat = parseFloat(item.lat);
+                  const itemLng = parseFloat(item.lon);
+
+                  const isDup = suggestions.some(
+                    (s) =>
+                      s.name.toLowerCase() === mainName.toLowerCase() ||
+                      (Math.abs(s.lat - itemLat) < 0.0015 && Math.abs(s.lng - itemLng) < 0.0015)
+                  );
+                  if (!isDup) {
+                    suggestions.push({
+                      name: mainName,
+                      full_address: fullAddress,
+                      lat: itemLat,
+                      lng: itemLng,
+                      source: "osm_nominatim",
+                      isInServiceArea: true,
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+        })()
+      );
+
+      // Await all parallel sources
+      await Promise.allSettled(tasks);
+
+      // Sort by proximity to bias coordinate if available
+      suggestions.sort((a, b) => {
+        const distA = Math.hypot(a.lat - biasLat, a.lng - biasLng);
+        const distB = Math.hypot(b.lat - biasLat, b.lng - biasLng);
+        return distA - distB;
       });
 
-      return NextResponse.json({
-        name: taggedSuggestions[0]?.name || cleanQ,
-        full_address: taggedSuggestions[0]?.full_address || cleanQ,
-        lat: taggedSuggestions[0]?.lat || 0,
-        lng: taggedSuggestions[0]?.lng || 0,
-        isInServiceArea: taggedSuggestions[0] ? taggedSuggestions[0].isInServiceArea : false,
-        suggestions: taggedSuggestions.slice(0, 8),
-      });
+      const responsePayload = {
+        name: suggestions[0]?.name || cleanQ,
+        full_address: suggestions[0]?.full_address || cleanQ,
+        lat: suggestions[0]?.lat || 0,
+        lng: suggestions[0]?.lng || 0,
+        source: suggestions[0]?.source || "search",
+        suggestions: suggestions.slice(0, 12),
+      };
+
+      // Save to memory cache
+      geocodeCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
+      if (geocodeCache.size > 200) {
+        const oldestKey = geocodeCache.keys().next().value;
+        if (oldestKey) geocodeCache.delete(oldestKey);
+      }
+
+      return NextResponse.json(responsePayload);
     }
 
     // -------------------------------------------------------------

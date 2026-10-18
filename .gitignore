@@ -53,3 +53,5 @@ android/local.properties
 
 # Local release builds
 builds/
+
+*.log

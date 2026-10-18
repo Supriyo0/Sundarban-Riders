@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Sundarban Riders',
   webDir: 'public',
   server: {
-    url: 'https://sundarbanriders.vercel.app/app',
+    url: 'https://109.122.56.24.sslip.io/app',
     cleartext: true,
     androidScheme: 'https'
   },

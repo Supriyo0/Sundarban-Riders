@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2, Clock, Navigation, MapPin, ChevronDown, ChevronUp } from "lucide-react";
+import { Phone, MessageCircle, KeyRound, ShieldAlert, X, Star, RefreshCw, CheckCircle2, Clock, Navigation, MapPin, ChevronDown, ChevronUp, Share2, QrCode, IndianRupee, Bell, ExternalLink } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { LiveFareMeter } from "@/lib/mobile/live-fare-meter";
 import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
+import { showLocalRideAlertNotification } from "@/lib/mobile/push-notifications";
 
 async function getLeaflet() {
   const mod = await import("leaflet");
@@ -132,6 +133,44 @@ export function LiveRideTrackingMap({
   const toggleSheet = () => {
     if (hasMovedRef.current) return;
     setSheetExpanded((prev) => !prev);
+  };
+
+  const [payMethod, setPayMethod] = useState<"upi" | "cash">("upi");
+  const hasNotifiedArrivalRef = useRef(false);
+
+  // Trigger 2-minute arrival notification
+  useEffect(() => {
+    if (
+      etaMinutes !== null &&
+      etaMinutes <= 2 &&
+      !hasNotifiedArrivalRef.current &&
+      (rideStep === "arriving" || rideStep === "assigned")
+    ) {
+      hasNotifiedArrivalRef.current = true;
+      const dName = booking?.driver_name || booking?.driverName || "চালক";
+      showLocalRideAlertNotification(
+        "🛺 চালক পৌঁছাচ্ছেন (~২ মিনিট)!",
+        `${dName} আপনার পিকআপ লোকেশনে খুব শীঘ্রই পৌঁছাবেন। প্রস্তুত থাকুন।`,
+        booking?.id || booking?.booking_number
+      );
+    }
+  }, [etaMinutes, rideStep, booking?.driver_name, booking?.driverName, booking?.id, booking?.booking_number]);
+
+  const handleShareLiveTrip = () => {
+    const bId = booking?.id || booking?.booking_number || booking?.bookingNumber || "live";
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://109.122.56.24.sslip.io";
+    const trackUrl = `${origin}/track/${bId}`;
+    const dName = booking?.driver_name || booking?.driverName || "টোটো চালক";
+    const tNum = booking?.toto_number || booking?.totoNumber || "SR-TOTO";
+
+    const text = `🚨 *আমার সুন্দরবন রাইডার্স লাইভ ট্রিপ ট্র্যাকিং*\n\n` +
+      `🛺 চালক: *${dName}* (${tNum})\n` +
+      `📍 পিকআপ: ${pickupText}\n` +
+      `🏁 গন্তব্য: ${dropText}\n\n` +
+      `🔗 লাইভ ম্যাপে ট্র্যাক করুন:\n${trackUrl}\n\n` +
+      `_সুন্দরবন রাইডার্স দ্বারা সুরক্ষিত_`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };
 
 
@@ -388,31 +427,129 @@ export function LiveRideTrackingMap({
   const displayFare = rideStep === "in_trip" && liveMeterFare > 0 ? Math.round(liveMeterFare) : tripFare;
   const displayKm = rideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
 
-  // If ride is arrived/completed: Show completion modal
+  // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement
   if (rideStep === "arrived") {
+    const driverUpiQr =
+      (booking as any)?.driver_upi_qr ||
+      (typeof window !== "undefined" ? localStorage.getItem("sr_driver_upi_qr") : null);
+    const driverUpiId =
+      (booking as any)?.driver_upi_id ||
+      (typeof window !== "undefined" ? localStorage.getItem("sr_driver_upi_id") : null) ||
+      "8348122122@ybl";
+
+    const upiDeepLink = `upi://pay?pa=${encodeURIComponent(driverUpiId)}&pn=${encodeURIComponent(
+      driverName
+    )}&am=${displayFare}&cu=INR`;
+
     return (
-      <div className="relative w-full h-[calc(100dvh-58px)] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md z-50">
-        <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 text-center space-y-4 animate-in zoom-in-95 duration-300">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl mx-auto shadow-inner">
+      <div className="relative w-full h-[calc(100dvh-58px)] flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-md z-50 overflow-y-auto">
+        <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 text-center space-y-3.5 animate-in zoom-in-95 duration-300 my-auto">
+          <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-inner">
             🏁
           </div>
           <div>
             <h3 className="text-xl font-black text-slate-900">গন্তব্যে পৌঁছে গেছেন!</h3>
-            <p className="text-xs text-slate-500 mt-1 font-semibold">আপনার সুন্দরবন স্মার্ট টোটো যাত্রা সফলভাবে সমাপ্ত হয়েছে।</p>
+            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+              আপনার সুন্দরবন স্মার্ট টোটো যাত্রা সফলভাবে সমাপ্ত হয়েছে।
+            </p>
           </div>
 
-          <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200 flex items-center justify-between">
+          {/* Fare Summary Card */}
+          <div className="bg-slate-900 text-white rounded-2xl p-3.5 border border-slate-800 flex items-center justify-between shadow-md">
             <div className="text-left">
-              <span className="text-[10px] font-bold text-emerald-800 uppercase block">চূড়ান্ত ভাড়া</span>
-              <span className="text-2xl font-black text-emerald-900 font-mono">₹{displayFare}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                চূড়ান্ত প্রদেয় ভাড়া
+              </span>
+              <span className="text-2xl font-black text-emerald-400 font-mono">₹{displayFare}.০০</span>
             </div>
-            <span className="text-xs font-bold text-emerald-800 bg-white px-2.5 py-1 rounded-xl border border-emerald-200 shadow-2xs">
-              নগদে প্রদান করুন
-            </span>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 block font-medium">ভ্রমণ দূরত্ব</span>
+              <span className="text-xs font-bold text-slate-200">{displayKm} কিমি</span>
+            </div>
+          </div>
+
+          {/* Payment Method Switcher (UPI QR vs Cash) */}
+          <div className="space-y-2.5 text-left">
+            <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setPayMethod("upi")}
+                className={`py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                  payMethod === "upi"
+                    ? "bg-white text-indigo-700 shadow-xs border border-indigo-200"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                <span>UPI QR পে</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayMethod("cash")}
+                className={`py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+                  payMethod === "cash"
+                    ? "bg-white text-emerald-700 shadow-xs border border-emerald-200"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <IndianRupee className="w-3.5 h-3.5 text-emerald-600" />
+                <span>নগদ ক্যাশ</span>
+              </button>
+            </div>
+
+            {/* UPI Option Container */}
+            {payMethod === "upi" ? (
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 border-2 border-indigo-200 text-center space-y-2.5 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between text-left">
+                  <div>
+                    <span className="text-[11px] font-extrabold text-indigo-950 block">চালকের UPI QR কোড</span>
+                    <span className="text-[9.5px] text-indigo-700">PhonePe / GPay / Paytm দিয়ে স্ক্যান করুন</span>
+                  </div>
+                  <span className="text-[9.5px] font-mono font-bold text-indigo-800 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                    {driverUpiId}
+                  </span>
+                </div>
+
+                {driverUpiQr ? (
+                  <div className="bg-white p-2 rounded-xl border border-indigo-200 shadow-xs inline-block mx-auto">
+                    <img
+                      src={driverUpiQr}
+                      alt="Driver QR"
+                      className="w-36 h-36 object-contain mx-auto rounded-lg"
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-white p-3 rounded-xl border border-indigo-200 shadow-xs text-center space-y-1">
+                    <QrCode className="w-16 h-16 text-indigo-600 mx-auto" />
+                    <p className="text-[11px] font-bold text-slate-800">UPI ID: {driverUpiId}</p>
+                  </div>
+                )}
+
+                {/* 1-Tap UPI Launch Button */}
+                <a
+                  href={upiDeepLink}
+                  className="w-full py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>GPay / PhonePe / Paytm এ পে করুন (₹{displayFare})</span>
+                </a>
+              </div>
+            ) : (
+              /* Cash Option Container */
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 border-2 border-emerald-200 text-center space-y-2 animate-in fade-in duration-200">
+                <div className="text-2xl">💵</div>
+                <h4 className="text-xs font-black text-emerald-950">
+                  চালকের হাতে নগদ ₹{displayFare}.০০ প্রদান করুন
+                </h4>
+                <p className="text-[10.5px] text-emerald-800 font-medium">
+                  টাকা দেওয়ার পর চালক তার স্ক্রিনে পেমেন্ট কনফার্ম করবেন।
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Star Rating */}
-          <div className="py-2 border-y border-slate-100 space-y-2">
+          <div className="py-2 border-y border-slate-100 space-y-1.5">
             <span className="text-xs font-bold text-slate-700">চালক {driverName}-কে রেট দিন:</span>
             <div className="flex justify-center gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
@@ -423,7 +560,7 @@ export function LiveRideTrackingMap({
                   className="p-1 text-2xl transition-transform active:scale-125"
                 >
                   <Star
-                    className={`w-7 h-7 ${
+                    className={`w-6 h-6 ${
                       star <= rating
                         ? "fill-amber-400 text-amber-400"
                         : "text-slate-300"
@@ -443,7 +580,7 @@ export function LiveRideTrackingMap({
             className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{rated ? "মূল্যায়ন সম্পন্ন" : "মূল্যায়ন জমা দিয়ে সমাপ্ত করুন"}</span>
+            <span>{rated ? "মূল্যায়ন ও পেমেন্ট সম্পন্ন" : "পেমেন্ট ও মূল্যায়ন সম্পন্ন করুন"}</span>
           </button>
         </div>
       </div>
@@ -657,6 +794,36 @@ export function LiveRideTrackingMap({
               )}
 
               <div className="p-4 space-y-3">
+                {/* ── LIVE RIDE PROGRESS BAR & STATUS ── */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50 via-slate-50 to-teal-50 border border-emerald-200/80 shadow-2xs space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-emerald-800 flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                      </span>
+                      <span>
+                        {rideStep === "in_trip"
+                          ? "🛺 গন্তব্যের পথে যাত্রা চলছে..."
+                          : etaMinutes !== null && etaMinutes <= 2
+                          ? "⚡ চালক আর ~২ মিনিটে পৌঁছাবেন!"
+                          : "📍 চালক পিকআপের পথে আসছেন"}
+                      </span>
+                    </span>
+                    <span className="font-mono text-emerald-700 font-black">
+                      {rideStep === "in_trip" ? "৮৫%" : etaMinutes !== null && etaMinutes <= 2 ? "৬৫%" : "৩৫%"}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 transition-all duration-700 rounded-full"
+                      style={{
+                        width: rideStep === "in_trip" ? "85%" : etaMinutes !== null && etaMinutes <= 2 ? "65%" : "35%",
+                      }}
+                    />
+                  </div>
+                </div>
+
                 {/* Driver header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -729,6 +896,16 @@ export function LiveRideTrackingMap({
                     <p className="text-xs font-semibold text-slate-800 line-clamp-1">{dropText}</p>
                   </div>
                 </div>
+
+                {/* 1-Tap WhatsApp Share Live Tracking Button */}
+                <button
+                  type="button"
+                  onClick={handleShareLiveTrip}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 active:scale-98 transition-all cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4 text-white" />
+                  <span>পরিবারের সাথে লাইভ ট্রিপ শেয়ার করুন (WhatsApp)</span>
+                </button>
 
                 {/* Cancel (only before trip starts) */}
                 {rideStep !== "in_trip" && onCancelRide && (

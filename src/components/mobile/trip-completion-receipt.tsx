@@ -16,7 +16,10 @@ import {
   ThumbsUp,
   ShieldCheck,
   RefreshCw,
-  X
+  X,
+  QrCode,
+  IndianRupee,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +72,13 @@ export function TripCompletionReceipt({
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [ticketResult, setTicketResult] = useState<string | null>(null);
+
+  // Driver / Passenger Settlement States
+  const [driverPaymentType, setDriverPaymentType] = useState<"cash" | "upi" | null>(null);
+  const [showPassengerUpiQr, setShowPassengerUpiQr] = useState(false);
+  const driverUpiQr = typeof window !== "undefined" ? localStorage.getItem("sr_driver_upi_qr") : null;
+  const driverUpiId = (typeof window !== "undefined" ? localStorage.getItem("sr_driver_upi_id") : null) || "8348122122@ybl";
+  const upiDeepLink = `upi://pay?pa=${encodeURIComponent(driverUpiId)}&pn=${encodeURIComponent(driverName)}&am=${fare}&cu=INR`;
 
   const compliments = [
     "🛺 মসৃণ ড্রাইভ",
@@ -326,14 +336,52 @@ export function TripCompletionReceipt({
             </Button>
 
             {role === "rider" ? (
-              <div className="bg-emerald-50 rounded-3xl p-5 border border-emerald-200 text-center space-y-2.5 shadow-xs">
+              <div className="bg-gradient-to-br from-emerald-50 via-white to-teal-50 rounded-3xl p-5 border-2 border-emerald-300 text-center space-y-3.5 shadow-sm">
                 <span className="text-3xl">💰</span>
-                <h4 className="font-extrabold text-base text-emerald-950">
-                  নগদ ভাড়া সংগ্রহ: ₹{fare}.০০
-                </h4>
-                <p className="text-xs text-emerald-800 font-medium">
-                  যাত্রী {customerName}-এর কাছ থেকে সফলভাবে নগদ ভাড়া সংগ্রহ নিশ্চিত করুন।
-                </p>
+                <div>
+                  <h4 className="font-extrabold text-base text-emerald-950">
+                    ভাড়া সংগ্রহ নিশ্চিতকরণ: ₹{fare}.০০
+                  </h4>
+                  <p className="text-xs text-emerald-800 font-medium mt-0.5">
+                    যাত্রী {customerName}-এর কাছ থেকে কীভাবে ভাড়া পেয়েছেন সিলেক্ট করুন:
+                  </p>
+                </div>
+
+                {driverPaymentType ? (
+                  <div className="p-3 rounded-2xl bg-emerald-100/90 border border-emerald-300 text-emerald-900 font-bold text-xs flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <span>
+                      {driverPaymentType === "cash" ? "নগদে" : "UPI QR-এ"} ₹{fare}.০০ ভাড়া সংগ্রহ নিশ্চিত হয়েছে ✓
+                    </span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriverPaymentType("cash");
+                        toast.success(`নগদ ভাড়া ₹${fare}.০০ সংগ্রহ কনফার্ম করা হয়েছে! 💵`);
+                      }}
+                      className="py-3 px-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all"
+                    >
+                      <IndianRupee className="w-3.5 h-3.5" />
+                      <span>নগদে পেয়েছি</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriverPaymentType("upi");
+                        toast.success(`UPI মাধ্যমে ₹${fare}.০০ ভাড়া সংগ্রহ কনফার্ম করা হয়েছে! 📲`);
+                      }}
+                      className="py-3 px-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>UPI QR-এ পেয়েছি</span>
+                    </button>
+                  </div>
+                )}
+
                 {customerPhone && (
                   <div className="pt-1">
                     <a
@@ -346,7 +394,54 @@ export function TripCompletionReceipt({
                 )}
               </div>
             ) : (
-              /* Driver Rating & Review Section */
+              /* Passenger UPI QR Settlement Card */
+              <div className="bg-gradient-to-br from-indigo-50 via-white to-emerald-50 rounded-3xl p-4 border border-indigo-200/90 shadow-2xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm shadow-xs">
+                      <QrCode className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-indigo-950">চালকের UPI QR পেমেন্ট</h4>
+                      <p className="text-[10px] text-indigo-700">PhonePe / GPay দিয়ে সরাসরি পে করুন</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassengerUpiQr((prev) => !prev)}
+                    className="text-xs font-bold text-indigo-700 bg-white border border-indigo-200 px-2.5 py-1 rounded-xl shadow-2xs hover:bg-indigo-50 transition-colors"
+                  >
+                    {showPassengerUpiQr ? "QR লুকান" : "QR দেখুন"}
+                  </button>
+                </div>
+
+                {showPassengerUpiQr && (
+                  <div className="pt-2 border-t border-indigo-100 text-center space-y-2 animate-in fade-in duration-200">
+                    {driverUpiQr ? (
+                      <div className="bg-white p-2 rounded-xl border border-indigo-200 shadow-xs inline-block mx-auto">
+                        <img
+                          src={driverUpiQr}
+                          alt="Driver UPI QR"
+                          className="w-32 h-32 object-contain mx-auto rounded-lg"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xs font-bold text-slate-700 font-mono">UPI ID: {driverUpiId}</p>
+                    )}
+                    <a
+                      href={upiDeepLink}
+                      className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs active:scale-98 transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>PhonePe / GPay এ খুলুন (₹{fare})</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Driver Rating & Review Section (Only for passenger) */}
+            {role !== "rider" && (
               <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-3">
                 <div className="text-center">
                   <h4 className="font-bold text-sm text-slate-900">

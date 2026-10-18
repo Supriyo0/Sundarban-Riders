@@ -16,6 +16,9 @@ import {
   Save,
   HelpCircle,
   ChevronRight,
+  QrCode,
+  Upload,
+  IndianRupee,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +67,54 @@ export function MobileProfileModal({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showDisclaimerViewer, setShowDisclaimerViewer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Driver UPI QR & UPI ID state
+  const qrInputRef = useRef<HTMLInputElement>(null);
+  const [driverUpiQr, setDriverUpiQr] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sr_driver_upi_qr") || "";
+    }
+    return "";
+  });
+  const [driverUpiId, setDriverUpiId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sr_driver_upi_id") || "";
+    }
+    return "";
+  });
+  const [isSavingUpi, setIsSavingUpi] = useState(false);
+
+  const handleQrSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("অনুগ্রহ করে একটি ছবি ফাইল নির্বাচন করুন");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setDriverUpiQr(base64);
+      try {
+        localStorage.setItem("sr_driver_upi_qr", base64);
+        toast.success("UPI QR কোড সফলভাবে আপলোড হয়েছে! 📲");
+      } catch {}
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveUpiId = () => {
+    setIsSavingUpi(true);
+    try {
+      localStorage.setItem("sr_driver_upi_id", driverUpiId.trim());
+      if (driverUpiQr) {
+        localStorage.setItem("sr_driver_upi_qr", driverUpiQr);
+      }
+      toast.success("UPI পেমেন্ট সেটিংস সেভ হয়েছে! ✓");
+    } finally {
+      setIsSavingUpi(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -320,6 +371,100 @@ export function MobileProfileModal({
                   <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
                     সক্রিয় রুট
                   </span>
+                </div>
+              </div>
+
+              {/* Driver Direct UPI QR & Payment Settings */}
+              <div className="mt-3 p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/80 border-2 border-indigo-200/80 shadow-2xs space-y-3">
+                <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs shadow-xs">
+                      <QrCode className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-indigo-950">UPI QR ও পেমেন্ট সেটিংস</h4>
+                      <p className="text-[10px] text-indigo-700">রাইড শেষে যাত্রীর স্ক্রিনে আপনার QR প্রদর্শিত হবে</p>
+                    </div>
+                  </div>
+                  <span className="text-[9.5px] font-black text-indigo-800 bg-indigo-100/90 px-2 py-0.5 rounded-full">
+                    {driverUpiQr ? "QR সক্রিয় ✓" : "QR ফাঁকা"}
+                  </span>
+                </div>
+
+                {/* QR Code Upload / Preview */}
+                <input
+                  type="file"
+                  ref={qrInputRef}
+                  accept="image/*"
+                  onChange={handleQrSelect}
+                  className="hidden"
+                />
+
+                <div className="flex items-center gap-3">
+                  {driverUpiQr ? (
+                    <div className="relative group shrink-0">
+                      <img
+                        src={driverUpiQr}
+                        alt="Driver UPI QR"
+                        className="w-16 h-16 rounded-xl object-contain bg-white border-2 border-indigo-300 p-1 shadow-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => qrInputRef.current?.click()}
+                        className="absolute inset-0 bg-black/50 text-white rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[9px] font-bold"
+                      >
+                        পরিবর্তন
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => qrInputRef.current?.click()}
+                      className="w-16 h-16 rounded-xl border-2 border-dashed border-indigo-300 bg-white hover:bg-indigo-50/60 cursor-pointer flex flex-col items-center justify-center text-indigo-600 shrink-0 transition-colors"
+                      title="QR কোড আপলোড করুন"
+                    >
+                      <Upload className="w-5 h-5 mb-0.5" />
+                      <span className="text-[8px] font-black uppercase">আপলোড</span>
+                    </div>
+                  )}
+
+                  <div className="flex-1 space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={() => qrInputRef.current?.click()}
+                      className="w-full py-1.5 px-2.5 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs active:scale-98 transition-all"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{driverUpiQr ? "QR পরিবর্তন করুন" : "PhonePe/GPay QR আপলোড"}</span>
+                    </button>
+                    <p className="text-[10px] text-slate-500">
+                      আপনার PhonePe, GPay বা Paytm QR কোডের স্ক্রিনশট সিলেক্ট করুন
+                    </p>
+                  </div>
+                </div>
+
+                {/* Optional UPI ID text field */}
+                <div className="space-y-1 pt-1 border-t border-indigo-100">
+                  <label className="text-[10.5px] font-bold text-slate-700 flex items-center gap-1">
+                    <IndianRupee className="w-3 h-3 text-emerald-600" />
+                    <span>UPI ID (ঐচ্ছিক / যেমন: 8348122122@ybl)</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="text"
+                      value={driverUpiId}
+                      onChange={(e) => setDriverUpiId(e.target.value)}
+                      placeholder="আপনার_মোবাইল@okaxis"
+                      className="h-8 text-xs font-mono rounded-xl bg-white border-indigo-200"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleSaveUpiId}
+                      disabled={isSavingUpi}
+                      className="h-8 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0"
+                    >
+                      সেভ
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -33,6 +33,40 @@ import { toast } from "sonner";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
+import { showLocalRideAlertNotification } from "@/lib/mobile/push-notifications";
+
+function playRideChime() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const now = ctx.currentTime;
+
+    // First tone (D5)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(587.33, now);
+    gain1.gain.setValueAtTime(0.35, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.35);
+
+    // Second tone (A5)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "triangle";
+    osc2.frequency.setValueAtTime(880.0, now + 0.18);
+    gain2.gain.setValueAtTime(0.45, now + 0.18);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.18);
+    osc2.stop(now + 0.65);
+  } catch {}
+}
 
 function cleanLocation(text?: string | null): string {
   if (!text) return "নির্দিষ্ট করা হয়নি";
@@ -146,6 +180,7 @@ export function DriverRadarPanel({
   driverCoordsRef.current = driverCoords;
   const lastBackendSyncTimeRef = useRef<number>(0);
   const lastBackendSyncedCoordsRef = useRef<[number, number]>([0, 0]);
+  const knownPendingRideIdsRef = useRef<Set<string>>(new Set());
 
   // Robust Toto Marker creation / update helper on map (smooth, zero camera shake)
   const ensureDriverMarker = useCallback(async (coords: [number, number], pan = false) => {
@@ -608,6 +643,30 @@ export function DriverRadarPanel({
           }
           return true;
         });
+        // Detect new nearby rides that just appeared
+        const newlyArrivedRides = validPending.filter(
+          (b: any) => !knownPendingRideIdsRef.current.has(b.id)
+        );
+
+        if (newlyArrivedRides.length > 0) {
+          playRideChime();
+          if (typeof navigator !== "undefined" && navigator.vibrate) {
+            try {
+              navigator.vibrate([400, 150, 400, 150, 600]);
+            } catch {}
+          }
+          const first = newlyArrivedRides[0];
+          const pText = cleanLocation(first.pickup_location) || "পিকআপ";
+          const dText = cleanLocation(first.drop_location) || "গন্তব্য";
+          const fare = first.estimated_fare || first.fare || 40;
+          showLocalRideAlertNotification(
+            "🔔 নতুন রাইড অনুরোধ এসেছে!",
+            `📍 ${pText} থেকে ${dText} (ভাড়া: ₹${fare})`,
+            first.id
+          );
+        }
+
+        validPending.forEach((b: any) => knownPendingRideIdsRef.current.add(b.id));
         setPendingBookings(validPending);
       } catch (err) {
         console.warn("Radar fetch error:", err);

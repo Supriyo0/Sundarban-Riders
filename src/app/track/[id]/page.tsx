@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   Navigation,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Share2
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import "leaflet/dist/leaflet.css";
@@ -56,6 +57,7 @@ export default function TrackRidePage() {
   const [loading, setLoading] = useState(true);
   const [driverPos, setDriverPos] = useState<[number, number] | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
+  const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -113,6 +115,28 @@ export default function TrackRidePage() {
     const interval = setInterval(loadBooking, 3000);
     return () => clearInterval(interval);
   }, [loadBooking]);
+
+  // Fetch real road route geometry
+  useEffect(() => {
+    if (!booking) return;
+    const pLat = booking.pickup_lat ? Number(booking.pickup_lat) : 21.876;
+    const pLng = booking.pickup_lng ? Number(booking.pickup_lng) : 88.192;
+    const dLat = booking.drop_lat ? Number(booking.drop_lat) : pLat + 0.012;
+    const dLng = booking.drop_lng ? Number(booking.drop_lng) : pLng + 0.012;
+
+    fetch(`/api/route?fromLat=${pLat}&fromLng=${pLng}&toLat=${dLat}&toLng=${dLng}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+          setRouteCoords(data.coordinates);
+        } else {
+          setRouteCoords([[pLat, pLng], [dLat, dLng]]);
+        }
+      })
+      .catch(() => {
+        setRouteCoords([[pLat, pLng], [dLat, dLng]]);
+      });
+  }, [booking?.pickup_lat, booking?.pickup_lng, booking?.drop_lat, booking?.drop_lng]);
 
   // Real interactive Leaflet Map Engine
   useEffect(() => {
@@ -190,7 +214,7 @@ export default function TrackRidePage() {
         driverMarkerRef.current = driverMarker;
 
         // Street Polyline
-        const pts = [pickupCoord, dropCoord];
+        const pts = routeCoords && routeCoords.length > 1 ? routeCoords : [pickupCoord, dropCoord];
         const casing = L.polyline(pts, {
           color: "#064e3b",
           weight: 7,
@@ -220,6 +244,10 @@ export default function TrackRidePage() {
         if (driverMarkerRef.current && activeDriverCoord) {
           driverMarkerRef.current.setLatLng(activeDriverCoord);
           mapInstanceRef.current.panTo(activeDriverCoord, { animate: true, duration: 1.0 });
+        }
+        if (routeLineRef.current && routeCoords && routeCoords.length > 1) {
+          routeLineRef.current.setLatLngs(routeCoords);
+          if (routeCasingRef.current) routeCasingRef.current.setLatLngs(routeCoords);
         }
       }
     }
@@ -336,6 +364,72 @@ export default function TrackRidePage() {
                     </a>
                   )}
                 </div>
+
+                {/* Real-time Progress Bar */}
+                <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-bold">
+                    <span className="text-emerald-400 flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span>
+                        {booking.status === "completed"
+                          ? "✅ গন্তব্যে পৌঁছেছেন"
+                          : booking.status === "in_progress"
+                          ? "🛺 গন্তব্যের পথে যাত্রা চলছে"
+                          : booking.status === "assigned"
+                          ? etaMinutes
+                            ? `⚡ চালক পৌঁছাচ্ছেন (~${etaMinutes} মিনিট)`
+                            : "📍 চালক পিকআপের পথে"
+                          : "🔍 চালক অনুসন্ধান চলছে"}
+                      </span>
+                    </span>
+                    <span className="font-mono text-emerald-400">
+                      {booking.status === "completed"
+                        ? "১০০%"
+                        : booking.status === "in_progress"
+                        ? "৮৫%"
+                        : booking.status === "assigned"
+                        ? "৫০%"
+                        : "১৫%"}
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-700 rounded-full"
+                      style={{
+                        width:
+                          booking.status === "completed"
+                            ? "100%"
+                            : booking.status === "in_progress"
+                            ? "85%"
+                            : booking.status === "assigned"
+                            ? "50%"
+                            : "15%",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 1-Tap WhatsApp Share Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = typeof window !== "undefined" ? window.location.href : "";
+                    const text = `🚨 *সুন্দরবন রাইডার্স লাইভ ট্রিপ ট্র্যাকিং*\n\n` +
+                      `🛺 চালক: ${booking.driver_name || "টোটো চালক"} (${booking.toto_number || "SR-TOTO"})\n` +
+                      `📍 পিকআপ: ${booking.pickup_location || "পিকআপ"}\n` +
+                      `🏁 গন্তব্য: ${booking.drop_location || "গন্তব্য"}\n\n` +
+                      `🔗 লাইভ ম্যাপে রিয়েলটাইম লোকেশন দেখুন:\n${url}\n\n` +
+                      `_সুন্দরবন রাইডার্স দ্বারা সুরক্ষিত_`;
+                    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+                  }}
+                  className="w-full py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 active:scale-98 transition-all"
+                >
+                  <Share2 className="w-4 h-4 text-white" />
+                  <span>অন্যদের সাথে লাইভ লোকেশন শেয়ার করুন (WhatsApp)</span>
+                </button>
 
                 {/* Ride Status Banner */}
                 <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">

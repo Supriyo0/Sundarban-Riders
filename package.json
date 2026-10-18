@@ -64,7 +64,7 @@
     "h3-js": "^4.5.0",
     "jimp": "^1.6.1",
     "leaflet": "^1.9.4",
-    "lucide-react": "^1.30.0",
+    "lucide-react": "^1.57.0",
     "next": "16.2.12",
     "next-intl": "^4.13.5",
     "nodemailer": "^10.0.10",

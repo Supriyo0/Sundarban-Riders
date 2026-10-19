@@ -159,19 +159,21 @@ function LoginPageInner() {
             </p>
           </div>
 
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            {t('noAccount')}{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              {t('createAccount')}
-            </Link>
-          </p>
+          {inviteToken ? (
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              টিম ইনভাইটেশন গ্রহণ করতে{" "}
+              <Link
+                href={`/signup?invite=${encodeURIComponent(inviteToken)}`}
+                className="text-primary font-bold hover:underline"
+              >
+                এখানে অ্যাকাউন্ট তৈরি করুন
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-xs text-muted-foreground/80">
+              🔒 অ্যাডমিন অ্যাক্সেস শুধুমাত্র অনুমোদিত কর্মীদের জন্য সংরক্ষিত
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

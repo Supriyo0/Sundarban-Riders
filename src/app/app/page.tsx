@@ -1373,17 +1373,16 @@ function MobileAppPageContent() {
         const data = await res.json();
         const d = data.driver || (data.drivers && data.drivers[0]);
         if (d && typeof d.is_active === "boolean") {
-          // Driver remains online during duty, including active trip when is_available is false
-          const serverIsOnline = Boolean(d.is_active && (d.is_available || activeRide));
-          setIsOnline(serverIsOnline);
+          // Driver online toggle is determined by is_active; driver is never falsely forced offline
+          setIsOnline(Boolean(d.is_active));
         }
       } catch {}
     };
 
     syncDriverStatus();
-    const interval = setInterval(syncDriverStatus, 4000);
+    const interval = setInterval(syncDriverStatus, 3500);
     return () => clearInterval(interval);
-  }, [phase, session?.driverId, session?.phone, activeRide]);
+  }, [phase, session?.driverId, session?.phone]);
 
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
@@ -2964,23 +2963,24 @@ function MobileAppPageContent() {
                     }),
                   });
                   const data = await res.json();
-                  if (!res.ok && data.error === "booking_already_taken") {
+                  if (!res.ok) {
                     setIncomingRide(null);
-                    toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                    toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
                     return;
                   }
 
                   const startMs = Date.now();
+                  const currentBooking = data?.booking || b;
                   setActiveRide({
-                    id: b.id,
-                    bookingNumber: b.booking_number,
-                    fare: b.estimated_fare || b.fare || 50,
-                    passengerName: b.customer_name || b.passengerName || "যাত্রী",
-                    passengerPhone: b.customer_phone || b.passengerPhone || "",
-                    pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
-                    drop: b.drop_location || b.drop || "গন্তব্য",
-                    pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
-                    dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
+                    id: currentBooking.id || b.id,
+                    bookingNumber: currentBooking.booking_number || b.booking_number,
+                    fare: currentBooking.estimated_fare || b.estimated_fare || b.fare || 50,
+                    passengerName: currentBooking.customer_name || b.customer_name || b.passengerName || "যাত্রী",
+                    passengerPhone: currentBooking.customer_phone || b.customer_phone || b.passengerPhone || "",
+                    pickup: currentBooking.pickup_location || b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
+                    drop: currentBooking.drop_location || b.drop_location || b.drop || "গন্তব্য",
+                    pickupCoords: currentBooking.pickup_lat && currentBooking.pickup_lng ? [Number(currentBooking.pickup_lat), Number(currentBooking.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
+                    dropCoords: currentBooking.drop_lat && currentBooking.drop_lng ? [Number(currentBooking.drop_lat), Number(currentBooking.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
                     status: "heading_pickup",
                     tripStartTime: startMs,
                     trip_start_time: startMs,
@@ -2988,24 +2988,9 @@ function MobileAppPageContent() {
                   setIncomingRide(null);
                   playSuccessSound();
                   toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
-                } catch {
-                  const startMs = Date.now();
-                  setActiveRide({
-                    id: b.id,
-                    bookingNumber: b.booking_number,
-                    fare: b.estimated_fare || b.fare || 50,
-                    passengerName: b.customer_name || b.passengerName || "যাত্রী",
-                    passengerPhone: b.customer_phone || b.passengerPhone || "",
-                    pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
-                    drop: b.drop_location || b.drop || "গন্তব্য",
-                    pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
-                    dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
-                    status: "heading_pickup",
-                    tripStartTime: startMs,
-                    trip_start_time: startMs,
-                  });
-                  setIncomingRide(null);
-                  toast.success("রাইড গ্রহণ করা হয়েছে!");
+                } catch (err) {
+                  console.error("Failed to accept ride:", err);
+                  toast.error("ইন্টারনেট সংযোগে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
                 }
               }}
             />
@@ -3225,9 +3210,9 @@ function MobileAppPageContent() {
                         }),
                       });
                       const data = await res.json();
-                      if (!res.ok && data.error === "booking_already_taken") {
+                      if (!res.ok) {
                         setIncomingRide(null);
-                        toast.error("দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                        toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
                         return;
                       }
 
@@ -3250,16 +3235,9 @@ function MobileAppPageContent() {
                       setIncomingRide(null);
                       playSuccessSound();
                       toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর অবস্থানে যান।");
-                    } catch {
-                      const startMs = Date.now();
-                      setActiveRide({
-                        ...incomingRide,
-                        status: "heading_pickup",
-                        tripStartTime: startMs,
-                        trip_start_time: startMs,
-                      });
-                      setIncomingRide(null);
-                      toast.success("রাইড গ্রহণ করা হয়েছে!");
+                    } catch (err) {
+                      console.error("Failed to accept ride via swipe:", err);
+                      toast.error("ইন্টারনেট সংযোগে সমস্যা হয়েছে। আবার চেষ্টা করুন।");
                     }
                   }}
                 />
@@ -3505,12 +3483,28 @@ function MobileAppPageContent() {
         estimatedDistanceKm={driverCompletedRide.estimatedDistanceKm}
         estimatedFare={driverCompletedRide.estimatedFare}
         durationMinutes={driverCompletedRide.durationMinutes || 1}
+        completedAt={driverCompletedRide.completedAt || new Date().toISOString()}
         onBookAnother={() => {
           setDriverCompletedRide(null);
           if (typeof window !== "undefined") {
             localStorage.removeItem("sr_driver_completed_ride");
           }
           setPhase("rider_home");
+          setIsOnline(true);
+          const dId = session?.driverId;
+          const dPhone = session?.phone;
+          if (dId || dPhone) {
+            fetch("/api/drivers", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: dId,
+                phone: dPhone,
+                is_active: true,
+                is_available: true,
+              }),
+            }).catch(() => {});
+          }
           toast.success("পরবর্তী বুকিং গ্রহণের জন্য আপনি অনলাইন আছেন 🟢");
         }}
       />
@@ -3537,6 +3531,7 @@ function MobileAppPageContent() {
         estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km ?? passengerCompletedRide?.estimatedDistanceKm ?? tripDistance}
         estimatedFare={passengerCompletedRide?.estimated_fare ?? passengerCompletedRide?.estimatedFare ?? tripFare}
         durationMinutes={passengerCompletedRide?.duration_minutes || passengerCompletedRide?.durationMinutes || 1}
+        completedAt={passengerCompletedRide?.completedAt || new Date().toISOString()}
         onBookAnother={() => {
           hasCompletedNotifiedRef.current = null;
           setPassengerCompletedRide(null);

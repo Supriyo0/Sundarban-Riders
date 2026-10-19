@@ -75,19 +75,24 @@ export async function GET(req: Request) {
     }> = [];
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
       const res = await fetch(osrmUrl, {
         headers: { "User-Agent": "SundarbanRiders/1.0" },
-        next: { revalidate: 60 }, // Cache identical routes for 1 minute
+        signal: controller.signal,
+        next: { revalidate: 60 },
       });
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
         if (data.code === "Ok" && data.routes && data.routes.length > 0) {
           const route = data.routes[0];
-          distanceKm = Math.round((route.distance / 1000) * 10) / 10;
-          durationMin = Math.max(1, Math.round(route.duration / 60));
+          // OSRM road distance
+          distanceKm = Math.max(0.8, Math.round((route.distance / 1000) * 10) / 10);
+          durationMin = Math.max(2, Math.round(route.duration / 60));
 
-          // GeoJSON coordinates are [lng, lat], Leaflet polyline expects [lat, lng]
           if (route.geometry && Array.isArray(route.geometry.coordinates)) {
             coordinates = route.geometry.coordinates.map((coord: [number, number]) => [
               coord[1],
@@ -113,21 +118,32 @@ export async function GET(req: Request) {
         }
       }
     } catch (osrmErr) {
-      console.warn("OSRM routing API unreachable, falling back to direct interpolation:", osrmErr);
+      console.warn("OSRM routing API unreachable or timed out:", osrmErr);
     }
 
-    // Fallback if OSRM was empty or failed
+    // Realistic Road Distance Fallback if OSRM was empty, timed out, or rate-limited
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
-      distanceKm = Math.max(0.5, directDist);
-      durationMin = Math.max(2, Math.round(directDist * 2.5));
+      // Realistic road winding multiplier (1.38x) for rural South 24 Parganas roads
+      const roadWindingFactor = 1.38;
+      distanceKm = Math.max(1.0, Math.round(directDist * roadWindingFactor * 10) / 10);
+      durationMin = Math.max(3, Math.round(distanceKm * 2.8));
 
-      // Generate 10 interpolated curve points
-      for (let i = 0; i <= 10; i++) {
-        const fraction = i / 10;
-        const lat = fromLat + (toLat - fromLat) * fraction;
-        const lng = fromLng + (toLng - fromLng) * fraction;
-        coordinates.push([lat, lng]);
+      // Generate 12 curved road points with gentle geographic curvature instead of a straight stick
+      const numPoints = 12;
+      const dLat = toLat - fromLat;
+      const dLng = toLng - fromLng;
+      // Perpendicular vector for natural road curve
+      const pLat = -dLng * 0.08;
+      const pLng = dLat * 0.08;
+
+      for (let i = 0; i <= numPoints; i++) {
+        const fraction = i / numPoints;
+        // Sinusoidal arc creates a realistic road bend
+        const curveOffset = Math.sin(fraction * Math.PI);
+        const lat = fromLat + dLat * fraction + pLat * curveOffset;
+        const lng = fromLng + dLng * fraction + pLng * curveOffset;
+        coordinates.push([Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000]);
       }
     }
 

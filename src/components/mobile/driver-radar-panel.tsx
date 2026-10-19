@@ -674,7 +674,7 @@ export function DriverRadarPanel({
     };
 
     fetchRadarEntities();
-    pollTimer = setInterval(fetchRadarEntities, 5000);
+    pollTimer = setInterval(fetchRadarEntities, 2000);
 
     return () => clearInterval(pollTimer);
   }, [driverSession?.driverId]);
@@ -710,9 +710,12 @@ export function DriverRadarPanel({
         zoomControl: false,
       });
 
-      const streetUrl = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+      const streetUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
       const tiles = L.tileLayer(streetUrl, {
+        subdomains: ["mt0", "mt1", "mt2", "mt3"],
         maxZoom: 20,
+        keepBuffer: 8,
+        updateWhenIdle: false,
         attribution: "© Google Maps",
       }).addTo(map);
       tileLayerRef.current = tiles;
@@ -826,8 +829,8 @@ export function DriverRadarPanel({
     if (tileLayerRef.current) {
       const newUrl =
         nextLayer === "streets"
-          ? "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-          : "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
+          ? "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          : "https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
       tileLayerRef.current.setUrl(newUrl);
       toast.info(nextLayer === "streets" ? "🗺️ স্ট্রিট ভিউ সক্রিয়" : "🛰️ স্যাটেলাইট ভিউ সক্রিয়");
     }
@@ -1167,6 +1170,18 @@ export function DriverRadarPanel({
       </div>
 
       {/* 3. FLOATING MAP ON-SCREEN CONTROLS */}
+      {/* Floating Active Rides Indicator Pill (After 30s timer ends, rider can tap to open panel and accept) */}
+      {pendingBookings.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setSheetExpanded(true)}
+          className="absolute top-16 left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-amber-300 animate-ping" />
+          <span>🛺 {pendingBookings.length}টি রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>
+        </button>
+      )}
+
       {/* Map Layer Switcher: Street vs Satellite */}
       <button
         type="button"
@@ -1201,7 +1216,7 @@ export function DriverRadarPanel({
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
-              ? "max-h-[75dvh] overflow-y-auto"
+              ? "max-h-[82dvh] pb-28 sm:pb-32 overflow-y-auto"
               : "max-h-24 overflow-hidden"
           }`}
         >

@@ -180,6 +180,7 @@ export function InteractiveBookingMap({
     }
     return [];
   });
+  const [hasStartedTyping, setHasStartedTyping] = useState<boolean>(false);
   const hexGridLayerRef = useRef<any>(null);
   const [showHexGrid, setShowHexGrid] = useState(true);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -280,6 +281,38 @@ export function InteractiveBookingMap({
   const [roadDurationMin, setRoadDurationMin] = useState(5);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
+  const hasManualPickupRef = useRef(false);
+
+  // Periodically fetch active drivers from /api/drivers (Every 3.5 seconds)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    const loadDrivers = async () => {
+      try {
+        const res = await fetch("/api/drivers");
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.drivers)) {
+            const valid = json.drivers.filter((d: any) => {
+              const lat = Number(d.latitude);
+              const lng = Number(d.longitude);
+              return (
+                d.name &&
+                d.is_active !== false &&
+                !isNaN(lat) &&
+                lat !== 0 &&
+                !isNaN(lng) &&
+                lng !== 0
+              );
+            });
+            setRealDrivers(valid);
+          }
+        }
+      } catch {}
+    };
+    loadDrivers();
+    timer = setInterval(loadDrivers, 3500);
+    return () => clearInterval(timer);
+  }, []);
 
   // Passenger count & Pricing
   const [passengerCount, setPassengerCount] = useState<number>(3);
@@ -306,23 +339,25 @@ export function InteractiveBookingMap({
     return calculateTotoFare(d, passengerCount, pricingConfig);
   }, [distanceKm, passengerCount, pricingConfig]);
 
-  // STRICT 5 KM DRIVER FILTER: Only drivers within 5 km of user's pickup
+  // NEARBY ACTIVE DRIVERS: Real drivers within 8.0 km radius of pickup or region hub
   const nearbyDrivers = useMemo(() => {
-    if (!hasValidPickup || pickupCoords[0] === 0) return [];
+    const centerLat = pickupCoords[0] !== 0 ? pickupCoords[0] : (dropCoords[0] !== 0 ? dropCoords[0] : 21.8760);
+    const centerLng = pickupCoords[1] !== 0 ? pickupCoords[1] : (dropCoords[1] !== 0 ? dropCoords[1] : 88.1920);
+
     return realDrivers
       .map((d) => {
         const lat = Number(d.latitude);
         const lng = Number(d.longitude);
         if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return null;
-        const distKm = calculateDistanceKm(pickupCoords[0], pickupCoords[1], lat, lng);
+        const distKm = calculateDistanceKm(centerLat, centerLng, lat, lng);
         return {
           ...d,
           distanceKm: distKm,
         };
       })
-      .filter((d): d is any => d !== null && d.distanceKm <= 5.0)
+      .filter((d): d is any => d !== null && d.distanceKm <= 8.0)
       .sort((a, b) => a.distanceKm - b.distanceKm);
-  }, [realDrivers, pickupCoords, hasValidPickup]);
+  }, [realDrivers, pickupCoords, dropCoords]);
 
   // Nearest Driver Proximity (Strictly based on nearbyDrivers within 5 km)
   const nearestDriverInfo = useMemo(() => {
@@ -487,14 +522,34 @@ export function InteractiveBookingMap({
             if (data.distanceKm) safeDist = data.distanceKm;
             if (data.durationMin) routeDuration = data.durationMin;
           } else {
-            const straight = [pCoords, dCoords];
-            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(straight);
-            if (routeLineRef.current) routeLineRef.current.setLatLngs(straight);
+            const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+            safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
+            routeDuration = Math.max(3, Math.round(safeDist * 2.8));
+            const curved: [number, number][] = [];
+            const dLat = dCoords[0] - pCoords[0];
+            const dLng = dCoords[1] - pCoords[1];
+            for (let i = 0; i <= 10; i++) {
+              const frac = i / 10;
+              const curve = Math.sin(frac * Math.PI) * 0.08;
+              curved.push([pCoords[0] + dLat * frac - dLng * curve, pCoords[1] + dLng * frac + dLat * curve]);
+            }
+            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curved);
+            if (routeLineRef.current) routeLineRef.current.setLatLngs(curved);
           }
         } catch {
-          const straight = [pCoords, dCoords];
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(straight);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(straight);
+          const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+          safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
+          routeDuration = Math.max(3, Math.round(safeDist * 2.8));
+          const curved: [number, number][] = [];
+          const dLat = dCoords[0] - pCoords[0];
+          const dLng = dCoords[1] - pCoords[1];
+          for (let i = 0; i <= 10; i++) {
+            const frac = i / 10;
+            const curve = Math.sin(frac * Math.PI) * 0.08;
+            curved.push([pCoords[0] + dLat * frac - dLng * curve, pCoords[1] + dLng * frac + dLat * curve]);
+          }
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curved);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(curved);
         } finally {
           setIsCalculatingRoute(false);
         }
@@ -570,34 +625,6 @@ export function InteractiveBookingMap({
     }
   }, [passengerCount, fareResult.totalFare, distanceKm, dropInputValue, pickupInputValue, pickupCoords, dropCoords, hasValidPickup]);
 
-  // Load Real Drivers
-  useEffect(() => {
-    async function loadRealDrivers() {
-      try {
-        const res = await fetch("/api/drivers");
-        const json = await res.json();
-        if (json.drivers && Array.isArray(json.drivers)) {
-          const valid = json.drivers.filter((d: any) => {
-            const lat = Number(d.latitude);
-            const lng = Number(d.longitude);
-            return (
-              d.name &&
-              d.is_active !== false &&
-              !isNaN(lat) &&
-              lat !== 0 &&
-              !isNaN(lng) &&
-              lng !== 0
-            );
-          });
-          setRealDrivers(valid);
-        }
-      } catch {}
-    }
-    loadRealDrivers();
-    const interval = setInterval(loadRealDrivers, 8000);
-    return () => clearInterval(interval);
-  }, []);
-
   // Update Driver Markers on Map (Smooth update, no blinking/wobbling)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
@@ -627,7 +654,6 @@ export function InteractiveBookingMap({
 
           const existingMarker = existingMap.get(dId);
           if (existingMarker) {
-            // Smoothly move existing marker without destroying it
             existingMarker.setLatLng([lat, lng]);
             return;
           }
@@ -635,7 +661,7 @@ export function InteractiveBookingMap({
           const totoIcon = L.divIcon({
             className: "toto-real-driver-icon",
             html: `
-              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%);">
+              <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); cursor: pointer;">
                 <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9.5px; padding: 2px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
                   🛺 ${driver.name || "টোটো চালক"} (${driver.distanceKm.toFixed(1)} কিমি)
                 </div>
@@ -649,6 +675,13 @@ export function InteractiveBookingMap({
 
           try {
             const dm = L.marker([lat, lng], { icon: totoIcon }).addTo(mapInstanceRef.current);
+            dm.bindPopup(`
+              <div style="font-family: sans-serif; padding: 4px; min-width: 140px;">
+                <strong style="color: #065f46; font-size: 12px; display: block;">🛺 ${driver.name || "টোটো চালক"}</strong>
+                <p style="margin: 2px 0 0; font-size: 10.5px; color: #475569;">${driver.toto_number || "টোটো নং নাই"} • ~${driver.distanceKm.toFixed(1)} কিমি দূর</p>
+                <span style="display: inline-block; margin-top: 4px; font-size: 9.5px; font-weight: bold; color: #047857; background: #d1fae5; padding: 2px 6px; border-radius: 4px;">🟢 রাইডের জন্য প্রস্তুত</span>
+              </div>
+            `);
             driverMarkersRef.current.push({ id: dId, marker: dm });
           } catch {}
         });
@@ -872,7 +905,7 @@ export function InteractiveBookingMap({
             async (position, err) => {
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
-              if (latitude && longitude && (pickupCoordsRef.current[0] === 0 || !hasValidPickup)) {
+              if (latitude && longitude && (!hasManualPickupRef.current || pickupCoordsRef.current[0] === 0)) {
                 const resolved = await resolveLocationAddress(latitude, longitude);
                 if (!isCancelled) {
                   setPickupCoords([latitude, longitude]);
@@ -901,7 +934,7 @@ export function InteractiveBookingMap({
           async (pos) => {
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude } = pos.coords;
-            if (latitude && longitude && (pickupCoordsRef.current[0] === 0 || !hasValidPickup)) {
+            if (latitude && longitude && (!hasManualPickupRef.current || pickupCoordsRef.current[0] === 0)) {
               const resolved = await resolveLocationAddress(latitude, longitude);
               if (!isCancelled) {
                 setPickupCoords([latitude, longitude]);
@@ -970,10 +1003,13 @@ export function InteractiveBookingMap({
           zoomControl: false,
         });
 
-        // Google Maps Clean Street Tile Layer (Uber Look)
-        const streetUrl = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
+        // Google Maps Clean Street Tile Layer (Multi-subdomain high concurrency)
+        const streetUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
         const tiles = L.tileLayer(streetUrl, {
+          subdomains: ["mt0", "mt1", "mt2", "mt3"],
           maxZoom: 20,
+          keepBuffer: 8,
+          updateWhenIdle: false,
           attribution: "© Google Maps",
         }).addTo(map);
         tileLayerRef.current = tiles;
@@ -1137,25 +1173,28 @@ export function InteractiveBookingMap({
     if (tileLayerRef.current) {
       const newUrl =
         nextLayer === "streets"
-          ? "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-          : "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
+          ? "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          : "https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
       tileLayerRef.current.setUrl(newUrl);
       toast.info(nextLayer === "streets" ? "🗺️ গুগল স্ট্রিট ভিউ সক্রিয়" : "🛰️ গুগল স্যাটেলাইট ভিউ সক্রিয়");
     }
   };
 
   // Place Search & Autocomplete
-  const handleQueryPlaces = (query: string, field: "pickup" | "drop") => {
+  const handleQueryPlaces = (query: string, field: "pickup" | "drop", userIsTyping = true) => {
     if (field === "pickup") setPickupInputValue(query);
     else setDropInputValue(query);
 
     setActiveSearchField(field);
 
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    if (!query || query.trim().length === 0) {
+    if (!userIsTyping || !query || query.trim().length === 0) {
+      setHasStartedTyping(false);
       setPlaceSuggestions([]);
       return;
     }
+
+    setHasStartedTyping(true);
 
     searchDebounceRef.current = setTimeout(async () => {
       setIsSearchingPlaces(true);
@@ -1425,11 +1464,13 @@ export function InteractiveBookingMap({
                     value={pickupInputValue}
                     onChange={(e) => {
                       setTopCardExpanded(true);
-                      handleQueryPlaces(e.target.value, "pickup");
+                      handleQueryPlaces(e.target.value, "pickup", true);
                     }}
                     onFocus={() => {
                       setTopCardExpanded(true);
-                      handleQueryPlaces(pickupInputValue, "pickup");
+                      setActiveSearchField("pickup");
+                      setHasStartedTyping(false);
+                      setPlaceSuggestions([]);
                     }}
                     className={`h-10 pl-9 pr-18 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500 transition-all ${
                       !hasValidPickup && !pickupInputValue.trim()
@@ -1461,6 +1502,7 @@ export function InteractiveBookingMap({
                         onClick={() => {
                           setPickupInputValue("");
                           setHasValidPickup(false);
+                          setHasStartedTyping(false);
                           setPlaceSuggestions([]);
                           syncMapRouteAndPins([0, 0], dropCoords, "", dropInputValue, { fitBounds: false });
                         }}
@@ -1483,11 +1525,13 @@ export function InteractiveBookingMap({
                     value={dropInputValue}
                     onChange={(e) => {
                       setTopCardExpanded(true);
-                      handleQueryPlaces(e.target.value, "drop");
+                      handleQueryPlaces(e.target.value, "drop", true);
                     }}
                     onFocus={() => {
                       setTopCardExpanded(true);
-                      handleQueryPlaces(dropInputValue, "drop");
+                      setActiveSearchField("drop");
+                      setHasStartedTyping(false);
+                      setPlaceSuggestions([]);
                     }}
                     className={`h-10 pl-9 pr-14 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all ${
                       isDropOutOfService
@@ -1510,6 +1554,7 @@ export function InteractiveBookingMap({
                         onClick={() => {
                           setDropInputValue("");
                           setIsDropOutOfService(false);
+                          setHasStartedTyping(false);
                           setPlaceSuggestions([]);
                           syncMapRouteAndPins(pickupCoords, [0, 0], pickupInputValue, "", { fitBounds: false });
                         }}
@@ -1532,15 +1577,16 @@ export function InteractiveBookingMap({
                   <div className="px-1 pb-1 flex items-center justify-between text-[10.5px] font-bold text-slate-600">
                     <span className="flex items-center gap-1.5 text-emerald-800">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      {placeSuggestions.length > 0
-                        ? "সঠিক ঠিকানা সাজেশন (Uber/Rapido)"
-                        : "পূর্ববর্তী ৩টি অনুসন্ধান (Recent Searches)"}
+                      {!hasStartedTyping
+                        ? "পূর্ববর্তী ৩টি অনুসন্ধান (Recent Searches)"
+                        : "সঠিক ঠিকানা সাজেশন (Uber/Rapido)"}
                     </span>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setActiveSearchField(null);
+                        setHasStartedTyping(false);
                         setPlaceSuggestions([]);
                       }}
                       className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-1.5 py-0.5 rounded bg-slate-100 cursor-pointer"
@@ -1549,56 +1595,77 @@ export function InteractiveBookingMap({
                     </button>
                   </div>
 
-                  {/* Top 3 Previous Searches (When input is empty or before query returns) */}
-                  {placeSuggestions.length === 0 && recentSearches.length > 0 && (
+                  {/* 1. Top 3 Recent Searches — SHOWN UNTIL USER STARTS TYPING */}
+                  {!hasStartedTyping && (
                     <div className="space-y-1 pt-1">
-                      {recentSearches.map((place, idx) => (
+                      {recentSearches.length > 0 ? (
+                        recentSearches.map((place, idx) => (
+                          <button
+                            key={`recent-${idx}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectSuggestion(place);
+                            }}
+                            className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-emerald-100/90 bg-emerald-50/50 hover:bg-emerald-100/70 shadow-2xs active:scale-[0.99]"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                              <Clock className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="overflow-hidden flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full shrink-0">
+                                  Recent 🕒
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-3 text-center text-xs text-slate-500">
+                          গন্তব্য অনুসন্ধানের জন্য টাইপ করুন অথবা ম্যাপে পিন করুন
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 2. Live Suggestions (Shown strictly once user starts typing) */}
+                  {hasStartedTyping && (
+                    <div className="space-y-1 pt-1">
+                      {isSearchingPlaces && placeSuggestions.length === 0 && (
+                        <div className="p-3 text-center text-xs text-emerald-700 font-bold flex items-center justify-center gap-2">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>ঠিকানা খোঁজা হচ্ছে...</span>
+                        </div>
+                      )}
+                      {!isSearchingPlaces && placeSuggestions.length === 0 && (
+                        <div className="p-3 text-center text-xs text-slate-500 font-medium">
+                          কোনো ফলাফল পাওয়া যায়নি। অন্য বানান দিয়ে খুঁজুন বা ম্যাপে পিন করুন।
+                        </div>
+                      )}
+                      {placeSuggestions.map((place, idx) => (
                         <button
-                          key={`recent-${idx}`}
+                          key={idx}
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleSelectSuggestion(place);
                           }}
-                          className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-emerald-100/80 bg-emerald-50/40 hover:bg-emerald-100/60 shadow-2xs active:scale-[0.99]"
+                          className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-slate-100 bg-white hover:bg-emerald-50 shadow-2xs active:scale-[0.99]"
                         >
                           <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                            <Clock className="w-3.5 h-3.5" />
+                            <MapPin className="w-3.5 h-3.5" />
                           </div>
                           <div className="overflow-hidden flex-1">
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full shrink-0">
-                                Recent
-                              </span>
-                            </div>
+                            <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
                             <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
-
-                  {/* Live Suggestions */}
-                  {placeSuggestions.map((place, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelectSuggestion(place);
-                      }}
-                      className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-slate-100 bg-white hover:bg-emerald-50 shadow-2xs active:scale-[0.99]"
-                    >
-                      <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                        <MapPin className="w-3.5 h-3.5" />
-                      </div>
-                      <div className="overflow-hidden flex-1">
-                        <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
-                        <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
-                      </div>
-                    </button>
-                  ))}
                 </div>
               )}
 
@@ -1718,7 +1785,7 @@ export function InteractiveBookingMap({
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
-              ? "max-h-[86dvh] pb-10 overflow-y-auto"
+              ? "max-h-[86dvh] pb-28 sm:pb-32 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
               ? "max-h-[140px] overflow-hidden"
               : "max-h-[110px] overflow-hidden"
@@ -1878,6 +1945,19 @@ export function InteractiveBookingMap({
                     </span>
                   </div>
                 </div>
+
+                {/* Night Charge Breakdown Explanation Badge (Clarifies ₹84) */}
+                {fareResult.isNight && (
+                  <div className="p-2.5 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs text-purple-950 flex items-center justify-between font-bold">
+                    <div className="flex items-center gap-2">
+                      <Moon className="w-4 h-4 text-purple-700 shrink-0" />
+                      <span>
+                        দিনকালীন ভাড়া: ₹{fareResult.totalFare - fareResult.nightCharge} + 🌙 নাইট চার্জ: ₹{fareResult.nightCharge} (রাত ৯:৩০ - ভোর ৫:০০)
+                      </span>
+                    </div>
+                    <span className="text-purple-800 font-mono font-black shrink-0">= ₹{fareResult.totalFare}</span>
+                  </div>
+                )}
 
                 {/* Passenger Selector */}
                 <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">

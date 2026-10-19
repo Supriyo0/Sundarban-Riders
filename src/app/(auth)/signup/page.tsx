@@ -45,6 +45,28 @@ function SignupPageInner() {
   const [success, setSuccess] = useState(false);
   const supabase = createClient();
 
+  if (!inviteToken) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md border-border bg-card p-6 text-center space-y-4 shadow-xl">
+          <BrandLogo size="lg" className="mx-auto" />
+          <h2 className="text-xl font-black text-foreground">রেজিস্ট্রেশন বন্ধ রয়েছে (Invite Only)</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            সুন্দরবন রাইডার্স অ্যাডমিন প্যানেল শুধুমাত্র অনুমোদিত অ্যাডমিন ও স্টাফদের জন্য সংরক্ষিত। পাবলিক রেজিস্ট্রেশন বন্ধ আছে। আপনাকে অ্যাডমিন ইনভাইটেশন লিংক পাঠিয়ে থাকলে সেই লিংকের মাধ্যমে খুলুন।
+          </p>
+          <div className="pt-2">
+            <Link
+              href="/login"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground shadow transition hover:bg-primary/90"
+            >
+              লগইন পেজে যান (Go to Login)
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);

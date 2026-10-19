@@ -40,8 +40,26 @@ interface TripCompletionReceiptProps {
   estimatedDistanceKm?: number;
   estimatedFare?: number;
   durationMinutes?: number;
+  completedAt?: string | Date;
   onBookAnother: () => void;
   role?: "rider" | "passenger";
+}
+
+function formatBengaliDateTime(d?: string | Date) {
+  try {
+    const dateObj = d ? (typeof d === "string" ? new Date(d) : d) : new Date();
+    return dateObj.toLocaleString("bn-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return new Date().toLocaleTimeString("bn-IN");
+  }
 }
 
 export function TripCompletionReceipt({
@@ -58,6 +76,7 @@ export function TripCompletionReceipt({
   estimatedDistanceKm,
   estimatedFare,
   durationMinutes = 12,
+  completedAt,
   onBookAnother,
   role = "passenger",
 }: TripCompletionReceiptProps) {
@@ -255,7 +274,9 @@ export function TripCompletionReceipt({
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
                     তারিখ ও সময়
                   </span>
-                  <span className="text-xs font-semibold text-slate-700">আজ, রিয়েলটাইম</span>
+                  <span className="text-xs font-bold text-slate-800">
+                    {formatBengaliDateTime(completedAt)}
+                  </span>
                 </div>
               </div>
 

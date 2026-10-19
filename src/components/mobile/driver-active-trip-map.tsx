@@ -345,8 +345,8 @@ export function DriverActiveTripMap({
           dragging: true,
         });
 
-        // Google Maps street layer
-        L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
+        // Google Maps street layer with multi-subdomain rotation
+        L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
           maxZoom: 20,
           subdomains: ["mt0", "mt1", "mt2", "mt3"],
         }).addTo(map);
@@ -408,6 +408,14 @@ export function DriverActiveTripMap({
           map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
         } catch {}
 
+        // Crucial: Invalidate size immediately and after layout settles so map NEVER renders white
+        map.whenReady(() => {
+          map.invalidateSize();
+          setTimeout(() => map?.invalidateSize(), 100);
+          setTimeout(() => map?.invalidateSize(), 300);
+          setTimeout(() => map?.invalidateSize(), 800);
+        });
+
         mapInstanceRef.current = map;
       } else {
         // Smoothly update driver marker
@@ -421,11 +429,25 @@ export function DriverActiveTripMap({
           routeLineRef.current.setLatLngs(pts);
           routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
         }
+        mapInstanceRef.current.invalidateSize();
       }
     }
     init();
+
+    // ResizeObserver ensures map redraws when container height/visibility toggles
+    let ro: ResizeObserver | null = null;
+    if (typeof window !== "undefined" && window.ResizeObserver && mapContainerRef.current) {
+      ro = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize();
+        }
+      });
+      ro.observe(mapContainerRef.current);
+    }
+
     return () => {
       mounted = false;
+      if (ro) ro.disconnect();
     };
   }, [activeDriverCoords, pickupCoords, dropCoords, status, routeCoords, targetCoords]);
 
@@ -483,43 +505,22 @@ export function DriverActiveTripMap({
             </div>
           </div>
 
-          {/* Quick Google Maps Button in HUD */}
+          {/* SINGLE DYNAMIC FLOATING SMALL GOOGLE MAP BUTTON */}
           <a
             href={navUrl}
             target="_blank"
             rel="noreferrer"
-            className="shrink-0 ml-2 px-3 py-2 rounded-2xl font-black text-xs text-white shadow-lg active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
-            style={{
-              background: status === "heading_pickup"
-                ? "linear-gradient(135deg,#2563eb,#3b82f6)"
-                : "linear-gradient(135deg,#059669,#10b981)",
-            }}
-            title="গুগল ম্যাপে নেভিগেশন"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span>নেভিগেশন</span>
-          </a>
-        </div>
-
-        {/* ── PROMINENT FLOATING GOOGLE MAPS NAVIGATION BANNER (ABOVE INBUILT MAP) ── */}
-        <div className="flex justify-center pointer-events-auto">
-          <a
-            href={navUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={`w-full max-w-sm py-3 px-4 rounded-2xl font-black text-xs sm:text-sm text-white shadow-2xl flex items-center justify-center gap-2 border-2 border-white/90 active:scale-95 transition-all cursor-pointer ${
+            className={`shrink-0 ml-2 px-3 py-2 rounded-2xl font-black text-xs text-white shadow-lg border border-white/30 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${
               status === "heading_pickup"
-                ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 shadow-blue-500/40 ring-4 ring-blue-400/20"
-                : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 shadow-emerald-500/40 ring-4 ring-emerald-400/20"
+                ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/30"
+                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/30"
             }`}
+            title={status === "heading_pickup" ? "গুগল ম্যাপে পিকআপে যান" : "গুগল ম্যাপে গন্তব্যে যান"}
           >
-            <Navigation className="w-4 h-4 fill-white shrink-0 animate-pulse" />
-            <span className="truncate">
-              {status === "heading_pickup"
-                ? "🗺️ গুগল ম্যাপে পিকআপে যান (Go to Pickup) ↗"
-                : "🗺️ গুগল ম্যাপে গন্তব্যে যান (Go to Drop in Google Maps) ↗"}
+            <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
+            <span className="whitespace-nowrap font-bold text-[11px]">
+              {status === "heading_pickup" ? "🗺️ পিকআপে যান (Google Map)" : "🗺️ গন্তব্যে যান (Google Map)"}
             </span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-80 shrink-0" />
           </a>
         </div>
       </div>

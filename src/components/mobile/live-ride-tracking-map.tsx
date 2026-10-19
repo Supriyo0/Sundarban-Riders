@@ -76,6 +76,8 @@ export function LiveRideTrackingMap({
   const [liveMeterKm, setLiveMeterKm] = useState(0);
   const [liveMeterFare, setLiveMeterFare] = useState(tripFare);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
+  const [rideProgressPct, setRideProgressPct] = useState<number>(35);
+  const lastNotifiedProgressRef = useRef<number>(0);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [rating, setRating] = useState(5);
   const [rated, setRated] = useState(false);
@@ -286,7 +288,32 @@ export function LiveRideTrackingMap({
           setDriverPos([dLat, dLng]);
           const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
           const distLeft = haversineKm([dLat, dLng], target);
-          setEtaMinutes(Math.max(1, Math.round(distLeft / 0.25))); // ~15 km/h toto speed
+          const computedEta = Math.max(1, Math.round(distLeft / 0.25)); // ~15 km/h toto speed
+          setEtaMinutes(computedEta);
+
+          // Dynamic Progress Calculation
+          let progress = 35;
+          if (rideStep === "in_trip") {
+            const totalTrip = Math.max(0.5, haversineKm(pickupCoords, dropCoords));
+            progress = Math.max(15, Math.min(98, Math.round(((totalTrip - distLeft) / totalTrip) * 100)));
+          } else {
+            // Arriving to pickup
+            progress = Math.max(20, Math.min(95, Math.round((1 - Math.min(distLeft, 3) / 3) * 100)));
+          }
+          setRideProgressPct(progress);
+
+          // Push Progress Notification at 20%, 45%, 70%, 90% milestones
+          if (Math.abs(progress - lastNotifiedProgressRef.current) >= 20 || (computedEta <= 2 && lastNotifiedProgressRef.current < 80)) {
+            lastNotifiedProgressRef.current = progress;
+            const blockCount = Math.min(10, Math.max(1, Math.round(progress / 10)));
+            const bar = "█".repeat(blockCount) + "░".repeat(10 - blockCount);
+            const title = rideStep === "in_trip" ? `🏁 গন্তব্যের পথে (${progress}%)` : `📍 চালক পৌঁছাচ্ছেন (${progress}%)`;
+            const body = rideStep === "in_trip"
+              ? `[${bar}] ${progress}% • পৌঁছাতে আর ~${computedEta} মিনিট`
+              : `[${bar}] ${progress}% • পিকআপে আসতে আর ~${computedEta} মিনিট`;
+            showLocalRideAlertNotification(title, body, b.id || b.booking_number);
+          }
+
           if (rideStep === "in_trip") {
             const upd = meterRef.current.addGpsReading(dLat, dLng);
             if (upd.totalKm > 0) {
@@ -296,7 +323,7 @@ export function LiveRideTrackingMap({
           }
         }
       } catch {}
-      if (mounted) timer = setTimeout(poll, 2500);
+      if (mounted) timer = setTimeout(poll, 1500);
     };
     poll();
     return () => { mounted = false; clearTimeout(timer); };
@@ -321,10 +348,12 @@ export function LiveRideTrackingMap({
           dragging: true,
         });
 
-        // Google Maps street layer with high-res crisp street tiles
-        L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
-          maxZoom: 20,
+        // Google Maps street layer with multi-subdomain crisp street tiles
+        L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
           subdomains: ["mt0", "mt1", "mt2", "mt3"],
+          maxZoom: 20,
+          keepBuffer: 8,
+          updateWhenIdle: false,
         }).addTo(map);
 
         // Pickup pin
@@ -811,14 +840,14 @@ export function LiveRideTrackingMap({
                       </span>
                     </span>
                     <span className="font-mono text-emerald-700 font-black">
-                      {rideStep === "in_trip" ? "৮৫%" : etaMinutes !== null && etaMinutes <= 2 ? "৬৫%" : "৩৫%"}
+                      {rideProgressPct}%
                     </span>
                   </div>
-                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 transition-all duration-700 rounded-full"
                       style={{
-                        width: rideStep === "in_trip" ? "85%" : etaMinutes !== null && etaMinutes <= 2 ? "65%" : "35%",
+                        width: `${rideProgressPct}%`,
                       }}
                     />
                   </div>

@@ -50,6 +50,20 @@ export function SwipeToConfirm({
     },
   }[colorScheme];
 
+  const triggerConfirm = useCallback(() => {
+    if (disabled || isConfirmed) return;
+    setIsDragging(false);
+    setIsConfirmed(true);
+    setDragProgress(1);
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate([35, 20, 50]);
+      }
+    } catch {}
+    playSuccessSound();
+    onConfirm();
+  }, [disabled, isConfirmed, onConfirm]);
+
   const handleStart = (clientX: number) => {
     if (disabled || isConfirmed) return;
     setIsDragging(true);
@@ -67,18 +81,15 @@ export function SwipeToConfirm({
       const currentDelta = clientX - startXRef.current;
 
       const clamped = Math.max(0, Math.min(currentDelta, maxDrag));
-      const progress = clamped / maxDrag;
+      const progress = maxDrag > 0 ? clamped / maxDrag : 0;
       setDragProgress(progress);
 
-      if (progress >= 0.85) {
-        setIsDragging(false);
-        setIsConfirmed(true);
-        setDragProgress(1);
-        playSuccessSound();
-        onConfirm();
+      // 55% threshold for ultra-smooth effortless confirmation on mobile
+      if (progress >= 0.55) {
+        triggerConfirm();
       }
     },
-    [isDragging, disabled, isConfirmed, onConfirm]
+    [isDragging, disabled, isConfirmed, triggerConfirm]
   );
 
   const handleEnd = useCallback(() => {
@@ -89,7 +100,11 @@ export function SwipeToConfirm({
   }, [isDragging, isConfirmed]);
 
   useEffect(() => {
-    const onTouchMove = (e: TouchEvent) => handleMove(e.touches[0].clientX);
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches[0]) {
+        handleMove(e.touches[0].clientX);
+      }
+    };
     const onTouchEnd = () => handleEnd();
     const onMouseMove = (e: MouseEvent) => handleMove(e.clientX);
     const onMouseUp = () => handleEnd();
@@ -112,7 +127,7 @@ export function SwipeToConfirm({
   return (
     <div
       ref={containerRef}
-      className={`relative h-16 w-full select-none overflow-hidden rounded-full border p-1 transition-colors ${
+      className={`relative h-16 w-full select-none touch-none overflow-hidden rounded-full border p-1 transition-colors ${
         colors.track
       } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       onMouseDown={(e) => handleStart(e.clientX)}
@@ -120,7 +135,7 @@ export function SwipeToConfirm({
     >
       {/* Background Fill Progress */}
       <div
-        className={`absolute inset-y-0 left-0 transition-all ${colors.progress}`}
+        className={`absolute inset-y-0 left-0 ${isDragging ? "" : "transition-all duration-200"} ${colors.progress}`}
         style={{ width: `${dragProgress * 100}%` }}
       />
 
@@ -135,11 +150,11 @@ export function SwipeToConfirm({
         )}
       </div>
 
-      {/* Draggable Thumb */}
+      {/* Draggable Thumb with zero-latency 60fps tracking */}
       <div
-        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-full shadow-md transition-transform ${
+        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-full shadow-md will-change-transform ${
           colors.thumb
-        } ${isDragging ? "scale-105" : ""}`}
+        } ${isDragging ? "scale-105 shadow-xl transition-none" : "transition-transform duration-200"}`}
         style={{
           transform: `translateX(${
             containerRef.current

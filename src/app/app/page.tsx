@@ -868,8 +868,19 @@ function MobileAppPageContent() {
           });
         } else if (b.status === "completed") {
           if (pollInterval) clearInterval(pollInterval);
-          const finalFare = b.final_fare || b.estimated_fare || tripFare;
-          const finalKm = b.actual_distance_km || b.estimated_distance_km || tripDistance;
+          let bMeta: any = {};
+          try {
+            bMeta = typeof b.feedback === "string" ? JSON.parse(b.feedback) : (b.feedback || {});
+          } catch {}
+
+          const finalFare = b.final_fare || bMeta.calculated_fare || b.estimated_fare || tripFare;
+          const finalKm = b.actual_distance_km || bMeta.actual_distance_km || b.estimated_distance_km || tripDistance;
+          const acceptMs = bMeta.trip_accepted_time
+            ? Number(bMeta.trip_accepted_time)
+            : (bMeta.accepted_at ? new Date(bMeta.accepted_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : Date.now()));
+          const completedAtTime = bMeta.completed_at || b.updated_at || new Date().toISOString();
+          const calcDuration = bMeta.duration_minutes || Math.max(1, Math.round((new Date(completedAtTime).getTime() - acceptMs) / 60000));
+
           // Store completed trip details for receipt & local device persistent history
           const completedData = {
             ...b,
@@ -881,14 +892,16 @@ function MobileAppPageContent() {
             final_fare: finalFare,
             distanceKm: finalKm,
             actual_distance_km: finalKm,
-            estimatedDistanceKm: b.estimated_distance_km || tripDistance,
-            estimated_distance_km: b.estimated_distance_km || tripDistance,
-            estimatedFare: b.estimated_fare || tripFare,
-            estimated_fare: b.estimated_fare || tripFare,
-            driverName: b.driver_name || passengerBooking?.driverName || "টোটো চালক",
-            driverPhone: b.driver_phone || passengerBooking?.driverPhone || "",
-            totoNumber: b.toto_number || passengerBooking?.totoNumber || "SR-DRV",
-            completedAt: new Date().toISOString(),
+            estimatedDistanceKm: b.estimated_distance_km || bMeta.estimated_distance_km || tripDistance,
+            estimated_distance_km: b.estimated_distance_km || bMeta.estimated_distance_km || tripDistance,
+            estimatedFare: b.estimated_fare || bMeta.estimated_fare || tripFare,
+            estimated_fare: b.estimated_fare || bMeta.estimated_fare || tripFare,
+            durationMinutes: calcDuration,
+            duration_minutes: calcDuration,
+            driverName: b.driver_name || bMeta.driver_name || passengerBooking?.driverName || "টোটো চালক",
+            driverPhone: b.driver_phone || bMeta.driver_phone || passengerBooking?.driverPhone || "",
+            totoNumber: b.toto_number || bMeta.toto_number || passengerBooking?.totoNumber || "SR-DRV",
+            completedAt: completedAtTime,
           };
           setPassengerCompletedRide(completedData);
 
@@ -932,7 +945,7 @@ function MobileAppPageContent() {
     };
 
     pollRideStatus();
-    pollInterval = setInterval(pollRideStatus, 2500);
+    pollInterval = setInterval(pollRideStatus, 1500);
     return () => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);
@@ -954,16 +967,35 @@ function MobileAppPageContent() {
 
         if (b.status === "completed") {
           if (pollTimer) clearInterval(pollTimer);
-          const finalFare = b.final_fare || b.estimated_fare || activeRide.fare || 50;
-          const distKm = b.actual_distance_km || activeRide.distanceKm || 1.0;
+          let bMeta: any = {};
+          try {
+            bMeta = typeof b.feedback === "string" ? JSON.parse(b.feedback) : (b.feedback || {});
+          } catch {}
+
+          const finalFare = b.final_fare || bMeta.calculated_fare || b.estimated_fare || activeRide.fare || 50;
+          const distKm = b.actual_distance_km || bMeta.actual_distance_km || activeRide.distanceKm || 1.0;
+          const acceptMs = bMeta.trip_accepted_time
+            ? Number(bMeta.trip_accepted_time)
+            : (activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now()));
+          const completedAtTime = bMeta.completed_at || b.updated_at || new Date().toISOString();
+          const calcDuration = bMeta.duration_minutes || Math.max(1, Math.round((new Date(completedAtTime).getTime() - acceptMs) / 60000));
+
           const completedData = {
             id: b.booking_number || b.id,
+            bookingNumber: b.booking_number || activeRide.bookingNumber,
             pickup: b.pickup_location || activeRide.pickup,
             drop: b.drop_location || activeRide.drop,
             fare: finalFare,
+            final_fare: finalFare,
             distanceKm: distKm,
+            actual_distance_km: distKm,
+            durationMinutes: calcDuration,
+            duration_minutes: calcDuration,
+            estimatedDistanceKm: b.estimated_distance_km || activeRide.distanceKm || distKm,
+            estimatedFare: b.estimated_fare || activeRide.fare || finalFare,
             passengerName: b.customer_name || activeRide.passengerName || "যাত্রী",
             passengerPhone: b.customer_phone || activeRide.passengerPhone || "",
+            completedAt: completedAtTime,
           };
           setDriverCompletedRide(completedData);
           setActiveRide(null);
@@ -995,7 +1027,8 @@ function MobileAppPageContent() {
       }
     };
 
-    pollTimer = setInterval(checkDriverRideStatus, 2500);
+    checkDriverRideStatus();
+    pollTimer = setInterval(checkDriverRideStatus, 1500);
     return () => {
       isMounted = false;
       if (pollTimer) clearInterval(pollTimer);

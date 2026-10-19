@@ -48,17 +48,22 @@ interface TripCompletionReceiptProps {
 function formatBengaliDateTime(d?: string | Date) {
   try {
     const dateObj = d ? (typeof d === "string" ? new Date(d) : d) : new Date();
-    return dateObj.toLocaleString("bn-IN", {
+    if (isNaN(dateObj.getTime())) return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    const formattedDate = dateObj.toLocaleDateString("en-GB", {
       timeZone: "Asia/Kolkata",
-      day: "numeric",
-      month: "long",
+      day: "2-digit",
+      month: "short",
       year: "numeric",
+    });
+    const formattedTime = dateObj.toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     });
+    return `${formattedDate}, ${formattedTime}`;
   } catch {
-    return new Date().toLocaleTimeString("bn-IN");
+    return new Date().toLocaleString();
   }
 }
 
@@ -124,6 +129,7 @@ export function TripCompletionReceipt({
     const receiptMsg = `🧾 *সুন্দরবন রাইডার্স — ডিজিটাল রসিদ ও ট্রিপ সারাংশ*
 ==============================
 🆔 রাইড নং: #${tripId}
+📅 তারিখ ও সময়: ${formatBengaliDateTime(completedAt)}
 👤 যাত্রী: ${customerName || "যাত্রী বন্ধু"}
 📞 ফোন: ${customerPhone}
 🛺 চালক: ${driverName} (${totoNumber})
@@ -132,17 +138,17 @@ export function TripCompletionReceipt({
 📍 *পিকআপ:* ${pickup}
 🏁 *গন্তব্য:* ${drop}${estNote}
 📏 *প্রকৃত ভ্রমণ দূরত্ব:* ${distanceKm} কিমি
-⏱️ *ট্রিপ স্থায়িত্ব:* ~${durationMinutes} মিনিট
+⏱️ *মোট ভ্রমণের সময় (Accept to Finish):* ~${durationMinutes} মিনিট
 
-💵 *ভাড়ার বিবরণ (রেট চার্ট অনুযায়ী):*
+💵 *ভাড়ার বিবরণ:*
 - প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹${fare}.০০ (সংগৃহীত)
 ==============================
 সুন্দরবন রাইডার্সের সাথে ভ্রমণ করার জন্য ধন্যবাদ! নিরাপদ ও আরামদায়ক যাত্রা।`;
 
     const encoded = encodeURIComponent(receiptMsg);
-    const cleanPhone = customerPhone.replace(/\D/g, "");
-    const waUrl = cleanPhone.length >= 10
-      ? `https://wa.me/91${cleanPhone.slice(-10)}?text=${encoded}`
+    const targetPhone = (role === "rider" ? (customerPhone || driverPhone) : (driverPhone || customerPhone)).replace(/\D/g, "");
+    const waUrl = targetPhone.length >= 10
+      ? `https://wa.me/91${targetPhone.slice(-10)}?text=${encoded}`
       : `https://wa.me/?text=${encoded}`;
 
     window.open(waUrl, "_blank");
@@ -299,21 +305,47 @@ export function TripCompletionReceipt({
                 </div>
               </div>
 
-              {/* Driver & Vehicle Box */}
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-sm">
-                    🛺
+              {/* Participant Box: Driver view shows Passenger info; Passenger view shows Driver info */}
+              {role === "rider" ? (
+                <div className="flex items-center justify-between p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-lg shadow-sm">
+                      👤
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">যাত্রীর বিবরণ (Passenger)</span>
+                      <h5 className="font-bold text-slate-900 text-sm">{customerName || "যাত্রী বন্ধু"}</h5>
+                      {customerPhone && (
+                        <span className="font-mono font-bold text-blue-800 text-[11px]">+91 {customerPhone.replace(/\D/g, "").slice(-10)}</span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <h5 className="font-bold text-slate-900">{driverName}</h5>
-                    <span className="font-mono font-bold text-emerald-800 text-[11px]">{totoNumber}</span>
-                  </div>
+                  {customerPhone && (
+                    <a
+                      href={`tel:${customerPhone}`}
+                      className="text-xs text-blue-700 bg-white px-3 py-1.5 rounded-xl border border-blue-300 font-bold flex items-center gap-1 shadow-2xs hover:bg-blue-50"
+                    >
+                      📞 কল করুন
+                    </a>
+                  )}
                 </div>
-                <span className="text-[11px] text-emerald-700 bg-white px-2.5 py-1 rounded-full border border-emerald-200 font-bold">
-                  ভেরিফায়েড চালক
-                </span>
-              </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-sm">
+                      🛺
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider block">চালক ও টোটো</span>
+                      <h5 className="font-bold text-slate-900">{driverName}</h5>
+                      <span className="font-mono font-bold text-emerald-800 text-[11px]">{totoNumber}</span>
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-emerald-700 bg-white px-2.5 py-1 rounded-full border border-emerald-200 font-bold">
+                    ভেরিফায়েড চালক
+                  </span>
+                </div>
+              )}
 
               {/* Initial vs Actual Realized Comparison (For early drop-off or extended distance) */}
               {estimatedDistanceKm !== undefined && estimatedFare !== undefined && (
@@ -332,11 +364,11 @@ export function TripCompletionReceipt({
               {/* Fare Breakdown */}
               <div className="space-y-1.5 pt-1 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
-                  <span>প্রকৃত ভ্রমণ দূরত্ব (Actual GPS Distance):</span>
+                  <span>ভ্রমণ দূরত্ব (Travel Distance):</span>
                   <span className="font-bold text-slate-900">{distanceKm} কিমি</span>
                 </div>
                 <div className="flex justify-between text-slate-600 font-medium">
-                  <span>ভ্রমণ স্থায়িত্ব (Travel Duration):</span>
+                  <span>মোট ভ্রমণের সময় (Accept to Finish):</span>
                   <span className="font-bold text-slate-900">~{durationMinutes} মিনিট</span>
                 </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">

@@ -1321,12 +1321,15 @@ export async function PATCH(request: Request) {
       // Preserve existing start OTP or derive consistently from booking
       const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
       const startOtp = existingMeta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821");
+      const acceptTimestamp = new Date().toISOString();
       const updatedFeedback = updateBookingMeta(booking.feedback, {
         start_otp: startOtp,
         driver_id: validDriverId || driverId || "",
         driver_name: driverName || "সুন্দরবন চালক",
         driver_phone: driverPhone || "",
         toto_number: totoNumber || "WB-96-T-8421",
+        accepted_at: acceptTimestamp,
+        trip_accepted_time: Date.now(),
       });
 
       // Assign ride atomically - ONLY updating columns that exist in bookings schema
@@ -1558,6 +1561,13 @@ export async function PATCH(request: Request) {
       const initialEstDist = booking.estimated_distance_km || meta.estimated_distance_km || meta.initial_distance_km || distanceKm;
       const initialEstFare = booking.estimated_fare || meta.estimated_fare || meta.initial_fare || calculatedFare;
 
+      const acceptStartMs = meta.trip_accepted_time
+        ? Number(meta.trip_accepted_time)
+        : (meta.accepted_at ? new Date(meta.accepted_at).getTime() : (booking.created_at ? new Date(booking.created_at).getTime() : Date.now()));
+      const durationMinutes = body.durationMinutes && typeof body.durationMinutes === "number" && body.durationMinutes > 0
+        ? body.durationMinutes
+        : Math.max(1, Math.round((Date.now() - acceptStartMs) / 60000));
+
       // PURGE TRANSIENT TELEMETRY:
       // Strip out ephemeral live coordinates, continuous odometer ticks, temporary OTP codes, and polling timestamps.
       // Store ONLY essential audit data required for administrative records and trip history.
@@ -1568,9 +1578,12 @@ export async function PATCH(request: Request) {
         estimated_fare: initialEstFare,
         fare_breakdown: fareResult,
         passenger_count: passengerCount,
-        trip_start_time: meta.trip_start_time || booking.created_at,
+        trip_accepted_time: acceptStartMs,
+        accepted_at: meta.accepted_at || new Date(acceptStartMs).toISOString(),
+        trip_start_time: meta.trip_start_time || meta.accepted_at || booking.created_at,
         trip_end_time: new Date().toISOString(),
         completed_at: new Date().toISOString(),
+        duration_minutes: durationMinutes,
       };
 
       const { data: updated, error: compErr } = await admin
@@ -1622,6 +1635,7 @@ export async function PATCH(request: Request) {
           distanceKm: distanceKm,
           fare: calculatedFare,
           fareBreakdown: fareResult,
+          durationMinutes: durationMinutes,
           passengerName: enrichedUpdated.customer_name,
           passengerPhone: enrichedUpdated.customer_phone,
           driverName: enrichedUpdated.drivers?.name || enrichedUpdated.driver_name || "টোটো চালক",

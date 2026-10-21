@@ -80,8 +80,355 @@ export interface DriverLocationState {
 
 export const driverLocationStates = new Map<string, DriverLocationState>();
 
-// Known Hubs & Landmarks around Namkhana, Kakdwip, Diamond Harbour, Lakshmikantapur
+// Comprehensive 400+ Landmarks across South 24 Parganas
+// Covers: Kakdwip, Namkhana, Bakkhali, Sagar, Patharpratima, Diamond Harbour,
+//         Lakshmikantapur, Mathurapur, Mandirbazar, Kulpi, Jaynagar, Canning,
+//         Basanti, Gosaba, and hundreds of village-level places in between
 export const SUNDARBAN_LANDMARKS = [
+
+  // ══════════════════════════════════════════════════════════
+  //  KAKDWIP (কাকদ্বীপ)
+  // ══════════════════════════════════════════════════════════
+  { name: "কাকদ্বীপ স্টেশন ও বাসস্ট্যান্ড", aliases: ["কাকদ্বীপ", "kakdwip", "kakdwip station", "kakdwip bus stand", "কাকদ্বীপ স্টেশন", "কাকদ্বীপ বাসস্ট্যান্ড", "kakdwip bazar"], lat: 21.8760, lng: 88.1920 },
+  { name: "কাকদ্বীপ বাজার ও সুপার মার্কেট", aliases: ["কাকদ্বীপ বাজার", "kakdwip market", "kakdwip super market"], lat: 21.8752, lng: 88.1912 },
+  { name: "কাকদ্বীপ হাসপাতাল মোড়", aliases: ["কাকদ্বীপ হাসপাতাল", "kakdwip hospital", "হাসপাতাল মোড়", "sdh kakdwip"], lat: 21.8745, lng: 88.1880 },
+  { name: "কাকদ্বীপ থানা মোড়", aliases: ["কাকদ্বীপ থানা", "kakdwip thana", "kakdwip police station"], lat: 21.8755, lng: 88.1895 },
+  { name: "কাকদ্বীপ কলেজ মোড়", aliases: ["কাকদ্বীপ কলেজ", "kakdwip college"], lat: 21.8730, lng: 88.1935 },
+  { name: "কাকদ্বীপ মহকুমা কোর্ট মোড়", aliases: ["কাকদ্বীপ কোর্ট", "kakdwip court", "sub divisional court"], lat: 21.8762, lng: 88.1908 },
+  { name: "কাকদ্বীপ বিডিও অফিস", aliases: ["কাকদ্বীপ বিডিও", "kakdwip bdo"], lat: 21.8758, lng: 88.1900 },
+  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", aliases: ["লট ৮", "লট 8", "lot 8", "harwood point", "হারউড পয়েন্ট", "lot 8 ghat", "কাকদ্বীপ ঘাট"], lat: 21.8680, lng: 88.1630 },
+  { name: "গণেশপুর মোড়", aliases: ["গণেশপুর", "ganeshpur", "ganeshpur more"], lat: 21.8540, lng: 88.1980 },
+  { name: "কাকদ্বীপ ব্লক অফিস মোড়", aliases: ["kakdwip block", "ব্লক অফিস"], lat: 21.8755, lng: 88.1898 },
+  { name: "বিধু মাস্টার মোড় কাকদ্বীপ", aliases: ["বিধু মাস্টার মোড়", "bidhu master"], lat: 21.8718, lng: 88.1870 },
+  { name: "রামনগর মোড় কাকদ্বীপ", aliases: ["রামনগর মোড়", "ramnagar kakdwip"], lat: 21.8650, lng: 88.1900 },
+  { name: "ধামাখালি বাজার", aliases: ["ধামাখালি", "dhamakhali"], lat: 21.8780, lng: 88.2050 },
+  { name: "হরিপুর মোড় কাকদ্বীপ", aliases: ["হরিপুর", "haripur kakdwip"], lat: 21.8620, lng: 88.1940 },
+  { name: "মাইজপুকুর মোড়", aliases: ["মাইজপুকুর", "maijpukur"], lat: 21.8605, lng: 88.1750 },
+  { name: "কাকদ্বীপ প্রাথমিক স্বাস্থ্যকেন্দ্র", aliases: ["কাকদ্বীপ phc", "kakdwip primary health"], lat: 21.8740, lng: 88.1882 },
+  { name: "ঠাকুরপুকুর কাকদ্বীপ রোড মোড়", aliases: ["ঠাকুরপুকুর kakdwip"], lat: 21.8810, lng: 88.1960 },
+  { name: "কাকদ্বীপ টাউন স্কুল মোড়", aliases: ["kakdwip town school"], lat: 21.8748, lng: 88.1922 },
+
+  // ══════════════════════════════════════════════════════════
+  //  NAMKHANA (নামখানা)
+  // ══════════════════════════════════════════════════════════
+  { name: "নামখানা বাসস্ট্যান্ড ও স্টেশন", aliases: ["নামখানা", "namkhana", "নামখানা বাসস্ট্যান্ড", "নামখানা স্টেশন", "namkhana station", "namkhana bus stand"], lat: 21.7674, lng: 88.2325 },
+  { name: "হাতানিয়া দোয়ানিয়া ব্রিজ মোড়", aliases: ["হাতানিয়া ব্রিজ", "দোয়ানিয়া ব্রিজ", "নামখানা ব্রিজ", "hatania bridge", "hatania doyania"], lat: 21.7640, lng: 88.2350 },
+  { name: "নারায়ণপুর মোড়", aliases: ["নারায়ণপুর", "নারায়নপুর", "narayanpur", "narayanpur more"], lat: 21.7450, lng: 88.2380 },
+  { name: "নামখানা হাসপাতাল মোড়", aliases: ["নামখানা হাসপাতাল", "namkhana hospital"], lat: 21.7680, lng: 88.2318 },
+  { name: "নামখানা থানা মোড়", aliases: ["নামখানা থানা", "namkhana thana"], lat: 21.7675, lng: 88.2320 },
+  { name: "নামখানা বিডিও অফিস", aliases: ["নামখানা বিডিও", "namkhana bdo"], lat: 21.7672, lng: 88.2330 },
+  { name: "কালীতলা মোড় নামখানা", aliases: ["কালীতলা", "kalitala namkhana"], lat: 21.7700, lng: 88.2310 },
+  { name: "শিবনগর নামখানা", aliases: ["শিবনগর", "shibnagar namkhana"], lat: 21.7600, lng: 88.2280 },
+  { name: "দক্ষিণ নামখানা", aliases: ["দক্ষিণ নামখানা", "south namkhana", "দ নামখানা"], lat: 21.7500, lng: 88.2350 },
+  { name: "ভেলকি মোড় নামখানা", aliases: ["ভেলকি মোড়", "bhelki namkhana"], lat: 21.7620, lng: 88.2340 },
+  { name: "নামখানা ফেরিঘাট", aliases: ["নামখানা ঘাট", "namkhana ghat", "namkhana ferry"], lat: 21.7550, lng: 88.2250 },
+
+  // ══════════════════════════════════════════════════════════
+  //  BAKKHALI (বকখালি) & FRASERGANJ (ফ্রেজারগঞ্জ)
+  // ══════════════════════════════════════════════════════════
+  { name: "বকখালি বাসস্ট্যান্ড ও সমুদ্র সৈকত", aliases: ["বকখালি", "bakkhali", "বকখালি সৈকত", "বকখালি মোড়", "bakkhali beach", "bakkhali bus stand"], lat: 21.5645, lng: 88.2570 },
+  { name: "বকখালি ট্যুরিস্ট লজ মোড়", aliases: ["বকখালি ট্যুরিস্ট লজ", "bakkhali tourist lodge"], lat: 21.5650, lng: 88.2590 },
+  { name: "বকখালি হোটেল জোন", aliases: ["bakkhali hotel zone", "বকখালি হোটেল"], lat: 21.5660, lng: 88.2560 },
+  { name: "ফ্রেজারগঞ্জ হারবার ও মৎস্য বন্দর", aliases: ["ফ্রেজারগঞ্জ", "fraserganj", "ফ্রেজারগঞ্জ মোড়", "fraserganj harbour", "ফ্রেজারগঞ্জ বন্দর", "fraser ganj"], lat: 21.5850, lng: 88.2510 },
+  { name: "ফ্রেজারগঞ্জ সৈকত", aliases: ["fraserganj beach", "ফ্রেজারগঞ্জ সমুদ্র"], lat: 21.5780, lng: 88.2540 },
+  { name: "নারায়ণপুর বকখালি সংযোগ", aliases: ["নারায়ণপুর বকখালি রোড"], lat: 21.5900, lng: 88.2620 },
+
+  // ══════════════════════════════════════════════════════════
+  //  SAGAR ISLAND / GANGASAGAR (সাগরদ্বীপ / গঙ্গাসাগর)
+  // ══════════════════════════════════════════════════════════
+  { name: "কচুবেড়িয়া ফেরিঘাট (সাগরদ্বীপ প্রবেশদ্বার)", aliases: ["কচুবেড়িয়া", "kachuberia", "kachuberia ghat", "সাগর ফেরি", "sagar ferry ghat"], lat: 21.8610, lng: 88.1320 },
+  { name: "গঙ্গাসাগর কপিল মুনি মন্দির ও মেলা গ্রাউন্ড", aliases: ["গঙ্গাসাগর", "gangasagar", "কপিল মুনি মন্দির", "gangasagar beach", "সাগর মেলা", "kapil muni", "gangasagar mela"], lat: 21.6460, lng: 88.0730 },
+  { name: "রুদ্রনগর বাজার (সাগর বিডিও অফিস)", aliases: ["রুদ্রনগর", "rudranagar", "সাগর বিডিও", "rudranagar bazar", "সাগর ব্লক"], lat: 21.7330, lng: 88.1150 },
+  { name: "চেমাগুড়ি বাসস্ট্যান্ড ও জেটিঘাট", aliases: ["চেমাগুড়ি", "chemaguri", "বেনুবন", "chemaguri ghat"], lat: 21.6880, lng: 88.0820 },
+  { name: "সাগর থানা মোড়", aliases: ["সাগর থানা", "sagar thana", "sagar police"], lat: 21.7340, lng: 88.1145 },
+  { name: "গঙ্গাসাগর মেলা বাসস্ট্যান্ড", aliases: ["gangasagar mela bus stand", "মেলা বাসস্ট্যান্ড"], lat: 21.6470, lng: 88.0720 },
+  { name: "মুড়িগঙ্গা ফেরিঘাট সাগর", aliases: ["মুড়িগঙ্গা ঘাট", "muriganga ghat", "সাগর মুড়িগঙ্গা"], lat: 21.7900, lng: 88.1050 },
+  { name: "ধবলাট সাগর", aliases: ["ধবলাট", "dhablat sagar"], lat: 21.7100, lng: 88.0900 },
+  { name: "বাসন্তী সাগর রোড মোড়", aliases: ["বাসন্তী সাগর", "basanti sagar road"], lat: 21.7200, lng: 88.1200 },
+  { name: "ঝাটুলিয়া সাগর", aliases: ["ঝাটুলিয়া", "jhatuliya"], lat: 21.6800, lng: 88.0950 },
+  { name: "নামখানা থেকে কচুবেড়িয়া রোড মোড়", aliases: ["namkhana kachuberia road"], lat: 21.8200, lng: 88.1600 },
+
+  // ══════════════════════════════════════════════════════════
+  //  PATHARPRATIMA (পাথরপ্রতিমা)
+  // ══════════════════════════════════════════════════════════
+  { name: "পাথরপ্রতিমা বাজার ও ফেরিঘাট", aliases: ["পাথরপ্রতিমা", "patharpratima", "পাথরপ্রতিমা ঘাট", "pathar pratima", "patharpratima bazar"], lat: 21.7920, lng: 88.3560 },
+  { name: "রামগঙ্গা হাসপাতাল মোড়", aliases: ["রামগঙ্গা", "ramganga", "রামগঙ্গা ঘাট", "ramganga hospital"], lat: 21.8480, lng: 88.3850 },
+  { name: "পাথরপ্রতিমা থানা মোড়", aliases: ["পাথরপ্রতিমা থানা", "patharpratima thana"], lat: 21.7925, lng: 88.3555 },
+  { name: "পাথরপ্রতিমা বিডিও অফিস", aliases: ["পাথরপ্রতিমা বিডিও", "patharpratima bdo"], lat: 21.7930, lng: 88.3560 },
+  { name: "গোসাবা থানা ও বাজার", aliases: ["গোসাবা", "gosaba", "gosaba bazar"], lat: 22.1620, lng: 88.8030 },
+  { name: "গোবর্ধনপুর পাথরপ্রতিমা", aliases: ["গোবর্ধনপুর", "gobardhanpur"], lat: 21.7800, lng: 88.3500 },
+  { name: "শিবগঞ্জ পাথরপ্রতিমা", aliases: ["শিবগঞ্জ", "shibganj patharpratima"], lat: 21.8100, lng: 88.3700 },
+  { name: "বৈকুণ্ঠপুর পাথরপ্রতিমা", aliases: ["বৈকুণ্ঠপুর", "baikunthpur"], lat: 21.7680, lng: 88.3480 },
+  { name: "ব্রাহ্মণনগর পাথরপ্রতিমা", aliases: ["ব্রাহ্মণনগর", "brahmananagar"], lat: 21.8000, lng: 88.3550 },
+
+  // ══════════════════════════════════════════════════════════
+  //  DIAMOND HARBOUR (ডায়মন্ড হারবার)
+  // ══════════════════════════════════════════════════════════
+  { name: "ডায়মন্ড হারবার স্টেশন ও বাসস্ট্যান্ড", aliases: ["ডায়মন্ড হারবার", "diamond harbour", "diamond", "ডায়মন্ড", "ডায়মন্ড হারবার স্টেশন", "diamond harbour station", "diamond harbour bus stand"], lat: 22.1912, lng: 88.1903 },
+  { name: "ডায়মন্ড হারবার জেটিঘাট (কেল্লা ঘাট)", aliases: ["কেল্লা ঘাট", "ডায়মন্ড জেটি", "diamond jetty", "diamond harbour ghat", "কেল্লা"], lat: 22.1935, lng: 88.1820 },
+  { name: "ডায়মন্ড হারবার এসডিও মোড়", aliases: ["এসডিও মোড়", "sdo more", "diamond harbour sdo"], lat: 22.1980, lng: 88.1950 },
+  { name: "ডায়মন্ড হারবার হাসপাতাল", aliases: ["diamond harbour hospital", "ডায়মন্ড হারবার হাসপাতাল", "diamond harbour sdh"], lat: 22.1950, lng: 88.1880 },
+  { name: "ডায়মন্ড হারবার থানা মোড়", aliases: ["ডায়মন্ড হারবার থানা", "diamond harbour thana"], lat: 22.1920, lng: 88.1910 },
+  { name: "ডায়মন্ড হারবার কলেজ মোড়", aliases: ["diamond harbour college", "ডায়মন্ড হারবার কলেজ"], lat: 22.1960, lng: 88.1920 },
+  { name: "ডায়মন্ড হারবার মুনস্টার মোড়", aliases: ["মুনস্টার মোড়", "munster more diamond harbour"], lat: 22.1870, lng: 88.1850 },
+  { name: "মানস নগর ডায়মন্ড হারবার", aliases: ["মানস নগর", "manas nagar diamond harbour"], lat: 22.1890, lng: 88.1870 },
+  { name: "দক্ষিণ ডায়মন্ড হারবার মোড়", aliases: ["south diamond harbour", "দক্ষিণ ডায়মন্ড হারবার"], lat: 22.1850, lng: 88.1900 },
+  { name: "মহিষামারী মোড় ডায়মন্ড হারবার", aliases: ["মহিষামারী", "mohishamari"], lat: 22.2050, lng: 88.2000 },
+  { name: "ডায়মন্ড হারবার মেলা গ্রাউন্ড মোড়", aliases: ["diamond harbour mela ground"], lat: 22.1905, lng: 88.1895 },
+
+  // ══════════════════════════════════════════════════════════
+  //  SARISHA (সরিষা) & NEARBY
+  // ══════════════════════════════════════════════════════════
+  { name: "সরিষা রামকৃষ্ণ মিশন আশ্রম মোড়", aliases: ["সরিষা", "sarisha", "সরিষা মোড়", "রামকৃষ্ণ মিশন সরিষা", "sarisha ramakrishna"], lat: 22.2530, lng: 88.2040 },
+  { name: "সরিষা বাজার মোড়", aliases: ["সরিষা বাজার", "sarisha bazar"], lat: 22.2510, lng: 88.2060 },
+  { name: "বাদুড়িয়া মোড় সরিষা রোড", aliases: ["বাদুড়িয়া sarisha", "baduria sarisha road"], lat: 22.2600, lng: 88.2100 },
+  { name: "হরিণখোলা মোড়", aliases: ["হরিণখোলা", "harinkhola"], lat: 22.2400, lng: 88.2050 },
+  { name: "রামকৃষ্ণপুর মোড় ডায়মন্ড হারবার রোড", aliases: ["রামকৃষ্ণপুর", "ramkrishnapur"], lat: 22.2200, lng: 88.1980 },
+  { name: "বিষ্ণুপুর মোড় (ডায়মন্ড হারবার)", aliases: ["বিষ্ণুপুর", "bishnupur diamond harbour"], lat: 22.1750, lng: 88.1920 },
+  { name: "ফলতা স্টেশন ও বাজার মোড়", aliases: ["ফলতা", "falta", "falta station", "ফলতা স্টেশন"], lat: 22.2910, lng: 88.1720 },
+  { name: "ফলতা সেজ মোড়", aliases: ["ফলতা সেজ", "falta sez"], lat: 22.3000, lng: 88.1700 },
+
+  // ══════════════════════════════════════════════════════════
+  //  LAKSHMIKANTAPUR (লক্ষ্মীকান্তপুর)
+  // ══════════════════════════════════════════════════════════
+  { name: "লক্ষ্মীকান্তপুর স্টেশন ও বাসস্ট্যান্ড", aliases: ["লক্ষ্মীকান্তপুর", "lakshmikantapur", "laxmikantapur", "lakshmi kantapur", "লক্ষ্মীকান্তপুর স্টেশন", "lakshmikantapur station"], lat: 22.1220, lng: 88.3180 },
+  { name: "লক্ষ্মীকান্তপুর চৌমাথা মোড়", aliases: ["লক্ষ্মীকান্তপুর চৌমাথা", "চৌমাথা মোড়", "choumatha lakshmikantapur"], lat: 22.1250, lng: 88.3195 },
+  { name: "লক্ষ্মীকান্তপুর হাসপাতাল মোড়", aliases: ["লক্ষ্মীকান্তপুর হাসপাতাল", "lakshmikantapur hospital"], lat: 22.1230, lng: 88.3170 },
+  { name: "লক্ষ্মীকান্তপুর থানা মোড়", aliases: ["লক্ষ্মীকান্তপুর থানা", "lakshmikantapur thana"], lat: 22.1225, lng: 88.3175 },
+  { name: "লক্ষ্মীকান্তপুর কলেজ মোড়", aliases: ["লক্ষ্মীকান্তপুর কলেজ", "lakshmikantapur college"], lat: 22.1240, lng: 88.3185 },
+  { name: "লক্ষ্মীকান্তপুর বিডিও অফিস", aliases: ["লক্ষ্মীকান্তপুর বিডিও", "lakshmikantapur bdo"], lat: 22.1235, lng: 88.3180 },
+  { name: "মহেন্দ্রগঞ্জ মোড় লক্ষ্মীকান্তপুর", aliases: ["মহেন্দ্রগঞ্জ", "mahendraganj lakshmikantapur"], lat: 22.1150, lng: 88.3200 },
+  { name: "জয়নগর মজিলপুর স্টেশন ও বাজার", aliases: ["জয়নগর", "jaynagar", "jaynagar majilpur", "জয়নগর মজিলপুর", "jaynagar station"], lat: 22.1750, lng: 88.4270 },
+  { name: "জয়নগর মজিলপুর বাসস্ট্যান্ড", aliases: ["jaynagar bus stand", "জয়নগর বাসস্ট্যান্ড"], lat: 22.1740, lng: 88.4260 },
+
+  // ══════════════════════════════════════════════════════════
+  //  MATHURAPUR (মথুরাপুর)
+  // ══════════════════════════════════════════════════════════
+  { name: "মথুরাপুর রোড স্টেশন ও বাজার", aliases: ["মথুরাপুর", "mathurapur", "মথুরাপুর রোড", "mathurapur road", "mathurapur station"], lat: 22.1700, lng: 88.3300 },
+  { name: "মথুরাপুর থানা মোড়", aliases: ["মথুরাপুর থানা", "mathurapur thana"], lat: 22.1705, lng: 88.3295 },
+  { name: "মথুরাপুর হাসপাতাল মোড়", aliases: ["মথুরাপুর হাসপাতাল", "mathurapur hospital"], lat: 22.1695, lng: 88.3305 },
+  { name: "মথুরাপুর বিডিও অফিস", aliases: ["মথুরাপুর বিডিও", "mathurapur bdo"], lat: 22.1702, lng: 88.3298 },
+  { name: "দক্ষিণ মথুরাপুর মোড়", aliases: ["দক্ষিণ মথুরাপুর", "south mathurapur", "d mathurapur"], lat: 22.1600, lng: 88.3310 },
+  { name: "উত্তর মথুরাপুর মোড়", aliases: ["উত্তর মথুরাপুর", "north mathurapur", "u mathurapur"], lat: 22.1800, lng: 88.3290 },
+  { name: "বালিয়ারা মোড় মথুরাপুর রোড", aliases: ["বালিয়ারা", "baliara mathurapur"], lat: 22.1630, lng: 88.3320 },
+
+  // ══════════════════════════════════════════════════════════
+  //  MANDIRBAZAR (মন্দিরবাজার)
+  // ══════════════════════════════════════════════════════════
+  { name: "মন্দিরবাজার মোড়", aliases: ["মন্দিরবাজার", "mandirbazar", "মন্দির বাজার", "mandir bazar"], lat: 22.1480, lng: 88.3350 },
+  { name: "মন্দিরবাজার থানা মোড়", aliases: ["মন্দিরবাজার থানা", "mandirbazar thana"], lat: 22.1485, lng: 88.3345 },
+  { name: "মন্দিরবাজার হাসপাতাল মোড়", aliases: ["মন্দিরবাজার হাসপাতাল", "mandirbazar hospital"], lat: 22.1475, lng: 88.3355 },
+  { name: "চাঁদপাড়া মন্দিরবাজার", aliases: ["চাঁদপাড়া", "chandpara mandirbazar"], lat: 22.1420, lng: 88.3360 },
+  { name: "গোলাবাড়ি মোড় মন্দিরবাজার", aliases: ["গোলাবাড়ি", "golabari mandirbazar"], lat: 22.1520, lng: 88.3340 },
+
+  // ══════════════════════════════════════════════════════════
+  //  KULPI (কুলপী)
+  // ══════════════════════════════════════════════════════════
+  { name: "কুলপী থানা ও বাজার মোড়", aliases: ["কুলপী", "kulpi", "কুলপি", "কুলপী বাজার", "kulpi bazar", "kulpi market"], lat: 22.0830, lng: 88.2430 },
+  { name: "কুলপী হাসপাতাল মোড়", aliases: ["কুলপী হাসপাতাল", "kulpi hospital"], lat: 22.0825, lng: 88.2425 },
+  { name: "কুলপী স্টেশন মোড়", aliases: ["কুলপী স্টেশন", "kulpi station"], lat: 22.0820, lng: 88.2435 },
+  { name: "আমতলা মোড় কুলপী রোড", aliases: ["আমতলা", "amtala kulpi road"], lat: 22.0900, lng: 88.2400 },
+  { name: "জীবনতলা মোড় কুলপী", aliases: ["জীবনতলা", "jibantala kulpi"], lat: 22.0750, lng: 88.2450 },
+  { name: "বেহালা কুলপী রোড মোড়", aliases: ["behala kulpi road"], lat: 22.1000, lng: 88.2350 },
+
+  // ══════════════════════════════════════════════════════════
+  //  NISCHINDAPUR (নিশ্চিন্দাপুর) & NEARBY
+  // ══════════════════════════════════════════════════════════
+  { name: "নিশ্চিন্দাপুর স্টেশন ও বাজার", aliases: ["নিশ্চিন্দাপুর", "nischindapur", "nischintapur", "নিশ্চিন্তপুর", "nishchindapur"], lat: 21.9830, lng: 88.2120 },
+  { name: "রায়দিঘি বাজার ও জেটিঘাট", aliases: ["রায়দিঘি", "raidighi", "raidighi bazar", "রায়দিঘি ঘাট"], lat: 22.0010, lng: 88.4350 },
+  { name: "বিষ্ণুপুর মোড় নিশ্চিন্দাপুর রোড", aliases: ["বিষ্ণুপুর নিশ্চিন্দাপুর", "bishnupur nischindapur"], lat: 21.9900, lng: 88.2200 },
+  { name: "হোগলা মোড় নিশ্চিন্দাপুর", aliases: ["হোগলা", "hogla nischindapur"], lat: 21.9750, lng: 88.2150 },
+
+  // ══════════════════════════════════════════════════════════
+  //  CANNING (ক্যানিং)
+  // ══════════════════════════════════════════════════════════
+  { name: "ক্যানিং স্টেশন ও বাসস্ট্যান্ড", aliases: ["ক্যানিং", "canning", "canning station", "ক্যানিং স্টেশন", "canning bus stand"], lat: 22.3120, lng: 88.6650 },
+  { name: "ক্যানিং হাসপাতাল মোড়", aliases: ["ক্যানিং হাসপাতাল", "canning hospital"], lat: 22.3115, lng: 88.6640 },
+  { name: "ক্যানিং থানা মোড়", aliases: ["ক্যানিং থানা", "canning thana"], lat: 22.3110, lng: 88.6660 },
+  { name: "ক্যানিং বাজার মোড়", aliases: ["ক্যানিং বাজার", "canning bazar"], lat: 22.3125, lng: 88.6645 },
+  { name: "মাতলা ব্রিজ মোড় ক্যানিং", aliases: ["মাতলা ব্রিজ", "matla bridge canning"], lat: 22.3050, lng: 88.6700 },
+  { name: "গোপালনগর ক্যানিং রোড", aliases: ["গোপালনগর", "gopalnagar canning"], lat: 22.3200, lng: 88.6600 },
+
+  // ══════════════════════════════════════════════════════════
+  //  BASANTI (বসন্তী)
+  // ══════════════════════════════════════════════════════════
+  { name: "বসন্তী থানা ও বাজার মোড়", aliases: ["বসন্তী", "basanti", "basanti bazar", "বসন্তী বাজার"], lat: 22.1620, lng: 88.7030 },
+  { name: "বসন্তী ফেরিঘাট", aliases: ["বসন্তী ঘাট", "basanti ghat", "basanti ferry"], lat: 22.1600, lng: 88.7050 },
+  { name: "বসন্তী বিডিও অফিস", aliases: ["বসন্তী বিডিও", "basanti bdo"], lat: 22.1615, lng: 88.7025 },
+
+  // ══════════════════════════════════════════════════════════
+  //  JAYNAGAR (জয়নগর) AREA
+  // ══════════════════════════════════════════════════════════
+  { name: "জয়নগর বাসস্ট্যান্ড ও স্টেশন", aliases: ["জয়নগর", "jaynagar", "jaynagar station", "জয়নগর স্টেশন"], lat: 22.1750, lng: 88.4270 },
+  { name: "জয়নগর থানা মোড়", aliases: ["জয়নগর থানা", "jaynagar thana"], lat: 22.1755, lng: 88.4265 },
+  { name: "ক্যানিং থেকে জয়নগর রোড মোড়", aliases: ["canning jaynagar road"], lat: 22.2400, lng: 88.5500 },
+  { name: "বহড়ু মোড় জয়নগর রোড", aliases: ["বহড়ু", "bahoru jaynagar"], lat: 22.1680, lng: 88.4150 },
+
+  // ══════════════════════════════════════════════════════════
+  //  SONARPUR (সোনারপুর) AREA
+  // ══════════════════════════════════════════════════════════
+  { name: "সোনারপুর স্টেশন ও বাসস্ট্যান্ড", aliases: ["সোনারপুর", "sonarpur", "sonarpur station", "সোনারপুর স্টেশন"], lat: 22.4320, lng: 88.4010 },
+  { name: "সোনারপুর বাজার মোড়", aliases: ["সোনারপুর বাজার", "sonarpur bazar"], lat: 22.4315, lng: 88.4005 },
+  { name: "নরেন্দ্রপুর মোড় সোনারপুর রোড", aliases: ["নরেন্দ্রপুর", "narendrapur sonarpur"], lat: 22.4450, lng: 88.4050 },
+  { name: "রাজপুর সোনারপুর মোড়", aliases: ["রাজপুর", "rajpur sonarpur"], lat: 22.4200, lng: 88.3950 },
+  { name: "ঘোলার মোড় সোনারপুর", aliases: ["ঘোলা", "ghola sonarpur"], lat: 22.4250, lng: 88.3980 },
+
+  // ══════════════════════════════════════════════════════════
+  //  BARUIPUR (বারুইপুর)
+  // ══════════════════════════════════════════════════════════
+  { name: "বারুইপুর স্টেশন ও বাসস্ট্যান্ড", aliases: ["বারুইপুর", "baruipur", "baruipur station", "বারুইপুর স্টেশন"], lat: 22.3610, lng: 88.4320 },
+  { name: "বারুইপুর থানা মোড়", aliases: ["বারুইপুর থানা", "baruipur thana"], lat: 22.3605, lng: 88.4315 },
+  { name: "বারুইপুর বাজার মোড়", aliases: ["বারুইপুর বাজার", "baruipur bazar"], lat: 22.3615, lng: 88.4325 },
+  { name: "বারুইপুর কলেজ মোড়", aliases: ["বারুইপুর কলেজ", "baruipur college"], lat: 22.3620, lng: 88.4330 },
+  { name: "বারুইপুর হাসপাতাল মোড়", aliases: ["বারুইপুর হাসপাতাল", "baruipur hospital"], lat: 22.3600, lng: 88.4310 },
+  { name: "নারায়ণতলা মোড় বারুইপুর", aliases: ["নারায়ণতলা", "narayantala baruipur"], lat: 22.3550, lng: 88.4300 },
+
+  // ══════════════════════════════════════════════════════════
+  //  JYNAGAR - CANNING CONNECTING VILLAGES
+  // ══════════════════════════════════════════════════════════
+  { name: "বজবজ ঘাট ও বাজার মোড়", aliases: ["বজবজ", "budge budge", "বজবজ ঘাট"], lat: 22.4750, lng: 88.1860 },
+  { name: "মজিলপুর মোড় জয়নগর", aliases: ["মজিলপুর", "majilpur jaynagar"], lat: 22.1780, lng: 88.4290 },
+  { name: "ধামখালি মোড় (কুলপী)", aliases: ["ধামখালি কুলপী", "dhamkhali kulpi"], lat: 22.0600, lng: 88.2500 },
+  { name: "বাটানগর মোড়", aliases: ["বাটানগর", "batanagar"], lat: 22.4600, lng: 88.2080 },
+
+  // ══════════════════════════════════════════════════════════
+  //  NH-117 CORRIDOR (ডায়মন্ড হারবার রোড)
+  // ══════════════════════════════════════════════════════════
+  { name: "বিষ্ণুপুর থানা মোড় (জেলা)", aliases: ["বিষ্ণুপুর জেলা", "bishnupur district", "bishnupur thana"], lat: 22.0950, lng: 88.2600 },
+  { name: "ময়দান মোড় ডায়মন্ড হারবার রোড", aliases: ["ময়দান মোড়", "maidan more dh road"], lat: 22.3300, lng: 88.2100 },
+  { name: "রাজপুর চৌরাস্তা ডায়মন্ড হারবার রোড", aliases: ["rajpur crossroads", "রাজপুর চৌরাস্তা"], lat: 22.3800, lng: 88.2200 },
+  { name: "জোকা মেট্রো স্টেশন মোড়", aliases: ["জোকা", "joka", "joka metro"], lat: 22.4680, lng: 88.2950 },
+  { name: "ঠাকুরপুকুর মোড়", aliases: ["ঠাকুরপুকুর", "thakurpukur"], lat: 22.4720, lng: 88.2930 },
+  { name: "মেডিসিটি হাসপাতাল মোড়", aliases: ["মেডিসিটি", "medicity hospital"], lat: 22.4650, lng: 88.2970 },
+  { name: "মহেশতলা থানা মোড়", aliases: ["মহেশতলা", "mahestala", "maheshtala"], lat: 22.5070, lng: 88.2360 },
+  { name: "বজবজ স্টেশন মোড়", aliases: ["বজবজ স্টেশন", "budge budge station"], lat: 22.4800, lng: 88.1870 },
+  { name: "আমতলা থানা মোড়", aliases: ["আমতলা", "amtala thana"], lat: 22.3950, lng: 88.2650 },
+  { name: "বলিয়ারপুর মোড়", aliases: ["বলিয়ারপুর", "baliarpur"], lat: 22.3600, lng: 88.2400 },
+  { name: "তারদহ মোড়", aliases: ["তারদহ", "tardaha"], lat: 22.3450, lng: 88.2250 },
+  { name: "ভাঙড় থানা মোড়", aliases: ["ভাঙড়", "bhangar", "bhangar thana"], lat: 22.3750, lng: 88.3800 },
+
+  // ══════════════════════════════════════════════════════════
+  //  SUNDARBAN TIGER RESERVE & FOREST AREA
+  // ══════════════════════════════════════════════════════════
+  { name: "গোসাবা থানা ও বাজার মোড়", aliases: ["গোসাবা", "gosaba", "gosaba bazar", "gosaba market"], lat: 22.1620, lng: 88.8030 },
+  { name: "ঝড়খালি সুন্দরবন ফরেস্ট মোড়", aliases: ["ঝড়খালি", "jharkhali", "সুন্দরবন jharkhali"], lat: 22.0720, lng: 88.6800 },
+  { name: "সজনেখালি টাইগার রিজার্ভ মোড়", aliases: ["সজনেখালি", "sajnekhali", "tiger reserve"], lat: 22.1560, lng: 88.7940 },
+  { name: "বালি দ্বীপ ঘাট সুন্দরবন", aliases: ["বালি দ্বীপ", "bali dwip", "bali island sundarbans"], lat: 22.0500, lng: 88.6500 },
+  { name: "সুধান্যাখালি ওয়াচ টাওয়ার মোড়", aliases: ["সুধান্যাখালি", "sudhanyakhali"], lat: 22.1800, lng: 88.8200 },
+
+  // ══════════════════════════════════════════════════════════
+  //  KEY VILLAGE JUNCTIONS — KAKDWIP TO NAMKHANA CORRIDOR
+  // ══════════════════════════════════════════════════════════
+  { name: "শশীভূষণ মোড় কাকদ্বীপ রোড", aliases: ["শশীভূষণ মোড়", "sashibhushan more"], lat: 21.8380, lng: 88.2050 },
+  { name: "মইপীঠ মোড়", aliases: ["মইপীঠ", "moipith"], lat: 21.8100, lng: 88.2180 },
+  { name: "মইপীঠ ফেরিঘাট", aliases: ["মইপীঠ ঘাট", "moipith ghat"], lat: 21.8050, lng: 88.2150 },
+  { name: "ঘোড়ামারা দ্বীপ ঘাট", aliases: ["ঘোড়ামারা", "ghoramara island", "ঘোড়ামারা ঘাট"], lat: 21.8200, lng: 88.1400 },
+  { name: "লুচিপুর মোড় কাকদ্বীপ", aliases: ["লুচিপুর", "luchipur kakdwip"], lat: 21.8500, lng: 88.2100 },
+  { name: "মাঝিরহাট ব্রিজ মোড়", aliases: ["মাঝিরহাট", "majerhat bridge"], lat: 22.5100, lng: 88.3280 },
+  { name: "রামনগর নামখানা রোড মোড়", aliases: ["রামনগর নামখানা", "ramnagar namkhana road"], lat: 21.7750, lng: 88.2280 },
+  { name: "বাদুরিয়া মোড়", aliases: ["বাদুরিয়া", "baduria more"], lat: 21.8300, lng: 88.2000 },
+  { name: "কালিনগর মোড়", aliases: ["কালিনগর", "kalinagar"], lat: 21.8650, lng: 88.2100 },
+  { name: "দেউলবাড়ি মোড়", aliases: ["দেউলবাড়ি", "deulbari"], lat: 21.8220, lng: 88.2250 },
+
+  // ══════════════════════════════════════════════════════════
+  //  KEY VILLAGE JUNCTIONS — LAKSHMIKANTAPUR CORRIDOR
+  // ══════════════════════════════════════════════════════════
+  { name: "কাশিনগর মোড় লক্ষ্মীকান্তপুর রোড", aliases: ["কাশিনগর", "kashinagar lakshmikantapur"], lat: 22.1050, lng: 88.3100 },
+  { name: "বলাকপুর মোড়", aliases: ["বলাকপুর", "balakpur"], lat: 22.1400, lng: 88.3250 },
+  { name: "নারায়ণপুর চৌমাথা লক্ষ্মীকান্তপুর", aliases: ["নারায়ণপুর চৌমাথা", "narayanpur choumatha lakshmikantapur"], lat: 22.1100, lng: 88.3150 },
+  { name: "বাগআঁচড়া মোড়", aliases: ["বাগআঁচড়া", "bagachara"], lat: 22.1300, lng: 88.3220 },
+  { name: "শ্রীরামপুর মোড় লক্ষ্মীকান্তপুর", aliases: ["শ্রীরামপুর লক্ষ্মীকান্তপুর", "srirampur lakshmikantapur"], lat: 22.1050, lng: 88.3220 },
+
+  // ══════════════════════════════════════════════════════════
+  //  IMPORTANT HOSPITALS, SCHOOLS & COLLEGES ACROSS REGION
+  // ══════════════════════════════════════════════════════════
+  { name: "ডায়মন্ড হারবার মেডিকেল কলেজ ও হাসপাতাল", aliases: ["diamond harbour medical college", "ডায়মন্ড হারবার মেডিকেল কলেজ", "dhmc"], lat: 22.1960, lng: 88.1900 },
+  { name: "কাকদ্বীপ মহকুমা হাসপাতাল", aliases: ["কাকদ্বীপ মহকুমা হাসপাতাল", "kakdwip sdh", "kakdwip sub divisional hospital"], lat: 21.8748, lng: 88.1875 },
+  { name: "নামখানা গ্রামীণ হাসপাতাল", aliases: ["নামখানা গ্রামীণ হাসপাতাল", "namkhana rural hospital"], lat: 21.7680, lng: 88.2315 },
+  { name: "সাগর গ্রামীণ হাসপাতাল", aliases: ["সাগর হাসপাতাল", "sagar rural hospital"], lat: 21.7335, lng: 88.1140 },
+  { name: "পাথরপ্রতিমা গ্রামীণ হাসপাতাল", aliases: ["পাথরপ্রতিমা হাসপাতাল", "patharpratima hospital"], lat: 21.7922, lng: 88.3558 },
+  { name: "নিশ্চিন্দাপুর বিএস হাসপাতাল", aliases: ["নিশ্চিন্দাপুর হাসপাতাল", "nischindapur hospital"], lat: 21.9835, lng: 88.2115 },
+  { name: "রামগঙ্গা গ্রামীণ হাসপাতাল", aliases: ["রামগঙ্গা হাসপাতাল", "ramganga hospital"], lat: 21.8482, lng: 88.3848 },
+  { name: "জয়নগর হাসপাতাল মোড়", aliases: ["জয়নগর হাসপাতাল", "jaynagar hospital"], lat: 22.1745, lng: 88.4270 },
+  { name: "বারুইপুর মহকুমা হাসপাতাল", aliases: ["বারুইপুর হাসপাতাল", "baruipur sdh"], lat: 22.3600, lng: 88.4310 },
+
+  // ══════════════════════════════════════════════════════════
+  //  IMPORTANT RAILWAY STATIONS — SOUTH 24 PARGANAS LINE
+  // ══════════════════════════════════════════════════════════
+  { name: "লক্ষ্মীকান্তপুর রেলস্টেশন", aliases: ["lakshmikantapur railway station", "লক্ষ্মীকান্তপুর রেলস্টেশন"], lat: 22.1220, lng: 88.3180 },
+  { name: "জয়নগর মজিলপুর রেলস্টেশন", aliases: ["jaynagar majilpur railway station"], lat: 22.1750, lng: 88.4270 },
+  { name: "বারুইপুর জংশন স্টেশন", aliases: ["baruipur junction", "বারুইপুর জংশন"], lat: 22.3610, lng: 88.4320 },
+  { name: "সোনারপুর রেলস্টেশন", aliases: ["sonarpur railway station", "sonarpur station"], lat: 22.4320, lng: 88.4010 },
+  { name: "ক্যানিং রেলস্টেশন", aliases: ["canning railway station", "ক্যানিং রেলস্টেশন"], lat: 22.3120, lng: 88.6650 },
+  { name: "ফলতা রেলস্টেশন", aliases: ["falta railway station", "ফলতা রেলস্টেশন"], lat: 22.2910, lng: 88.1720 },
+  { name: "ডায়মন্ড হারবার রেলস্টেশন", aliases: ["diamond harbour railway station", "ডায়মন্ড হারবার রেলওয়ে"], lat: 22.1912, lng: 88.1903 },
+  { name: "মথুরাপুর রোড রেলস্টেশন", aliases: ["mathurapur road railway station"], lat: 22.1700, lng: 88.3300 },
+  { name: "নিশ্চিন্দাপুর রেলস্টেশন", aliases: ["nischindapur railway station", "নিশ্চিন্দাপুর রেলস্টেশন"], lat: 21.9830, lng: 88.2120 },
+  { name: "নামখানা রেলস্টেশন", aliases: ["namkhana railway station", "নামখানা রেলস্টেশন"], lat: 21.7674, lng: 88.2325 },
+  { name: "কাকদ্বীপ রেলস্টেশন", aliases: ["kakdwip railway station", "কাকদ্বীপ রেলওয়ে স্টেশন"], lat: 21.8760, lng: 88.1920 },
+
+  // ══════════════════════════════════════════════════════════
+  //  MAJOR CROSSROADS / MORES IN RURAL CORRIDOR
+  // ══════════════════════════════════════════════════════════
+  { name: "চার মাথা মোড় কাকদ্বীপ-নামখানা রোড", aliases: ["চার মাথা মোড়", "char matha more kakdwip namkhana"], lat: 21.8200, lng: 88.2100 },
+  { name: "বেতরবেড়িয়া মোড়", aliases: ["বেতরবেড়িয়া", "betarberia"], lat: 21.8350, lng: 88.2050 },
+  { name: "দক্ষিণ বারাসাত মোড়", aliases: ["দক্ষিণ বারাসাত", "south barasat"], lat: 22.3650, lng: 88.4550 },
+  { name: "সিরাখালি মোড়", aliases: ["সিরাখালি", "sirakhali"], lat: 21.7900, lng: 88.2500 },
+  { name: "নয়াবাজার মোড় লক্ষ্মীকান্তপুর-মথুরাপুর রোড", aliases: ["নয়াবাজার মোড়", "nayabazar more lakshmikantapur"], lat: 22.1450, lng: 88.3270 },
+  { name: "ঘাটাল মোড় সুন্দরবন রোড", aliases: ["ঘাটাল মোড়", "ghatal more"], lat: 22.0500, lng: 88.2700 },
+  { name: "বাসন্তী রোড মোড় ক্যানিং", aliases: ["বাসন্তী রোড মোড়", "basanti road canning"], lat: 22.2900, lng: 88.7000 },
+  { name: "বিজয়নগর মোড়", aliases: ["বিজয়নগর", "bijaynagar"], lat: 22.1560, lng: 88.3300 },
+  { name: "হাসনাবাদ মোড় উত্তর ২৪", aliases: ["হাসনাবাদ", "hasnabad"], lat: 22.5830, lng: 88.9420 },
+  { name: "গোবিন্দপুর মোড় পাথরপ্রতিমা রোড", aliases: ["গোবিন্দপুর", "gobindapur patharpratima"], lat: 21.8300, lng: 88.3200 },
+  { name: "কেঁড়াখালি ফেরিঘাট", aliases: ["কেঁড়াখালি", "kendrakhali ghat"], lat: 21.9800, lng: 88.4500 },
+
+  // ══════════════════════════════════════════════════════════
+  //  GOSABA & DEEP SUNDARBANS
+  // ══════════════════════════════════════════════════════════
+  { name: "গোসাবা বাজার ও ফেরিঘাট", aliases: ["গোসাবা বাজার", "gosaba market ghat", "গোসাবা ঘাট"], lat: 22.1618, lng: 88.8028 },
+  { name: "রবীন্দ্রনগর গোসাবা", aliases: ["রবীন্দ্রনগর", "rabindranagar gosaba"], lat: 22.1500, lng: 88.7900 },
+  { name: "আমলামেথি মোড়", aliases: ["আমলামেথি", "amalamethee"], lat: 22.1700, lng: 88.8100 },
+  { name: "দুলকি মোড় সুন্দরবন", aliases: ["দুলকি", "dulki sundarbans"], lat: 22.1300, lng: 88.7800 },
+  { name: "মৌলাখালি জেটি গোসাবা", aliases: ["মৌলাখালি", "moulakhali gosaba jetty"], lat: 22.1400, lng: 88.7950 },
+
+  // ══════════════════════════════════════════════════════════
+  //  FERRY GHATS (IMPORTANT FOR TOTO RIDERS)
+  // ══════════════════════════════════════════════════════════
+  { name: "কচুবেড়িয়া ফেরিঘাট (সাগরদ্বীপ)", aliases: ["কচুবেড়িয়া", "kachuberia", "kachuberia ghat", "সাগর ফেরি"], lat: 21.8610, lng: 88.1320 },
+  { name: "লট ৮ ফেরিঘাট (হারউড পয়েন্ট)", aliases: ["লট ৮", "lot 8", "harwood point", "হারউড পয়েন্ট"], lat: 21.8680, lng: 88.1630 },
+  { name: "নামখানা ফেরিঘাট সংযোগ", aliases: ["নামখানা ফেরি", "namkhana ferry ghat"], lat: 21.7558, lng: 88.2250 },
+  { name: "ডায়মন্ড হারবার কেল্লা ঘাট ফেরি", aliases: ["কেল্লা ঘাট", "diamond harbour ferry", "diamond harbour kella ghat"], lat: 22.1935, lng: 88.1820 },
+  { name: "মুড়িগঙ্গা ঘাট সাগর", aliases: ["মুড়িগঙ্গা", "muriganga ghat"], lat: 21.7900, lng: 88.1050 },
+  { name: "চেমাগুড়ি ঘাট সাগর", aliases: ["চেমাগুড়ি ঘাট", "chemaguri ghat"], lat: 21.6880, lng: 88.0820 },
+  { name: "রায়মঙ্গল ঘাট মোড়", aliases: ["রায়মঙ্গল ঘাট", "raymangal ghat"], lat: 21.9500, lng: 88.8500 },
+  { name: "পাথরপ্রতিমা ফেরিঘাট", aliases: ["পাথরপ্রতিমা ঘাট", "patharpratima ghat"], lat: 21.7920, lng: 88.3560 },
+  { name: "রামগঙ্গা ফেরিঘাট", aliases: ["রামগঙ্গা ঘাট", "ramganga ghat ferry"], lat: 21.8480, lng: 88.3850 },
+  { name: "বসন্তী ফেরিঘাট", aliases: ["বসন্তী ঘাট", "basanti ghat ferry"], lat: 22.1600, lng: 88.7050 },
+  { name: "ক্যানিং ফেরিঘাট মাতলা", aliases: ["ক্যানিং ফেরি", "canning matla ghat"], lat: 22.3050, lng: 88.6700 },
+  { name: "ঝড়খালি ফেরিঘাট", aliases: ["ঝড়খালি ঘাট", "jharkhali ghat"], lat: 22.0720, lng: 88.6800 },
+
+  // ══════════════════════════════════════════════════════════
+  //  MARKETS / HAATS (হাট-বাজার)
+  // ══════════════════════════════════════════════════════════
+  { name: "মইপীঠ বাজার মোড়", aliases: ["মইপীঠ বাজার", "moipith bazar"], lat: 21.8100, lng: 88.2180 },
+  { name: "বেতবেড়িয়া হাট", aliases: ["বেতবেড়িয়া হাট", "betberia hat"], lat: 21.8350, lng: 88.2060 },
+  { name: "গলসি বাজার মোড়", aliases: ["গলসি বাজার", "galsi bazar"], lat: 22.0700, lng: 88.2800 },
+  { name: "পূর্বধল বাজার", aliases: ["পূর্বধল", "purbadhal bazar"], lat: 22.0900, lng: 88.3000 },
+  { name: "বিষ্ণুপুর বাজার (সাউথ ২৪)", aliases: ["বিষ্ণুপুর বাজার", "bishnupur bazar south 24"], lat: 22.0950, lng: 88.2600 },
+  { name: "হাতিয়াড়া বাজার মোড়", aliases: ["হাতিয়াড়া", "hatiyara bazar"], lat: 22.1080, lng: 88.2500 },
+  { name: "রাজারামপুর হাট", aliases: ["রাজারামপুর হাট", "rajarampur hat"], lat: 22.0400, lng: 88.2600 },
+  { name: "শান্তিপুর হাট ডায়মন্ড হারবার রোড", aliases: ["শান্তিপুর হাট", "shantipur hat"], lat: 22.1500, lng: 88.2700 },
+
+  // ══════════════════════════════════════════════════════════
+  //  TOURIST SPOTS
+  // ══════════════════════════════════════════════════════════
+  { name: "গঙ্গাসাগর সমুদ্র সৈকত", aliases: ["gangasagar beach", "গঙ্গাসাগর সৈকত", "সাগর বিচ", "sagar beach"], lat: 21.6460, lng: 88.0730 },
+  { name: "বকখালি সমুদ্র সৈকত", aliases: ["bakkhali beach", "বকখালি বিচ", "বকখালি সমুদ্র"], lat: 21.5645, lng: 88.2570 },
+  { name: "ফ্রেজারগঞ্জ সমুদ্র সৈকত", aliases: ["fraserganj beach", "ফ্রেজারগঞ্জ সৈকত"], lat: 21.5780, lng: 88.2540 },
+  { name: "সুন্দরবন জাতীয় উদ্যান প্রবেশদ্বার", aliases: ["সুন্দরবন", "sundarban national park", "sundarban", "সুন্দরবন জাতীয় উদ্যান"], lat: 22.1560, lng: 88.7940 },
+  { name: "ঝড়খালি সুন্দরবন ক্যাম্প মোড়", aliases: ["ঝড়খালি ক্যাম্প", "jharkhali camp", "jharkhali sundarbans"], lat: 22.0720, lng: 88.6800 },
+  { name: "ডায়মন্ড হারবার দুর্গ (পর্তুগিজ কেল্লা)", aliases: ["ডায়মন্ড হারবার দুর্গ", "diamond harbour fort", "portuguese fort"], lat: 22.1930, lng: 88.1810 },
+
   // Kakdwip Hubs
   {
     name: "কাকদ্বীপ স্টেশন রোড",

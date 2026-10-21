@@ -184,7 +184,31 @@ export async function GET(req: Request) {
       // Both mirrors timed out or failed
     }
 
-    // Realistic Road Distance Fallback if OSRM was completely unreachable
+    // Google Directions API fallback if configured and OSRM returned nothing
+    const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (coordinates.length === 0 && googleKey) {
+      try {
+        const gUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&mode=driving&key=${googleKey}`;
+        const gRes = await fetch(gUrl, { signal: AbortSignal.timeout(3500) });
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData.status === "OK" && gData.routes?.[0]) {
+            const gRoute = gData.routes[0];
+            const gLeg = gRoute.legs?.[0];
+            if (gLeg) {
+              distanceKm = Math.max(0.8, Math.round(((gLeg.distance?.value || 1000) / 1000) * 10) / 10);
+              durationMin = Math.max(2, Math.round((gLeg.duration?.value || 300) / 60));
+              if (gRoute.overview_polyline?.points) {
+                coordinates = decodePolyline(gRoute.overview_polyline.points);
+                isExactRoadRoute = true;
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // Realistic Road Distance Fallback if OSRM and Google were completely unreachable
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
       // Realistic road winding multiplier (1.42x) for rural South 24 Parganas roads

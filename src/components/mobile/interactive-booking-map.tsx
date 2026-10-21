@@ -161,17 +161,18 @@ export function InteractiveBookingMap({
     initialPickupCoords[0] !== 0
   );
   const [hasValidPickup, setHasValidPickup] = useState(isInitialValid);
-  // Show high-precision location loading orb on open until GPS locks in perfectly
-  const [isLocatingInitialLock, setIsLocatingInitialLock] = useState(true);
+  // Show GPS lock modal on startup until real GPS coordinates are obtained
+  const [isLocatingInitialLock, setIsLocatingInitialLock] = useState(!isInitialValid);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Safety unlock timeout so user is never locked out if device GPS is completely disabled
+  // Safety unlock timeout — after 10 seconds, let user proceed manually if GPS is disabled
   useEffect(() => {
+    if (!isLocatingInitialLock) return;
     const t = setTimeout(() => {
       setIsLocatingInitialLock(false);
-    }, 6500);
+    }, 10000);
     return () => clearTimeout(t);
-  }, []);
+  }, [isLocatingInitialLock]);
 
   // Real-time Compass Heading (Phone's Head Direction)
   const [deviceHeading, setDeviceHeading] = useState<number>(0);
@@ -851,13 +852,27 @@ export function InteractiveBookingMap({
           if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(routeCoords);
           if (routeLineRef.current) routeLineRef.current.setLatLngs(routeCoords);
         } else {
-          // Fallback if network was offline (clean direct segment without artificial distortion into fields)
+          // Fallback if network was offline: generate smooth road curvature so route polyline is ALWAYS visible
           const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-          safeDist = Math.max(1.0, Math.round(directDist * 1.35 * 10) / 10);
+          safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
           routeDuration = Math.max(3, Math.round(safeDist * 2.8));
-          const directSegment: [number, number][] = [pCoords, dCoords];
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(directSegment);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(directSegment);
+          const numPts = 16;
+          const curvedPts: [number, number][] = [];
+          const dLat = dCoords[0] - pCoords[0];
+          const dLng = dCoords[1] - pCoords[1];
+          const perpLat = -dLng * 0.08;
+          const perpLng = dLat * 0.08;
+          for (let i = 0; i <= numPts; i++) {
+            const frac = i / numPts;
+            const curve = Math.sin(frac * Math.PI);
+            curvedPts.push([
+              pCoords[0] + dLat * frac + perpLat * curve,
+              pCoords[1] + dLng * frac + perpLng * curve,
+            ]);
+          }
+          routeCoords = curvedPts;
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curvedPts);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(curvedPts);
         }
 
         if (safeDist === 0) {
@@ -885,10 +900,11 @@ export function InteractiveBookingMap({
         // Uber Padded Camera Animation (leaves room for top search & bottom sheet)
         if (options?.fitBounds !== false) {
           try {
-            map.flyToBounds([pCoords, dCoords], {
-              paddingTopLeft: [50, 160],
-              paddingBottomRight: [50, 340],
-              duration: options?.flyDuration ?? 1.2,
+            const boundsToFit = routeCoords.length > 0 ? routeCoords : [pCoords, dCoords];
+            map.flyToBounds(boundsToFit, {
+              paddingTopLeft: [40, 180],
+              paddingBottomRight: [40, 260],
+              duration: options?.flyDuration ?? 1.0,
               easeLinearity: 0.25,
               maxZoom: 16,
             });
@@ -1139,7 +1155,6 @@ export function InteractiveBookingMap({
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
         setIsLocating(false);
-        setIsLocatingInitialLock(false);
 
         if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
           handleFail();
@@ -1152,6 +1167,12 @@ export function InteractiveBookingMap({
         setHasValidPickup(true);
         setPermissionState("granted");
         setLocationError(null);
+
+        // Remove old pickup marker so syncMapRouteAndPins recreates it cleanly at real position
+        if (pickupMarkerRef.current) {
+          try { pickupMarkerRef.current.remove(); } catch {}
+          pickupMarkerRef.current = null;
+        }
 
         // Always display the live user dot with rotating heading cone!
         await updateLiveUserDot(latitude, longitude);
@@ -1180,15 +1201,21 @@ export function InteractiveBookingMap({
 
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
           fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
-          flyDuration: 1.2,
+          flyDuration: 1.0,
         });
 
-        // Exact zoom-in like Uber when pickup is detected or target button clicked
+        // Exact positioning: On initial app launch, center map immediately BEFORE lifting loading overlay
+        const wasInitialLock = isLocatingInitialLock;
         if (mapInstanceRef.current) {
           try {
-            mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.2 });
+            if (wasInitialLock) {
+              mapInstanceRef.current.setView(newPickup, 17);
+            } else {
+              mapInstanceRef.current.flyTo(newPickup, 17, { duration: 0.8 });
+            }
           } catch {}
         }
+        setIsLocatingInitialLock(false);
 
         const isOutOfService = !isLocationInServiceArea(latitude, longitude);
         if (isOutOfService) {
@@ -1282,6 +1309,47 @@ export function InteractiveBookingMap({
     },
     [resolveLocationAddress, syncMapRouteAndPins]
   );
+
+  // Target Button Click Handler (Instant snap to live user location + fresh satellite lock)
+  const handleTargetGpsClick = useCallback(() => {
+    triggerHaptic(20);
+    hasManualPickupRef.current = false;
+    pickupInputFocusedRef.current = false;
+
+    // Remove old marker so it doesn't linger
+    if (pickupMarkerRef.current) {
+      try {
+        pickupMarkerRef.current.remove();
+      } catch {}
+      pickupMarkerRef.current = null;
+    }
+
+    // 1. Instant recovery: If we already have live user GPS coordinates from the live dot
+    const livePos = liveUserDotRef.current?.getLatLng();
+    if (livePos && !isNaN(livePos.lat) && livePos.lat !== 0 && !isNaN(livePos.lng) && livePos.lng !== 0) {
+      const liveCoords: [number, number] = [livePos.lat, livePos.lng];
+      setPickupCoords(liveCoords);
+      setHasValidPickup(true);
+      setLocationError(null);
+      setPickupInputValue("আমার বর্তমান অবস্থান");
+
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.flyTo(liveCoords, 17, { duration: 0.8 });
+        } catch {}
+      }
+
+      syncMapRouteAndPins(liveCoords, dropCoordsRef.current, "আমার বর্তমান অবস্থান", dropInputRef.current, {
+        fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
+      });
+    } else {
+      setPickupInputValue("অবস্থান খোঁজা হচ্ছে...");
+      setHasValidPickup(false);
+    }
+
+    // 2. Refresh high-accuracy GPS in background
+    fetchCurrentLocation(true);
+  }, [triggerHaptic, fetchCurrentLocation, syncMapRouteAndPins]);
 
   // Proactively run geolocation once on mount
   useEffect(() => {
@@ -1578,10 +1646,12 @@ export function InteractiveBookingMap({
         const biasLat = pickupCoords[0] || 21.876;
         const biasLng = pickupCoords[1] || 88.192;
         const res = await fetch(
-          `/api/geocode?q=${encodeURIComponent(query)}&lat=${biasLat}&lng=${biasLng}`
+          `/api/geocode?q=${encodeURIComponent(query)}&lat=${biasLat}&lng=${biasLng}`,
+          { signal: AbortSignal.timeout(5000) }
         );
+        if (!res.ok) throw new Error('geocode failed');
         const data = await res.json();
-        if (data?.suggestions && Array.isArray(data.suggestions)) {
+        if (data?.suggestions && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
           setPlaceSuggestions(data.suggestions);
         } else {
           setPlaceSuggestions([]);
@@ -1591,7 +1661,7 @@ export function InteractiveBookingMap({
       } finally {
         setIsSearchingPlaces(false);
       }
-    }, 90);
+    }, 300);
   };
 
   // Select Place Suggestion (Saves to Recent 3 Searches, Removes Address Lock)
@@ -1864,12 +1934,7 @@ export function InteractiveBookingMap({
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
                     <button
                       type="button"
-                      onClick={() => {
-                        // GPS button tapped: release manual lock so GPS takes over
-                        hasManualPickupRef.current = false;
-                        pickupInputFocusedRef.current = false;
-                        fetchCurrentLocation(true);
-                      }}
+                      onClick={handleTargetGpsClick}
                       disabled={isLocating}
                       title="আমার সঠিক GPS অবস্থান"
                       className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all cursor-pointer backdrop-blur-md border ${
@@ -2039,25 +2104,36 @@ export function InteractiveBookingMap({
                           কোনো ফলাফল পাওয়া যায়নি। অন্য বানান দিয়ে খুঁজুন বা ম্যাপে পিন করুন।
                         </div>
                       )}
-                      {placeSuggestions.map((place, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectSuggestion(place);
-                          }}
-                          className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-slate-100 bg-white hover:bg-emerald-50 shadow-2xs active:scale-[0.99]"
-                        >
-                          <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                            <MapPin className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="overflow-hidden flex-1">
-                            <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
-                            <span className="text-[10px] text-slate-500 truncate block mt-0.5">{place.full_address}</span>
-                          </div>
-                        </button>
-                      ))}
+                      {placeSuggestions.map((place, idx) => {
+                        const isStation = place.name.includes("স্টেশন") || place.name.toLowerCase().includes("station");
+                        const isBus = place.name.includes("বাসস্ট্যান্ড") || place.name.toLowerCase().includes("bus");
+                        const isGhat = place.name.includes("ঘাট") || place.name.includes("ফেরি") || place.name.toLowerCase().includes("ghat");
+                        const isBeach = place.name.includes("সৈকত") || place.name.includes("বিচ") || place.name.toLowerCase().includes("beach");
+                        const isHospital = place.name.includes("হাসপাতাল") || place.name.toLowerCase().includes("hospital");
+                        const isSchool = place.name.includes("স্কুল") || place.name.includes("কলেজ") || place.name.toLowerCase().includes("college");
+                        const badgeEmoji = isStation ? "🚆" : isBus ? "🚌" : isGhat ? "⛴️" : isBeach ? "🏖️" : isHospital ? "🏥" : isSchool ? "🏫" : "📍";
+                        const badgeBg = isStation ? "bg-amber-100 text-amber-900 border-amber-200" : isBus ? "bg-blue-100 text-blue-900 border-blue-200" : isGhat ? "bg-cyan-100 text-cyan-900 border-cyan-200" : isBeach ? "bg-teal-100 text-teal-900 border-teal-200" : isHospital ? "bg-rose-100 text-rose-900 border-rose-200" : "bg-emerald-100 text-emerald-900 border-emerald-200";
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectSuggestion(place);
+                            }}
+                            className="w-full p-2.5 rounded-2xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-white/80 bg-white/70 hover:bg-emerald-50/80 shadow-2xs backdrop-blur-md active:scale-[0.98]"
+                          >
+                            <div className={`w-8 h-8 rounded-xl ${badgeBg} border flex items-center justify-center text-sm shrink-0 shadow-2xs`}>
+                              {badgeEmoji}
+                            </div>
+                            <div className="overflow-hidden flex-1 min-w-0">
+                              <span className="text-xs font-black text-slate-900 truncate block">{place.name}</span>
+                              <span className="text-[10px] text-slate-500 font-semibold truncate block mt-0.5">{place.full_address}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2281,25 +2357,21 @@ export function InteractiveBookingMap({
       {/* GPS Recenter Target Button (Bottom Right - Clears 120px Sheet with Comfort) */}
       <button
         type="button"
-        onClick={() => {
-          triggerHaptic(20);
-          isLocatingRef.current = false;
-          hasManualPickupRef.current = false;
-          pickupInputFocusedRef.current = false;
-          fetchCurrentLocation(true);
-        }}
+        onClick={handleTargetGpsClick}
         disabled={isLocating}
-        title="আমার জিপিএস অবস্থান"
+        title="আমার জিপিএস অবস্থান রিসেট করুন"
         className={`absolute bottom-44 right-3.5 z-20 w-11 h-11 rounded-2xl shadow-lg border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
         } ${
-          hasValidPickup
+          isLocating
+            ? "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.5)]"
+            : hasValidPickup
             ? "bg-white/85 hover:bg-emerald-50 text-emerald-600 border-white/80"
             : "bg-amber-500/90 text-white border-amber-300 animate-bounce"
         }`}
       >
         {isLocating ? (
-          <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+          <RefreshCw className="w-5 h-5 animate-spin" />
         ) : (
           <LocateFixed className="w-5 h-5" />
         )}

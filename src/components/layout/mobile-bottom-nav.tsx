@@ -21,32 +21,32 @@ export function MobileBottomNav({
       id: "home" as const,
       label: role === "rider" ? "ডিউটি" : "রাইড বুক",
       icon: Car,
-      activeColor: "from-emerald-500/20 to-teal-500/10",
-      textColor: "text-emerald-700",
+      activeColor: "from-emerald-500/25 to-teal-500/10",
+      textColor: "text-emerald-800",
       indicatorColor: "bg-emerald-600",
     },
     {
       id: "trips" as const,
       label: "হিস্ট্রি",
       icon: History,
-      activeColor: "from-purple-500/20 to-indigo-500/10",
-      textColor: "text-purple-700",
+      activeColor: "from-purple-500/25 to-indigo-500/10",
+      textColor: "text-purple-800",
       indicatorColor: "bg-purple-600",
     },
     {
       id: "safety" as const,
       label: "সুরক্ষা",
       icon: Shield,
-      activeColor: "from-rose-500/20 to-red-500/10",
-      textColor: "text-red-600",
+      activeColor: "from-rose-500/25 to-red-500/10",
+      textColor: "text-red-700",
       indicatorColor: "bg-red-600",
     },
     {
       id: "profile" as const,
       label: "প্রোফাইল",
       icon: User,
-      activeColor: "from-blue-500/20 to-indigo-500/10",
-      textColor: "text-blue-700",
+      activeColor: "from-blue-500/25 to-indigo-500/10",
+      textColor: "text-blue-800",
       indicatorColor: "bg-blue-600",
     },
   ];
@@ -56,12 +56,12 @@ export function MobileBottomNav({
       <div
         className="max-w-sm mx-auto rounded-3xl grid grid-cols-4 p-1.5 transition-all"
         style={{
-          background: "rgba(255, 255, 255, 0.72)",
+          background: "linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.58) 100%)",
           boxShadow:
-            "0 16px 40px rgba(0,0,0,0.12), inset 0 1.5px 2px rgba(255,255,255,0.95)",
+            "0 20px 48px -10px rgba(0, 0, 0, 0.16), inset 0 2px 2px rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(255, 255, 255, 0.3)",
           border: "1px solid rgba(255, 255, 255, 0.90)",
-          backdropFilter: "blur(32px) saturate(200%)",
-          WebkitBackdropFilter: "blur(32px) saturate(200%)",
+          backdropFilter: "blur(36px) saturate(220%)",
+          WebkitBackdropFilter: "blur(36px) saturate(220%)",
         }}
       >
         {tabs.map((tab) => {
@@ -81,18 +81,18 @@ export function MobileBottomNav({
                 }
                 onTabChange(tab.id);
               }}
-              className={`relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all duration-200 cursor-pointer active:scale-90 ${
+              className={`relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all duration-200 cursor-pointer active:scale-90 active:backdrop-blur-3xl ${
                 isActive
-                  ? `bg-gradient-to-b ${tab.activeColor} shadow-xs border border-white/60 font-black`
-                  : "hover:bg-slate-100/70 text-slate-400 hover:text-slate-600 font-semibold"
+                  ? `bg-gradient-to-b ${tab.activeColor} shadow-xs border border-white/80 font-black`
+                  : "hover:bg-white/40 text-slate-500 hover:text-slate-800 font-semibold"
               }`}
             >
               <div className="relative flex items-center justify-center">
                 <Icon
                   className={`w-5 h-5 transition-transform duration-200 ${
-                    isActive ? `${tab.textColor} scale-110` : "text-slate-400"
+                    isActive ? `${tab.textColor} scale-110 drop-shadow-xs` : "text-slate-400"
                   }`}
-                  style={{ strokeWidth: isActive ? 2.6 : 1.9 }}
+                  style={{ strokeWidth: isActive ? 2.6 : 2.0 }}
                 />
                 {isActive && (
                   <span
@@ -101,7 +101,7 @@ export function MobileBottomNav({
                 )}
               </div>
               <span
-                className={`text-[10px] mt-1 tracking-tight transition-colors ${
+                className={`text-[10px] mt-1 tracking-tight leading-none transition-colors ${
                   isActive ? `${tab.textColor} font-black` : "text-slate-500 font-medium"
                 }`}
               >

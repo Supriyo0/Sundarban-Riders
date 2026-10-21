@@ -120,7 +120,7 @@ export async function GET(req: Request) {
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
-        const mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
+        const mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=2500;2500&access_token=${mapboxToken}`;
         const mbRes = await fetch(mbUrl, {
           headers: { "User-Agent": "SundarbanRiders/2.0" },
           signal: AbortSignal.timeout(3500),

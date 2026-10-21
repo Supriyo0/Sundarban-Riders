@@ -44,6 +44,20 @@ import {
 } from "@/lib/pricing/service-area";
 import { SUNDARBAN_COMPREHENSIVE_PLACES } from "@/lib/data/sundarban-places";
 
+// Top Verified Corridor Hubs for instant pre-typing suggestions
+const POPULAR_CORRIDOR_HUBS = [
+  { name: "Bakkhali Sea Beach (Main Beach)", full_address: "Bakkhali Sea Beach (Sea Beach), Namkhana, South 24 Parganas", lat: 21.5605, lng: 88.2574, emoji: "🏖️", category: "Sea Beach" },
+  { name: "Bakkhali Bus Stand", full_address: "Bakkhali Bus Stand (Bus Stand), Namkhana, South 24 Parganas", lat: 21.5642, lng: 88.2541, emoji: "🚌", category: "Bus Stand" },
+  { name: "Henry Island Watchtower & Beach", full_address: "Henry Island Watchtower & Beach (Sea Beach), Fraserganj, South 24 Parganas", lat: 21.5768, lng: 88.2935, emoji: "🏖️", category: "Sea Beach" },
+  { name: "Fraserganj Fishing Harbour", full_address: "Fraserganj Fishing Harbour (Jetty Ghat), Fraserganj, South 24 Parganas", lat: 21.5972, lng: 88.2435, emoji: "⛴️", category: "Jetty Ghat" },
+  { name: "Namkhana Railway Station", full_address: "Namkhana Railway Station (Railway Station), Namkhana, South 24 Parganas", lat: 21.7645, lng: 88.2325, emoji: "🚆", category: "Railway Station" },
+  { name: "Kakdwip Central Bus Terminus", full_address: "Kakdwip Central Bus Terminus (Bus Stand), Kakdwip, South 24 Parganas", lat: 21.8745, lng: 88.1852, emoji: "🚌", category: "Bus Stand" },
+  { name: "Kakdwip Railway Station", full_address: "Kakdwip Railway Station (Railway Station), Kakdwip, South 24 Parganas", lat: 21.8797, lng: 88.1906, emoji: "🚆", category: "Railway Station" },
+  { name: "Kapil Muni Temple, Gangasagar", full_address: "Kapil Muni Temple, Gangasagar (Temple / Ashram), Gangasagar, Sagar Island", lat: 21.6495, lng: 88.0315, emoji: "🏛️", category: "Temple / Ashram" },
+  { name: "Diamond Harbour Railway Station", full_address: "Diamond Harbour Railway Station (Railway Station), Diamond Harbour, South 24 Parganas", lat: 22.1895, lng: 88.1942, emoji: "🚆", category: "Railway Station" },
+  { name: "Lakshmikantapur Railway Junction", full_address: "Lakshmikantapur Railway Junction (Railway Station), Lakshmikantapur, South 24 Parganas", lat: 22.1585, lng: 88.3182, emoji: "🚆", category: "Railway Station" },
+];
+
 // Instant client-side place search (0ms response time - never shows "No places found" for real hubs)
 function searchClientPlaces(query: string, biasLat: number, biasLng: number) {
   const cleanQ = (query || "").trim().toLowerCase();
@@ -55,6 +69,19 @@ function searchClientPlaces(query: string, biasLat: number, biasLng: number) {
   for (const p of SUNDARBAN_COMPREHENSIVE_PLACES) {
     const pNorm = (p.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     let score = 0;
+
+    // Category matching for generic terms & common typos (school, hotel, restaurant/resturant, etc.)
+    const isCatMatch =
+      ((qNorm.includes("hotel") || qNorm.includes("resort") || qNorm.includes("lodge") || qNorm.includes("stay")) && p.category === "hotel") ||
+      ((qNorm.includes("school") || qNorm.includes("college") || qNorm.includes("vidya") || qNorm.includes("siksha")) && p.category === "school_college") ||
+      ((qNorm.includes("restaurant") || qNorm.includes("resturant") || qNorm.includes("food") || qNorm.includes("dhaba") || qNorm.includes("bhojan") || qNorm.includes("cafe")) && p.category === "restaurant") ||
+      ((qNorm.includes("hospital") || qNorm.includes("health") || qNorm.includes("swasthya") || qNorm.includes("clinic") || qNorm.includes("medical") || qNorm.includes("doctor")) && p.category === "hospital") ||
+      ((qNorm.includes("beach") || qNorm.includes("sea")) && p.category === "beach") ||
+      ((qNorm.includes("station") || qNorm.includes("rail") || qNorm.includes("train")) && p.category === "station") ||
+      ((qNorm.includes("stand") || qNorm.includes("bus") || qNorm.includes("toto")) && (p.category === "bus_stand" || p.category === "toto_stand")) ||
+      ((qNorm.includes("ghat") || qNorm.includes("ferry") || qNorm.includes("jetty")) && p.category === "ferry_ghat") ||
+      ((qNorm.includes("market") || qNorm.includes("bazar") || qNorm.includes("haat")) && p.category === "market");
+
     if (pNorm.startsWith(qNorm)) {
       score = 120;
     } else if (pNorm.includes(qNorm)) {
@@ -66,6 +93,8 @@ function searchClientPlaces(query: string, biasLat: number, biasLng: number) {
       score = 85;
     } else if (p.aliases?.some((a) => a.toLowerCase().replace(/[^a-z0-9]/g, "").includes(qNorm))) {
       score = 75;
+    } else if (isCatMatch) {
+      score = 70;
     }
 
     if (score > 0) {
@@ -2219,11 +2248,38 @@ export function InteractiveBookingMap({
                             </div>
                           </button>
                         ))
-                      ) : (
-                        <div className="p-3 text-center text-xs text-slate-500">
-                          Search any destination in West Bengal or tap the map to pin
+                      ) : null}
+
+                      {/* Popular South 24 Parganas Corridor Destinations */}
+                      <div className="pt-1.5 space-y-1">
+                        <div className="px-1 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                          ⭐ Popular Destinations in South 24 Parganas
                         </div>
-                      )}
+                        {POPULAR_CORRIDOR_HUBS.map((hub, hIdx) => (
+                          <button
+                            key={`hub-${hIdx}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectSuggestion(hub);
+                            }}
+                            className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-slate-100 dark:border-white/10 bg-slate-50/70 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 shadow-2xs active:scale-[0.99]"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 text-sm">
+                              {hub.emoji}
+                            </div>
+                            <div className="overflow-hidden flex-1">
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-xs font-black text-slate-900 dark:text-white truncate block">{hub.name}</span>
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded-full shrink-0">
+                                  {hub.category}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate block mt-0.5">{hub.full_address}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 

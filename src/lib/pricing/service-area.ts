@@ -12,12 +12,14 @@ export interface ServiceAreaBounds {
   maxLng: number;
 }
 
-// Geographic bounding box covering Sundarban, South 24 Parganas, and Kolkata metropolitan test area
+// Geographic bounding box strictly covering South 24 Parganas Toto Corridor:
+// Diamond Harbour, Lakshmikantapur, Kulpi down to Kakdwip, Namkhana, Sagar Island, Bakkhali, Fraserganj & Patharpratima
+// (Strictly excludes Sealdah, Howrah, Kolkata, and outside territories)
 export const SUNDARBAN_SERVICE_BOUNDS: ServiceAreaBounds = {
-  minLat: 21.30, // Bay of Bengal / Bakkhali / Sagar Coast
-  maxLat: 23.20, // North to Kolkata, Baruipur, Sonarpur, Salt Lake & Greater Kolkata
-  minLng: 87.70, // Western boundary (Hooghly / Howrah border)
-  maxLng: 89.50, // Eastern boundary (Sundarban & border)
+  minLat: 21.45, // Bay of Bengal / Bakkhali & Sagar Island Coast
+  maxLat: 22.25, // Diamond Harbour, Lakshmikantapur & Kulpi (Strictly excludes Sealdah, Howrah, Kolkata)
+  minLng: 88.00, // Hooghly River / Western Sagar Island
+  maxLng: 88.60, // Patharpratima & Raidighi Eastern Corridor
 };
 
 export const DEFAULT_CENTRAL_HUB = {
@@ -36,12 +38,12 @@ export const SERVICE_COVERED_ZONES = [
   "Namkhana & Hatania Doania (নামখানা)",
   "Sagar Island & Gangasagar (সাগরদ্বীপ ও গঙ্গাসাগর)",
   "Bakkhali & Fraserganj (বকখালি ও ফ্রেজারগঞ্জ)",
-  "Mathurapur & Mandirbazar (মথুরাপুর ও মন্দিরবাজার)",
-  "Patharpratima & Raidighi (পাথরপ্রতিমা ও রায়দিঘি)",
+  "Patharpratima & Ramganga (পাথরপ্রতিমা ও রামগঙ্গা)",
+  "Mousuni Island (মৌসুনি দ্বীপ)",
 ];
 
 export const SERVICE_UNAVAILABLE_MESSAGE =
-  "⚠️ Sundarban Riders service operates across South 24 Parganas (Diamond Harbour, Kakdwip, Namkhana, Sagar Island, Bakkhali, Canning). Selected point is outside active territory.";
+  "⚠️ Sundarban Riders operates strictly in South 24 Parganas (Diamond Harbour, Lakshmikantapur, Kulpi, Kakdwip, Namkhana, Sagar Island, Bakkhali, Patharpratima).";
 
 export interface RiverCrossingInfo {
   requiresFerry: boolean;

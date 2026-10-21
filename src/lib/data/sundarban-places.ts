@@ -22,7 +22,7 @@ export const SUNDARBAN_COMPREHENSIVE_PLACES: SundarbanPlace[] = [
     name: "Bakkhali Sea Beach (Main Beach)",
     category: "beach",
     categoryLabel: "Sea Beach",
-    aliases: ["bakkhali beach", "bakkhali sea beach", "bakkhali seabeach", "bakkhali main beach", "bakkhali"],
+    aliases: ["bakkhali beach", "bakkhali sea beach", "bakkhali seabeach", "bakkhali main beach", "sea beach", "seabeach", "beach", "bakkhali"],
     lat: 21.5605,
     lng: 88.2574,
     subLocality: "Namkhana, South 24 Parganas"
@@ -31,7 +31,7 @@ export const SUNDARBAN_COMPREHENSIVE_PLACES: SundarbanPlace[] = [
     name: "Bakkhali Bus Stand",
     category: "bus_stand",
     categoryLabel: "Bus Stand",
-    aliases: ["bakkhali bus stop", "bakkhali bus terminus"],
+    aliases: ["bakkhali bus stand", "bakkhali busstand", "bakkhali bus stop", "bakkhali bus terminus", "busstand bakkhali", "bus stand bakkhali", "busstand", "bus stand", "bus stop"],
     lat: 21.5642,
     lng: 88.2541,
     subLocality: "Namkhana, South 24 Parganas"
@@ -481,95 +481,360 @@ export const SUNDARBAN_COMPREHENSIVE_PLACES: SundarbanPlace[] = [
     subLocality: "Basanti, South 24 Parganas"
   },
 
-  // ── TRANSIT & MAJOR HUBS (SOUTH 24 PARGANAS TO KOLKATA) ──
+// ── HOTELS & RESORTS (SOUTH 24 PARGANAS) ──
   {
-    name: "Amtala More Bus Stand",
-    category: "bus_stand",
-    categoryLabel: "Bus Stand",
-    aliases: ["amtala", "amtala more", "amtala bus stand"],
-    lat: 22.3785,
-    lng: 88.2715,
-    subLocality: "Bishnupur, South 24 Parganas"
+    name: "Hotel Deepak Bakkhali",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["hotel deepak", "deepak hotel", "deepak bakkhali", "hotel deepak near sea beach"],
+    lat: 21.5645,
+    lng: 88.2548,
+    subLocality: "Bakkhali, South 24 Parganas"
   },
   {
-    name: "Baruipur Railway Junction",
-    category: "station",
-    categoryLabel: "Railway Station",
-    aliases: ["baruipur station", "baruipur junction", "baruipur"],
-    lat: 22.3615,
-    lng: 88.4325,
-    subLocality: "Baruipur, South 24 Parganas"
+    name: "Hotel Amarabati Bakkhali",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["hotel amarabati", "amarabati hotel", "amarabati bakkhali", "hotel amarabati park"],
+    lat: 21.5638,
+    lng: 88.2552,
+    subLocality: "Bakkhali, South 24 Parganas"
   },
   {
-    name: "Sonarpur Railway Junction",
-    category: "station",
-    categoryLabel: "Railway Station",
-    aliases: ["sonarpur station", "sonarpur junction", "sonarpur"],
-    lat: 22.4412,
-    lng: 88.4285,
-    subLocality: "Sonarpur, South 24 Parganas"
+    name: "WBTDC Bakkhali Tourist Lodge",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["wbtdc tourist lodge", "bakkhali tourist lodge", "wbtdc bakkhali", "government tourist lodge"],
+    lat: 21.5620,
+    lng: 88.2560,
+    subLocality: "Bakkhali, South 24 Parganas"
   },
   {
-    name: "Garia Metro Station (Kavi Nazrul)",
-    category: "station",
-    categoryLabel: "Railway Station",
-    aliases: ["garia metro", "kavi nazrul metro", "garia"],
-    lat: 22.4645,
-    lng: 88.3845,
-    subLocality: "Garia, Kolkata"
+    name: "Hotel Sonar Bangla Bakkhali",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["hotel sonar bangla", "sonar bangla bakkhali", "sonar bangla resort"],
+    lat: 21.5612,
+    lng: 88.2568,
+    subLocality: "Bakkhali, South 24 Parganas"
   },
   {
-    name: "Science City Kolkata",
-    category: "market",
-    categoryLabel: "Landmark",
-    aliases: ["science city", "science city kolkata", "science city auditorium"],
-    lat: 22.5401,
-    lng: 88.3958,
-    subLocality: "J.B.S. Haldane Avenue, Kolkata"
+    name: "Icon Heritage Resort Bakkhali",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["icon heritage", "hotel icon heritage", "icon heritage resort"],
+    lat: 21.5630,
+    lng: 88.2555,
+    subLocality: "Bakkhali, South 24 Parganas"
   },
   {
-    name: "Victoria Memorial Kolkata",
-    category: "market",
-    categoryLabel: "Landmark",
-    aliases: ["victoria memorial", "victoria hall", "victoria"],
-    lat: 22.5448,
-    lng: 88.3426,
-    subLocality: "Queens Way, Kolkata"
+    name: "Sagar Kanya Resort Fraserganj",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["sagar kanya resort", "sagar kanya fraserganj", "sagar kanya"],
+    lat: 21.5880,
+    lng: 88.2490,
+    subLocality: "Fraserganj, South 24 Parganas"
   },
   {
-    name: "Howrah Railway Station",
-    category: "station",
-    categoryLabel: "Railway Station",
-    aliases: ["howrah station", "howrah railway station", "howrah junction", "howrah"],
-    lat: 22.5835,
-    lng: 88.3432,
-    subLocality: "Howrah, West Bengal"
+    name: "Benfish Tourist Lodge Fraserganj",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["benfish lodge", "benfish tourist lodge", "benfish fraserganj"],
+    lat: 21.5920,
+    lng: 88.2465,
+    subLocality: "Fraserganj, South 24 Parganas"
   },
   {
-    name: "Sealdah Railway Station",
-    category: "station",
-    categoryLabel: "Railway Station",
-    aliases: ["sealdah station", "sealdah railway station", "sealdah"],
-    lat: 22.5697,
-    lng: 88.3712,
-    subLocality: "Sealdah, Kolkata"
+    name: "Hotel Classic Kakdwip",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["hotel classic", "classic hotel kakdwip", "hotel classic kakdwip"],
+    lat: 21.8755,
+    lng: 88.1872,
+    subLocality: "Kakdwip, South 24 Parganas"
   },
   {
-    name: "Esplanade Bus Terminus & Metro",
-    category: "bus_stand",
-    categoryLabel: "Bus Stand",
-    aliases: ["esplanade", "esplanade bus terminus", "esplanade metro", "dharmatala"],
-    lat: 22.5645,
-    lng: 88.3516,
-    subLocality: "Esplanade, Kolkata"
+    name: "Sundarban Gateway Hotel Kakdwip",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["sundarban gateway hotel", "hotel sundarban gateway kakdwip"],
+    lat: 21.8770,
+    lng: 88.1860,
+    subLocality: "Kakdwip, South 24 Parganas"
   },
   {
-    name: "Netaji Subhash Chandra Bose International Airport (CCU)",
-    category: "station",
-    categoryLabel: "Airport",
-    aliases: ["kolkata airport", "dum dum airport", "ccu airport", "airport kolkata"],
-    lat: 22.6547,
-    lng: 88.4467,
-    subLocality: "Dum Dum, Kolkata"
+    name: "Sagarika Tourist Lodge Diamond Harbour",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["sagarika tourist lodge", "sagarika diamond harbour", "wbtdc sagarika"],
+    lat: 22.1920,
+    lng: 88.1890,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Punyalakshmi Hotel Diamond Harbour",
+    category: "hotel",
+    categoryLabel: "Hotel / Resort",
+    aliases: ["hotel punyalakshmi", "punyalakshmi diamond harbour", "punyalakshmi hotel"],
+    lat: 22.1880,
+    lng: 88.1850,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Bharat Sevashram Sangha Guest House Gangasagar",
+    category: "hotel",
+    categoryLabel: "Lodge / Guest House",
+    aliases: ["bharat sevashram ashram", "bharat sevashram gangasagar", "bharat sevashram sangha"],
+    lat: 21.6465,
+    lng: 88.0335,
+    subLocality: "Gangasagar, Sagar Island"
+  },
+
+  // ── RESTAURANTS & FOOD HUBS (SOUTH 24 PARGANAS) ──
+  {
+    name: "Mahamaya Hotel & Restaurant Kakdwip",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["mahamaya restaurant", "mahamaya hotel kakdwip", "mahamaya restaurant kakdwip"],
+    lat: 21.8748,
+    lng: 88.1855,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Indrapuri Restaurant Kakdwip",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["indrapuri restaurant", "indrapuri kakdwip", "kakdwip indrapuri restaurant"],
+    lat: 21.8750,
+    lng: 88.1865,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Sundarban Restaurant Kakdwip",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["sundarban restaurant", "sundarban restaurant kakdwip"],
+    lat: 21.8762,
+    lng: 88.1880,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Rain Drop Restaurant Kakdwip",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["rain drop restaurant", "rain drop kakdwip", "raindrop restaurant"],
+    lat: 21.8738,
+    lng: 88.1848,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Bakkhali Bhojanalaya & Seafood Restaurant",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["bakkhali bhojanalaya", "bhojanalaya bakkhali", "bakkhali seafood"],
+    lat: 21.5635,
+    lng: 88.2545,
+    subLocality: "Bakkhali, South 24 Parganas"
+  },
+  {
+    name: "Maa Tara Restaurant Bakkhali",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["maa tara restaurant", "maa tara bakkhali", "tara restaurant bakkhali"],
+    lat: 21.5640,
+    lng: 88.2538,
+    subLocality: "Bakkhali, South 24 Parganas"
+  },
+  {
+    name: "Sagarika Multi-Cuisine Restaurant Diamond Harbour",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["sagarika restaurant", "sagarika restaurant diamond harbour"],
+    lat: 22.1918,
+    lng: 88.1895,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Gangasagar Annapurna Bhojanalaya",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["annapurna bhojanalaya", "annapurna gangasagar", "annapurna restaurant sagar"],
+    lat: 21.6485,
+    lng: 88.0325,
+    subLocality: "Gangasagar, Sagar Island"
+  },
+  {
+    name: "Namkhana Food Plaza & Dhaba",
+    category: "restaurant",
+    categoryLabel: "Restaurant",
+    aliases: ["namkhana food plaza", "namkhana dhaba", "food plaza namkhana"],
+    lat: 21.7650,
+    lng: 88.2330,
+    subLocality: "Namkhana, South 24 Parganas"
+  },
+
+  // ── SCHOOLS & COLLEGES (SOUTH 24 PARGANAS) ──
+  {
+    name: "Kakdwip Birendra Vidyapith (High School)",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["birendra vidyapith", "kakdwip birendra vidyapith", "birendra vidyapith high school", "kakdwip school"],
+    lat: 21.8762,
+    lng: 88.1875,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Kakdwip Gyanada Devi Girls High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["gyanada devi girls school", "gyanada devi high school", "kakdwip girls school"],
+    lat: 21.8750,
+    lng: 88.1890,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Sundarban Mahavidyalaya College Kakdwip",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["sundarban mahavidyalaya", "kakdwip college", "sundarban college"],
+    lat: 21.8785,
+    lng: 88.1870,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Adarsha High School Kakdwip",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["adarsha school kakdwip", "adarsha high school", "kakdwip adarsha school"],
+    lat: 21.8720,
+    lng: 88.1835,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Sitarampur High School Kakdwip",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["sitarampur high school", "sitarampur school kakdwip"],
+    lat: 21.8650,
+    lng: 88.1780,
+    subLocality: "Kakdwip, South 24 Parganas"
+  },
+  {
+    name: "Bakkhali High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["bakkhali high school", "bakkhali school"],
+    lat: 21.5660,
+    lng: 88.2520,
+    subLocality: "Bakkhali, South 24 Parganas"
+  },
+  {
+    name: "Namkhana Narayani High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["namkhana narayani high school", "narayani high school namkhana", "namkhana school"],
+    lat: 21.7660,
+    lng: 88.2340,
+    subLocality: "Namkhana, South 24 Parganas"
+  },
+  {
+    name: "Namkhana Girls High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["namkhana girls high school", "namkhana girls school"],
+    lat: 21.7675,
+    lng: 88.2330,
+    subLocality: "Namkhana, South 24 Parganas"
+  },
+  {
+    name: "Sagar Island High School (Rudranagar)",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["sagar island high school", "rudranagar high school", "sagar school"],
+    lat: 21.7230,
+    lng: 88.0870,
+    subLocality: "Sagar Island, South 24 Parganas"
+  },
+  {
+    name: "Gangasagar Kapil Muni High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["kapil muni high school", "gangasagar high school", "gangasagar school"],
+    lat: 21.6470,
+    lng: 88.0320,
+    subLocality: "Gangasagar, Sagar Island"
+  },
+  {
+    name: "Diamond Harbour High School (Boys)",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["diamond harbour high school", "diamond harbour boys school", "dh high school"],
+    lat: 22.1905,
+    lng: 88.1910,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Diamond Harbour Girls High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["diamond harbour girls high school", "diamond harbour girls school"],
+    lat: 22.1890,
+    lng: 88.1930,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Diamond Harbour Women's University (Sarisha)",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["diamond harbour womens university", "sarisha university", "dhwu"],
+    lat: 22.2150,
+    lng: 88.2050,
+    subLocality: "Sarisha, Diamond Harbour"
+  },
+  {
+    name: "Fakir Chand College Diamond Harbour",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["fakir chand college", "fc college diamond harbour", "fakir chand"],
+    lat: 22.1940,
+    lng: 88.1950,
+    subLocality: "Diamond Harbour, South 24 Parganas"
+  },
+  {
+    name: "Lakshmikantapur High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["lakshmikantapur high school", "lakshmikantapur school"],
+    lat: 22.1570,
+    lng: 88.3170,
+    subLocality: "Lakshmikantapur, South 24 Parganas"
+  },
+  {
+    name: "Kulpi Karala High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["kulpi high school", "kulpi karala high school", "kulpi school"],
+    lat: 22.0810,
+    lng: 88.2430,
+    subLocality: "Kulpi, South 24 Parganas"
+  },
+  {
+    name: "Mathurapur High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["mathurapur high school", "mathurapur school"],
+    lat: 22.1960,
+    lng: 88.3520,
+    subLocality: "Mathurapur, South 24 Parganas"
+  },
+  {
+    name: "Patharpratima High School",
+    category: "school_college",
+    categoryLabel: "School / College",
+    aliases: ["patharpratima high school", "patharpratima school"],
+    lat: 21.7910,
+    lng: 88.3520,
+    subLocality: "Patharpratima, South 24 Parganas"
   }
 ];

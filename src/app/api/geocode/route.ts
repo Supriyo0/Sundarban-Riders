@@ -4,39 +4,40 @@ import { isLocationInServiceArea, checkRiverBarrierCrossings } from "@/lib/prici
 
 const geocodeCache = new Map<string, { timestamp: number; data: any }>();
 
-// West Bengal Geographic Bounding Box
-const WEST_BENGAL_BBOX = {
-  minLat: 21.20,
-  maxLat: 27.40,
-  minLng: 85.80,
-  maxLng: 89.95,
+// South 24 Parganas Toto Corridor Bounding Box (Diamond Harbour down to Bakkhali & Sagar Island)
+const SOUTH_24_PARGANAS_BBOX = {
+  minLat: 21.45, // Bay of Bengal & Bakkhali Coast
+  maxLat: 22.25, // Diamond Harbour / Lakshmikantapur / Kulpi (Strictly excludes Sealdah, Howrah, Kolkata, Budge Budge)
+  minLng: 88.00, // Hooghly River & Sagar Island
+  maxLng: 88.60, // Patharpratima & Raidighi Eastern Corridor
 };
 
 const REGIONAL_TOWN_ANCHORS: Array<{ keywords: string[]; name: string; lat: number; lng: number }> = [
-  { keywords: ["bakkhali", "bakkhli", "bakkahli"], name: "Bakkhali", lat: 21.5642, lng: 88.2541 },
-  { keywords: ["fraserganj", "frazerganj", "frezerganj"], name: "Fraserganj", lat: 21.5895, lng: 88.2486 },
-  { keywords: ["henry island", "henrys island"], name: "Henry Island", lat: 21.5768, lng: 88.2935 },
-  { keywords: ["namkhana"], name: "Namkhana", lat: 21.7645, lng: 88.2325 },
-  { keywords: ["kakdwip", "kakdip"], name: "Kakdwip", lat: 21.8765, lng: 88.1920 },
+  { keywords: ["bakkhali", "bakkhli", "bakkahli", "amarabati", "deepak", "sonar bangla"], name: "Bakkhali", lat: 21.5642, lng: 88.2541 },
+  { keywords: ["fraserganj", "frazerganj", "frezerganj", "windmill", "fishing harbour"], name: "Fraserganj", lat: 21.5895, lng: 88.2486 },
+  { keywords: ["henry island", "henrys island", "mangrove"], name: "Henry Island", lat: 21.5768, lng: 88.2935 },
+  { keywords: ["namkhana", "hatania", "dwariknagar", "narayanpur", "shibpur"], name: "Namkhana", lat: 21.7645, lng: 88.2325 },
+  { keywords: ["kakdwip", "kakdip", "birendra", "sundarban mahavidyalaya", "gyanada"], name: "Kakdwip", lat: 21.8765, lng: 88.1920 },
   { keywords: ["lot 8", "lot-8", "harwood"], name: "Lot 8 Ferry Ghat", lat: 21.8680, lng: 88.1630 },
-  { keywords: ["gangasagar", "sagar island", "kachuberia"], name: "Gangasagar", lat: 21.6500, lng: 88.0800 },
-  { keywords: ["mousuni", "mousuni island"], name: "Mousuni Island", lat: 21.5900, lng: 88.2000 },
-  { keywords: ["patharpratima"], name: "Patharpratima", lat: 21.7900, lng: 88.3500 },
-  { keywords: ["kulpi"], name: "Kulpi", lat: 22.0820, lng: 88.2420 },
-  { keywords: ["diamond harbour", "diamond harbor"], name: "Diamond Harbour", lat: 22.1890, lng: 88.2010 },
-  { keywords: ["falta"], name: "Falta", lat: 22.2900, lng: 88.1200 },
-  { keywords: ["baruipur"], name: "Baruipur", lat: 22.3600, lng: 88.4300 },
-  { keywords: ["sonarpur"], name: "Sonarpur", lat: 22.4400, lng: 88.4200 },
-  { keywords: ["kolkata", "calcutta", "sealdah", "howrah"], name: "Kolkata Hub", lat: 22.5697, lng: 88.3712 },
+  { keywords: ["gangasagar", "sagar island", "kachuberia", "kapil muni", "chemaguri", "rudranagar", "sagar"], name: "Gangasagar", lat: 21.6500, lng: 88.0800 },
+  { keywords: ["mousuni", "mousuni island", "baliara", "bagdanga"], name: "Mousuni Island", lat: 21.5800, lng: 88.2200 },
+  { keywords: ["patharpratima", "pathar pratima", "ramganga", "digambarpur", "gobardhanpur"], name: "Patharpratima", lat: 21.7900, lng: 88.3500 },
+  { keywords: ["kulpi", "karanjali", "nischindapur"], name: "Kulpi", lat: 22.0820, lng: 88.2420 },
+  { keywords: ["lakshmikantapur", "lakshikantapur", "mathurapur", "mandirbazar"], name: "Lakshmikantapur", lat: 22.0120, lng: 88.3180 },
+  { keywords: ["diamond harbour", "diamond harbor", "sarisha", "punyalakshmi", "sagarika"], name: "Diamond Harbour", lat: 22.1890, lng: 88.2010 },
 ];
 
-function isInsideWestBengal(lat: number, lng: number): boolean {
+function isInsideSouth24Parganas(lat: number, lng: number): boolean {
   return (
-    lat >= WEST_BENGAL_BBOX.minLat &&
-    lat <= WEST_BENGAL_BBOX.maxLat &&
-    lng >= WEST_BENGAL_BBOX.minLng &&
-    lng <= WEST_BENGAL_BBOX.maxLng
+    lat >= SOUTH_24_PARGANAS_BBOX.minLat &&
+    lat <= SOUTH_24_PARGANAS_BBOX.maxLat &&
+    lng >= SOUTH_24_PARGANAS_BBOX.minLng &&
+    lng <= SOUTH_24_PARGANAS_BBOX.maxLng
   );
+}
+
+function isInsideWestBengal(lat: number, lng: number): boolean {
+  return lat >= 21.40 && lat <= 27.25 && lng >= 85.80 && lng <= 89.90;
 }
 
 function normalize(s: string): string {
@@ -198,6 +199,18 @@ export async function GET(req: Request) {
         const catInfo = getCategoryInfo(p.category);
         let score = 0;
 
+        // Check category matching (e.g. searching "hotel", "school", "restaurant", "hospital", "beach")
+        const isCatMatch =
+          ((qNorm.includes("hotel") || qNorm.includes("resort") || qNorm.includes("lodge")) && p.category === "hotel") ||
+          ((qNorm.includes("school") || qNorm.includes("college") || qNorm.includes("vidya")) && p.category === "school_college") ||
+          ((qNorm.includes("restaurant") || qNorm.includes("food") || qNorm.includes("cafe")) && p.category === "restaurant") ||
+          ((qNorm.includes("hospital") || qNorm.includes("health") || qNorm.includes("swasthya") || qNorm.includes("clinic")) && p.category === "hospital") ||
+          ((qNorm.includes("beach") || qNorm.includes("sea")) && p.category === "beach") ||
+          ((qNorm.includes("station") || qNorm.includes("rail")) && p.category === "station") ||
+          ((qNorm.includes("stand") || qNorm.includes("bus") || qNorm.includes("toto")) && (p.category === "bus_stand" || p.category === "toto_stand")) ||
+          ((qNorm.includes("ghat") || qNorm.includes("ferry") || qNorm.includes("jetty")) && p.category === "ferry_ghat") ||
+          ((qNorm.includes("market") || qNorm.includes("bazar")) && p.category === "market");
+
         // Exact / prefix / token match
         if (nameNorm.startsWith(qNorm)) {
           score = 120;
@@ -212,18 +225,13 @@ export async function GET(req: Request) {
           )
         ) {
           score = 85;
-        } else {
-          // Check aliases
-          for (const a of p.aliases || []) {
-            const aNorm = normalize(a);
-            if (aNorm.includes(qNorm)) {
-              score = 65;
-              break;
-            }
-          }
+        } else if (p.aliases?.some((a) => normalize(a).includes(qNorm))) {
+          score = 75;
+        } else if (isCatMatch) {
+          score = 70;
         }
 
-        if (score > 0) {
+        if (score > 0 && isInsideSouth24Parganas(p.lat, p.lng)) {
           const distDeg = Math.hypot(p.lat - biasLat, p.lng - biasLng);
           const finalScore = score - distDeg * 4;
           const subInfo = p.subLocality ? `${p.subLocality}, ` : "";
@@ -243,16 +251,14 @@ export async function GET(req: Request) {
         }
       }
 
-      // Adaptive timeout: If local verified database already has rich matches, keep live query snappy (1.5s).
-      // If local matches are few or zero, give live OpenStreetMap up to 5.5s to search any shop/village/landmark in West Bengal!
-      const hasSufficientLocal = suggestions.length >= 4;
-      const liveTimeoutMs = hasSufficientLocal ? 1800 : 5500;
+      // Adaptive timeout: Keep live query snappy
+      const hasSufficientLocal = suggestions.length >= 8;
+      const liveTimeoutMs = hasSufficientLocal ? 1800 : 4500;
 
-      // ── STEP B: Parallel Live Search across ALL of West Bengal (Mapbox Places, OpenStreetMap & Google Suggest) ──
-      // Guarantees that ANY location, shop, village, road, or address in West Bengal is found
+      // ── STEP B: Parallel Live Search across South 24 Parganas (Google Autocomplete & Mapbox Places) ──
       const osmTasks: Promise<void>[] = [];
 
-      // 0. Mapbox Places High-Precision Search (100,000 requests/month free forever)
+      // 0. Mapbox Places Search Strictly Inside South 24 Parganas Corridor (100,000 requests/month free)
       const mapboxToken =
         process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
       if (mapboxToken) {
@@ -261,7 +267,7 @@ export async function GET(req: Request) {
             try {
               const mbUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
                 cleanQ
-              )}.json?access_token=${mapboxToken}&country=IN&bbox=85.8,21.2,89.9,27.4&proximity=${biasLng},${biasLat}&limit=8&types=poi,address,neighborhood,locality,place`;
+              )}.json?access_token=${mapboxToken}&country=IN&bbox=88.00,21.45,88.60,22.25&proximity=${biasLng},${biasLat}&limit=12&types=poi,address,neighborhood,locality,place`;
               const mbRes = await fetch(mbUrl, {
                 signal: AbortSignal.timeout(2500),
               });
@@ -272,10 +278,10 @@ export async function GET(req: Request) {
                   if (!coords || coords.length < 2) return;
                   const fLng = coords[0];
                   const fLat = coords[1];
-                  if (!isInsideWestBengal(fLat, fLng)) return;
+                  if (!isInsideSouth24Parganas(fLat, fLng)) return;
 
                   const placeName = f.text || f.place_name?.split(",")[0] || cleanQ;
-                  const fullAddress = f.place_name || `${placeName}, West Bengal`;
+                  const fullAddress = f.place_name || `${placeName}, South 24 Parganas`;
                   const placeTypes = f.place_type || [];
                   let catLabel = "Place";
                   let catBadge = "📍";
@@ -323,93 +329,156 @@ export async function GET(req: Request) {
       osmTasks.push(
         (async () => {
           try {
-            const gRes = await fetch(
-              `https://suggestqueries.google.com/complete/search?client=chrome&gl=in&hl=en&q=${encodeURIComponent(
-                cleanQ
-              )}`,
-              {
-                headers: {
-                  "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                },
-                signal: AbortSignal.timeout(2200),
-              }
-            );
-            if (gRes.ok) {
-              const gData = await gRes.json();
-              const rawQueries: string[] = gData[1] || [];
-              const junkRegex = /train time|time table|today|weather|pin code|distance|ticket|status|chart/i;
-              const filtered = rawQueries
-                .filter((item) => typeof item === "string" && !junkRegex.test(item))
-                .map((item) => item.trim());
+            const googleQueries = [cleanQ];
+            const lowerQ = cleanQ.toLowerCase();
+            const isCategory =
+              lowerQ.includes("school") ||
+              lowerQ.includes("hotel") ||
+              lowerQ.includes("restaurant") ||
+              lowerQ.includes("resturant") ||
+              lowerQ.includes("resort") ||
+              lowerQ.includes("lodge") ||
+              lowerQ.includes("hospital") ||
+              lowerQ.includes("bazar") ||
+              lowerQ.includes("market") ||
+              lowerQ.includes("college") ||
+              lowerQ.includes("vidya") ||
+              lowerQ.includes("beach") ||
+              lowerQ.length <= 4;
+            if (isCategory) {
+              googleQueries.push(
+                `${cleanQ} south 24 parganas`,
+                `${cleanQ} kakdwip`,
+                `${cleanQ} bakkhali`,
+                `${cleanQ} diamond harbour`,
+                `${cleanQ} namkhana`
+              );
+            }
 
-              googleCompletions = filtered.slice(0, 6);
-
-              // Convert top Google search completions into clickable location suggestions
-              for (const gQuery of filtered.slice(0, 6)) {
-                // Check if Google suggestion matches an authentic place in our curated database
-                const gNorm = normalize(gQuery);
-                const localMatch = SUNDARBAN_COMPREHENSIVE_PLACES.find(
-                  (p) =>
-                    normalize(p.name).includes(gNorm) ||
-                    gNorm.includes(normalize(p.name)) ||
-                    p.aliases?.some((a) => normalize(a).includes(gNorm) || gNorm.includes(normalize(a)))
+            const gFetchTasks = googleQueries.map(async (queryStr) => {
+              try {
+                const gRes = await fetch(
+                  `https://suggestqueries.google.com/complete/search?client=chrome&gl=in&hl=en&q=${encodeURIComponent(
+                    queryStr
+                  )}`,
+                  {
+                    headers: {
+                      "User-Agent":
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    },
+                    signal: AbortSignal.timeout(2400),
+                  }
                 );
+                if (gRes.ok) {
+                  const gData = await gRes.json();
+                  return Array.isArray(gData[1]) ? gData[1] : [];
+                }
+              } catch {}
+              return [];
+            });
 
-                if (localMatch) {
-                  const catInfo = getCategoryInfo(localMatch.category);
+            const allGResults = await Promise.all(gFetchTasks);
+            const rawQueries = Array.from(new Set(allGResults.flat()));
+
+            const junkRegex = /\b(train time|time table|today|weather|pin code|distance|ticket|status|chart|meaning|bag|holiday|leave application|uniform|image|images|generator|ideas|recipe|curry|masala|fees|vacancy|style|dress|name list|name generator|in hindi|in bengali|in english)\b/i;
+            const stripTrailing = /\b(photos|reviews|review|contact number|phone number|phone|number|price|low price list|low price|booking|room booking|menu|online|menu card|timings|timing|time)\b/gi;
+            const filtered = rawQueries
+              .filter((item) => typeof item === "string")
+              .map((item) => item.replace(stripTrailing, "").replace(/\s+/g, " ").trim())
+              .filter((item) => item.length > 3 && !junkRegex.test(item) && item.toLowerCase() !== cleanQ.toLowerCase());
+
+            googleCompletions = filtered.slice(0, 15);
+
+            // Convert top Google search completions into clickable location suggestions
+            for (const gQuery of filtered.slice(0, 15)) {
+              const gNorm = normalize(gQuery);
+              const localMatch = SUNDARBAN_COMPREHENSIVE_PLACES.find(
+                (p) =>
+                  normalize(p.name).includes(gNorm) ||
+                  gNorm.includes(normalize(p.name)) ||
+                  p.aliases?.some((a) => normalize(a).includes(gNorm) || gNorm.includes(normalize(a)))
+              );
+
+              if (localMatch) {
+                const catInfo = getCategoryInfo(localMatch.category);
+                const isDup = suggestions.some(
+                  (s) => normalize(s.name) === normalize(localMatch.name)
+                );
+                if (!isDup && isInsideSouth24Parganas(localMatch.lat, localMatch.lng)) {
+                  const distDeg = Math.hypot(localMatch.lat - biasLat, localMatch.lng - biasLng);
+                  suggestions.push({
+                    name: localMatch.name,
+                    full_address: `${localMatch.name} (${catInfo.label}), ${localMatch.subLocality || "South 24 Parganas"}, West Bengal`,
+                    lat: localMatch.lat,
+                    lng: localMatch.lng,
+                    category: catInfo.label,
+                    categoryBadge: catInfo.badge,
+                    source: "google_live_autocomplete",
+                    isInServiceArea: true,
+                    distanceDeg: distDeg,
+                    score: 110 - distDeg * 2,
+                  });
+                }
+              } else {
+                // Fallback anchor resolution for Google search suggestions within South 24 Parganas
+                const gLower = gQuery.toLowerCase();
+                const matchedAnchor =
+                  REGIONAL_TOWN_ANCHORS.find((a) =>
+                    a.keywords.some((k) => gLower.includes(k) || cleanQ.toLowerCase().includes(k))
+                  ) ||
+                  REGIONAL_TOWN_ANCHORS[0]; // defaults to Bakkhali / South 24 Parganas
+
+                if (matchedAnchor) {
                   const isDup = suggestions.some(
-                    (s) => normalize(s.name) === normalize(localMatch.name)
+                    (s) => normalize(s.name) === normalize(gQuery)
                   );
                   if (!isDup) {
-                    const distDeg = Math.hypot(localMatch.lat - biasLat, localMatch.lng - biasLng);
-                    suggestions.push({
-                      name: localMatch.name,
-                      full_address: `${localMatch.name} (${catInfo.label}), ${localMatch.subLocality || "South 24 Parganas"}, West Bengal`,
-                      lat: localMatch.lat,
-                      lng: localMatch.lng,
-                      category: catInfo.label,
-                      categoryBadge: catInfo.badge,
-                      source: "google_live_autocomplete",
-                      isInServiceArea: true,
-                      distanceDeg: distDeg,
-                      score: 110 - distDeg * 2,
-                    });
-                  }
-                } else {
-                  // Fallback anchor resolution for Google search suggestions
-                  const gLower = gQuery.toLowerCase();
-                  const matchedAnchor = REGIONAL_TOWN_ANCHORS.find((a) =>
-                    a.keywords.some((k) => gLower.includes(k) || cleanQ.toLowerCase().includes(k))
-                  );
-                  if (matchedAnchor) {
-                    const isDup = suggestions.some(
-                      (s) => normalize(s.name) === normalize(gQuery)
-                    );
-                    if (!isDup) {
-                      let hash = 0;
-                      for (let i = 0; i < gQuery.length; i++) {
-                        hash = (hash << 5) - hash + gQuery.charCodeAt(i);
-                        hash |= 0;
-                      }
-                      const offsetLat = ((Math.abs(hash) % 15) - 7) * 0.0003;
-                      const offsetLng = ((Math.abs(hash >> 3) % 15) - 7) * 0.0003;
-                      const pLat = matchedAnchor.lat + offsetLat;
-                      const pLng = matchedAnchor.lng + offsetLng;
-                      const distDeg = Math.hypot(pLat - biasLat, pLng - biasLng);
+                    let hash = 0;
+                    for (let i = 0; i < gQuery.length; i++) {
+                      hash = (hash << 5) - hash + gQuery.charCodeAt(i);
+                      hash |= 0;
+                    }
+                    const offsetLat = ((Math.abs(hash) % 15) - 7) * 0.0003;
+                    const offsetLng = ((Math.abs(hash >> 3) % 15) - 7) * 0.0003;
+                    const pLat = matchedAnchor.lat + offsetLat;
+                    const pLng = matchedAnchor.lng + offsetLng;
 
+                    if (isInsideSouth24Parganas(pLat, pLng)) {
+                      const distDeg = Math.hypot(pLat - biasLat, pLng - biasLng);
                       const formattedName = gQuery
                         .split(" ")
-                        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
                         .join(" ");
+
+                      let catLabel = "Place";
+                      let catBadge = "🔍";
+                      if (gLower.includes("hotel") || gLower.includes("resort") || gLower.includes("lodge")) {
+                        catLabel = "Hotel / Resort";
+                        catBadge = "🏨";
+                      } else if (gLower.includes("school") || gLower.includes("college") || gLower.includes("vidya")) {
+                        catLabel = "School / College";
+                        catBadge = "🏫";
+                      } else if (gLower.includes("restaurant") || gLower.includes("food") || gLower.includes("cafe")) {
+                        catLabel = "Restaurant";
+                        catBadge = "🍽️";
+                      } else if (gLower.includes("hospital") || gLower.includes("health") || gLower.includes("clinic")) {
+                        catLabel = "Hospital";
+                        catBadge = "🏥";
+                      } else if (gLower.includes("beach")) {
+                        catLabel = "Sea Beach";
+                        catBadge = "🏖️";
+                      } else if (gLower.includes("ghat") || gLower.includes("ferry")) {
+                        catLabel = "Ferry Ghat";
+                        catBadge = "⛴️";
+                      }
 
                       suggestions.push({
                         name: formattedName,
-                        full_address: `${formattedName}, ${matchedAnchor.name}, West Bengal`,
+                        full_address: `${formattedName}, ${matchedAnchor.name}, South 24 Parganas`,
                         lat: pLat,
                         lng: pLng,
-                        category: "Place",
-                        categoryBadge: "🔍",
+                        category: catLabel,
+                        categoryBadge: catBadge,
                         source: "google_live_autocomplete",
                         isInServiceArea: true,
                         distanceDeg: distDeg,
@@ -444,7 +513,7 @@ export async function GET(req: Request) {
                 if (!name || !coords || coords.length < 2) return;
                 const pLng = coords[0];
                 const pLat = coords[1];
-                if (!isInsideWestBengal(pLat, pLng)) return;
+                if (!isInsideSouth24Parganas(pLat, pLng)) return;
 
                 const osmType = props.osm_value || props.type || "";
                 const tagInfo = OSM_TAG_MAP[osmType] || { label: "Place", badge: "📍" };
@@ -511,7 +580,7 @@ export async function GET(req: Request) {
                 (nData || []).forEach((item: any) => {
                   const nLat = parseFloat(item.lat);
                   const nLng = parseFloat(item.lon);
-                  if (isNaN(nLat) || isNaN(nLng) || !isInsideWestBengal(nLat, nLng)) return;
+                  if (isNaN(nLat) || isNaN(nLng) || !isInsideSouth24Parganas(nLat, nLng)) return;
 
                   const parts = (item.display_name || "").split(",");
                   const placeName = parts[0]?.trim() || cand;

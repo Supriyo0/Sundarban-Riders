@@ -104,14 +104,6 @@ export async function GET(req: Request) {
       return NextResponse.json(serverRouteCache.get(cacheKey));
     }
     
-    // 1. Query Primary and Secondary OSRM Driving & Toto-friendly Engines in PARALLEL with road-snapping radiuses
-    const osrmEndpoints = [
-      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-      `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-      `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-    ];
-
     let coordinates: [number, number][] = [];
     let distanceKm = 0;
     let durationMin = 0;
@@ -123,66 +115,121 @@ export async function GET(req: Request) {
     }> = [];
     let isExactRoadRoute = false;
 
-    const queryEndpoint = async (url: string) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4500);
+    // 1. PRIMARY ENGINE: Mapbox Driving API (100,000 requests/month free forever)
+    const mapboxToken =
+      process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    if (mapboxToken) {
       try {
-        const res = await fetch(url, {
-          headers: { "User-Agent": "SundarbanRiders/1.0" },
-          signal: controller.signal,
-          next: { revalidate: 300 },
+        const mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
+        const mbRes = await fetch(mbUrl, {
+          headers: { "User-Agent": "SundarbanRiders/2.0" },
+          signal: AbortSignal.timeout(3500),
         });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-            return data.routes[0];
+        if (mbRes.ok) {
+          const mbData = await mbRes.json();
+          const route = mbData?.routes?.[0];
+          if (
+            route &&
+            Array.isArray(route.geometry?.coordinates) &&
+            route.geometry.coordinates.length > 0
+          ) {
+            distanceKm = Math.max(0.8, Math.round((route.distance / 1000) * 10) / 10);
+            durationMin = Math.max(2, Math.round(route.duration / 60));
+            coordinates = route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+            isExactRoadRoute = true;
+
+            if (route.legs?.[0]?.steps) {
+              route.legs[0].steps.forEach((step: any) => {
+                const translated = translateRoadName(step.name || "");
+                if (translated && !roadSegments.includes(translated)) {
+                  roadSegments.push(translated);
+                }
+                if (step.distance > 20) {
+                  detailedSteps.push({
+                    road: translated || "সংযোগকারী সড়ক",
+                    distanceMeters: Math.round(step.distance),
+                    maneuver: step.maneuver?.type || "continue",
+                  });
+                }
+              });
+            }
           }
         }
       } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
+        console.warn("Mapbox Directions API failed, falling back to OSRM:", err);
       }
-      throw new Error("No route found");
-    };
+    }
 
-    try {
-      // Race OSRM mirrors — whichever responds first with full geometry wins!
-      const bestRoute = await Promise.any(osrmEndpoints.map((url) => queryEndpoint(url)));
-      if (bestRoute) {
-        distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
-        durationMin = Math.max(2, Math.round(bestRoute.duration / 60));
+    // 2. SECONDARY FALLBACK: Query OSRM Driving Mirrors if Mapbox returned nothing
+    if (coordinates.length === 0) {
+      const osrmEndpoints = [
+        `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+        `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+        `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      ];
 
-        // Support BOTH GeoJSON coordinate arrays and OSRM encoded polyline strings!
-        if (bestRoute.geometry && Array.isArray(bestRoute.geometry.coordinates)) {
-          coordinates = bestRoute.geometry.coordinates.map((coord: [number, number]) => [
-            coord[1],
-            coord[0],
-          ]);
-          isExactRoadRoute = true;
-        } else if (typeof bestRoute.geometry === "string" && bestRoute.geometry.length > 0) {
-          coordinates = decodePolyline(bestRoute.geometry);
-          isExactRoadRoute = true;
-        }
-
-        if (bestRoute.legs && bestRoute.legs[0] && bestRoute.legs[0].steps) {
-          bestRoute.legs[0].steps.forEach((step: any) => {
-            const translated = translateRoadName(step.name || "");
-            if (translated && !roadSegments.includes(translated)) {
-              roadSegments.push(translated);
-            }
-            if (step.distance > 20) {
-              detailedSteps.push({
-                road: translated || "সংযোগকারী সড়ক",
-                distanceMeters: Math.round(step.distance),
-                maneuver: step.maneuver?.type || "continue",
-              });
-            }
+      const queryEndpoint = async (url: string) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
+        try {
+          const res = await fetch(url, {
+            headers: { "User-Agent": "SundarbanRiders/1.0" },
+            signal: controller.signal,
+            next: { revalidate: 300 },
           });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+              return data.routes[0];
+            }
+          }
+        } catch (err) {
+          clearTimeout(timeoutId);
+          throw err;
         }
+        throw new Error("No route found");
+      };
+
+      try {
+        // Race OSRM mirrors — whichever responds first with full geometry wins!
+        const bestRoute = await Promise.any(osrmEndpoints.map((url) => queryEndpoint(url)));
+        if (bestRoute) {
+          distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
+          durationMin = Math.max(2, Math.round(bestRoute.duration / 60));
+
+          // Support BOTH GeoJSON coordinate arrays and OSRM encoded polyline strings!
+          if (bestRoute.geometry && Array.isArray(bestRoute.geometry.coordinates)) {
+            coordinates = bestRoute.geometry.coordinates.map((coord: [number, number]) => [
+              coord[1],
+              coord[0],
+            ]);
+            isExactRoadRoute = true;
+          } else if (typeof bestRoute.geometry === "string" && bestRoute.geometry.length > 0) {
+            coordinates = decodePolyline(bestRoute.geometry);
+            isExactRoadRoute = true;
+          }
+
+          if (bestRoute.legs && bestRoute.legs[0] && bestRoute.legs[0].steps) {
+            bestRoute.legs[0].steps.forEach((step: any) => {
+              const translated = translateRoadName(step.name || "");
+              if (translated && !roadSegments.includes(translated)) {
+                roadSegments.push(translated);
+              }
+              if (step.distance > 20) {
+                detailedSteps.push({
+                  road: translated || "সংযোগকারী সড়ক",
+                  distanceMeters: Math.round(step.distance),
+                  maneuver: step.maneuver?.type || "continue",
+                });
+              }
+            });
+          }
+        }
+      } catch {
+        // Both mirrors timed out or failed
       }
-    } catch {
-      // Both mirrors timed out or failed
     }
 
     // Google Directions API fallback if configured and OSRM returned nothing

@@ -230,9 +230,75 @@ export async function GET(req: Request) {
       const hasSufficientLocal = suggestions.length >= 4;
       const liveTimeoutMs = hasSufficientLocal ? 1800 : 5500;
 
-      // ── STEP B: Parallel Live Search across ALL of West Bengal (OpenStreetMap & Google Suggest) ──
+      // ── STEP B: Parallel Live Search across ALL of West Bengal (Mapbox Places, OpenStreetMap & Google Suggest) ──
       // Guarantees that ANY location, shop, village, road, or address in West Bengal is found
       const osmTasks: Promise<void>[] = [];
+
+      // 0. Mapbox Places High-Precision Search (100,000 requests/month free forever)
+      const mapboxToken =
+        process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+      if (mapboxToken) {
+        osmTasks.push(
+          (async () => {
+            try {
+              const mbUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+                cleanQ
+              )}.json?access_token=${mapboxToken}&country=IN&bbox=85.8,21.2,89.9,27.4&proximity=${biasLng},${biasLat}&limit=8&types=poi,address,neighborhood,locality,place`;
+              const mbRes = await fetch(mbUrl, {
+                signal: AbortSignal.timeout(2500),
+              });
+              if (mbRes.ok) {
+                const mbData = await mbRes.json();
+                (mbData.features || []).forEach((f: any) => {
+                  const coords = f.center || f.geometry?.coordinates;
+                  if (!coords || coords.length < 2) return;
+                  const fLng = coords[0];
+                  const fLat = coords[1];
+                  if (!isInsideWestBengal(fLat, fLng)) return;
+
+                  const placeName = f.text || f.place_name?.split(",")[0] || cleanQ;
+                  const fullAddress = f.place_name || `${placeName}, West Bengal`;
+                  const placeTypes = f.place_type || [];
+                  let catLabel = "Place";
+                  let catBadge = "📍";
+                  if (placeTypes.includes("poi")) {
+                    catLabel = "Landmark";
+                    catBadge = "⭐";
+                  } else if (placeTypes.includes("address")) {
+                    catLabel = "Street Address";
+                    catBadge = "🏠";
+                  } else if (placeTypes.includes("locality") || placeTypes.includes("place")) {
+                    catLabel = "Town / Hub";
+                    catBadge = "🏙️";
+                  }
+
+                  const isDup = suggestions.some(
+                    (s) =>
+                      normalize(s.name) === normalize(placeName) ||
+                      (Math.abs(s.lat - fLat) < 0.0008 && Math.abs(s.lng - fLng) < 0.0008)
+                  );
+
+                  if (!isDup) {
+                    const distDeg = Math.hypot(fLat - biasLat, fLng - biasLng);
+                    suggestions.push({
+                      name: placeName,
+                      full_address: fullAddress,
+                      lat: fLat,
+                      lng: fLng,
+                      category: catLabel,
+                      categoryBadge: catBadge,
+                      source: "mapbox_places",
+                      isInServiceArea: true,
+                      distanceDeg: distDeg,
+                      score: 95 - distDeg * 2.5,
+                    });
+                  }
+                });
+              }
+            } catch {}
+          })()
+        );
+      }
 
       // 1. Google Suggest (Discovers real user search phrases from Google)
       let googleCompletions: string[] = [];
@@ -448,7 +514,32 @@ export async function GET(req: Request) {
       });
     }
 
-    // 2. OpenStreetMap Nominatim reverse geocode in clean English
+    // 2. Mapbox High-Precision Reverse Geocoding (100,000 requests/month free forever)
+    const mapboxToken =
+      process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+    if (mapboxToken) {
+      try {
+        const mbRevUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${mapboxToken}&country=IN&types=poi,address,neighborhood,locality&limit=1`;
+        const mbRes = await fetch(mbRevUrl, { signal: AbortSignal.timeout(2200) });
+        if (mbRes.ok) {
+          const mbData = await mbRes.json();
+          const first = mbData?.features?.[0];
+          if (first && first.place_name) {
+            const shortName = first.text || first.place_name.split(",")[0]?.trim();
+            return NextResponse.json({
+              name: shortName || first.place_name,
+              full_address: first.place_name,
+              lat: latitude,
+              lng: longitude,
+              isInServiceArea: isInTerritory,
+              source: "mapbox_reverse",
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // 3. OpenStreetMap Nominatim reverse geocode in clean English
     try {
       const nomRevUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=en`;
       const res = await fetch(nomRevUrl, {

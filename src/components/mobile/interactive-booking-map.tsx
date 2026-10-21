@@ -833,7 +833,8 @@ export function InteractiveBookingMap({
         } else {
           try {
             const controller = new AbortController();
-            const safetyTimer = setTimeout(() => controller.abort(), 2500);
+            routeAbortControllerRef.current = controller;
+            const safetyTimer = setTimeout(() => controller.abort(), 7000);
 
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
@@ -879,7 +880,11 @@ export function InteractiveBookingMap({
                 });
               }
             }
-          } catch {}
+          } catch {
+            // Keep estimated baseline distance and fare if OSRM is unreachable
+          } finally {
+            setIsCalculatingRoute(false);
+          }
         }
       } else {
         // Clear route
@@ -1099,7 +1104,15 @@ export function InteractiveBookingMap({
 
       const isNative = Capacitor.isNativePlatform();
 
+      // Absolute safety watchdog: guarantees isLocating is ALWAYS reset even if GPS hangs
+      const watchdog = setTimeout(() => {
+        isLocatingRef.current = false;
+        setIsLocating(false);
+        setIsLocatingInitialLock(false);
+      }, 7500);
+
       const handleFail = (msg?: string, isDenied = false) => {
+        clearTimeout(watchdog);
         isLocatingRef.current = false;
         setIsLocating(false);
         setIsLocatingInitialLock(false);
@@ -1108,14 +1121,14 @@ export function InteractiveBookingMap({
 
         if (userInitiated || isDenied) {
           const defaultDeniedMsg = isNative
-            ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
-            : "⚠️ ব্রাউজারে লোকেশন পারমিশন Blocked আছে। অনুগ্রহ করে ব্রাউজার সাইট সেটিংস থেকে Location 'Allow' করুন।";
+            ? "⚠️ Please allow location permission in App Settings (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')."
+            : "⚠️ Location permission is blocked in browser settings. Please allow location access for this site.";
 
           const errorMsg =
             msg ||
             (isDenied
               ? defaultDeniedMsg
-              : "⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে ফোনের নোটিফিকেশন বার থেকে Location (GPS) চালু করুন।");
+              : "⚠️ Unable to detect GPS position. Please ensure your device Location (GPS) is turned on.");
 
           setLocationError(errorMsg);
           if (userInitiated) {
@@ -1125,11 +1138,12 @@ export function InteractiveBookingMap({
       };
 
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
+        clearTimeout(watchdog);
         isLocatingRef.current = false;
         setIsLocating(false);
 
-        if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
-          handleFail();
+        if (isNaN(latitude) || latitude === 0 || isNaN(longitude) || longitude === 0) {
+          handleFail("⚠️ Invalid GPS coordinates received.");
           return;
         }
 
@@ -1206,23 +1220,16 @@ export function InteractiveBookingMap({
             }
           }
 
-          // Pure Hardware Satellite GPS with fresh live fix (maximumAge: 0)
           try {
             const position = await Geolocation.getCurrentPosition({
               enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 0,
+              timeout: 7000,
+              maximumAge: 3000,
             });
 
             if (position?.coords?.latitude && position?.coords?.longitude) {
-              const acc = position.coords.accuracy || 10;
-              // Reject coarse cellular guesses (> 1500 meters) that jump to distant towers
-              if (acc <= 1500) {
-                await handleSuccess(position.coords.latitude, position.coords.longitude);
-                return;
-              } else {
-                console.warn("[GPS] Low accuracy cell tower guess rejected:", acc, "m");
-              }
+              await handleSuccess(position.coords.latitude, position.coords.longitude);
+              return;
             }
           } catch (e) {
             console.warn("Capacitor high accuracy GPS error:", e);
@@ -1232,40 +1239,35 @@ export function InteractiveBookingMap({
         }
       }
 
-      // 2. Standard Web Browser / WebView Pure High-Accuracy Satellite GPS
+      // 2. Standard Web Browser / WebView High-Accuracy Satellite GPS
       if (typeof window === "undefined" || !navigator.geolocation) {
-        setIsLocatingInitialLock(false);
-        if (userInitiated) {
-          handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান অনুসন্ধান করুন।");
-        }
+        handleFail("⚠️ Geolocation service is not supported on this browser.");
         return;
       }
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const acc = pos.coords.accuracy || 10;
-          if (acc <= 1500) {
+          if (pos?.coords?.latitude && pos?.coords?.longitude) {
             handleSuccess(pos.coords.latitude, pos.coords.longitude);
           } else {
-            console.warn("[Web GPS] Cellular guess rejected due to poor accuracy:", acc, "m");
-            // If accuracy is too poor, don't jump to Kolkata cell tower
-            setIsLocatingInitialLock(false);
+            handleFail("⚠️ Could not acquire GPS coordinates.");
           }
         },
         (err) => {
-          setIsLocatingInitialLock(false);
           if (userInitiated) {
             if (err.code === 1) {
               const deniedText = isNative
-                ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
-                : "⚠️ ব্রাউজারে লোকেশন পারমিশন Blocked আছে। অনুগ্রহ করে সাইট সেটিংস থেকে Location 'Allow' করুন।";
+                ? "⚠️ Please allow location permission in App Settings."
+                : "⚠️ Location permission is blocked in browser settings. Please allow location access.";
               handleFail(deniedText, true);
             } else {
-              handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
+              handleFail("⚠️ Unable to acquire GPS position. Please ensure Location is enabled.");
             }
+          } else {
+            handleFail();
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 3000 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -1789,7 +1791,7 @@ export function InteractiveBookingMap({
   };
 
   return (
-    <div className="relative w-full h-full min-h-0 flex-1 overflow-hidden select-none bg-slate-100">
+    <div className="relative w-full h-full min-h-0 flex-1 overflow-hidden select-none">
       {/* ------------------------------------------------------------- */}
       {/* 1. EDGE-TO-EDGE FULL-SCREEN LEAFLET MAP CANVAS               */}
       {/* ------------------------------------------------------------- */}
@@ -1801,7 +1803,7 @@ export function InteractiveBookingMap({
       <div className={`absolute top-16 sm:top-18 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
-          className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 backdrop-blur-3xl bg-white/75 dark:bg-slate-900/75 border border-white/90 dark:border-white/20 shadow-[0_16px_40px_rgba(0,0,0,0.12),inset_0_1.5px_2px_rgba(255,255,255,0.95)] space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
+          className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 liquid-glass-card liquid-sheen space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
             topCardExpanded
               ? activeSearchField
                 ? "max-h-[82vh] overflow-y-auto"
@@ -1810,7 +1812,7 @@ export function InteractiveBookingMap({
           }`}
         >
           {/* Top liquid specular glass reflection sheen */}
-          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/60 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
+          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/45 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
           {!topCardExpanded ? (
             /* Minimized Top Search Bar (Compact Peek Mode with Liquid Sheen) */
             <div
@@ -2387,7 +2389,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-16 sm:bottom-18 left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-3xl shadow-[0_-16px_48px_rgba(0,0,0,0.14),inset_0_1.5px_2px_rgba(255,255,255,0.95)] border border-white/90 dark:border-white/20 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
+          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl liquid-glass-card liquid-sheen p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
             sheetExpanded
               ? "max-h-[86dvh] pb-5 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
@@ -2440,7 +2442,7 @@ export function InteractiveBookingMap({
                   triggerHaptic(12);
                   setSheetExpanded(true);
                 }}
-                className="flex items-center justify-between p-2.5 rounded-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/15 via-white/65 to-teal-500/15 border border-white/90 dark:border-white/20 shadow-[0_4px_16px_rgba(16,185,129,0.12),inset_0_1.5px_2px_rgba(255,255,255,0.9)] cursor-pointer active:scale-[0.99] transition-transform"
+                className="flex items-center justify-between p-2.5 rounded-2xl liquid-glass-pill bg-white/35 dark:bg-slate-800/35 border border-white/70 shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
                 title="Tap to view full booking details"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -2536,7 +2538,7 @@ export function InteractiveBookingMap({
                 )}
 
                 {/* Uber Toto Vehicle Card - Liquid Refraction Polish */}
-                <div className="p-3.5 rounded-2xl backdrop-blur-2xl bg-gradient-to-r from-emerald-500/[0.08] via-white/85 to-teal-500/[0.05] border-2 border-emerald-500/80 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] ring-1 ring-emerald-500/20 flex items-center justify-between">
+                <div className="p-3.5 rounded-2xl liquid-glass-pill bg-white/35 dark:bg-slate-800/35 border-2 border-emerald-500/70 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
                       🛺
@@ -2593,7 +2595,7 @@ export function InteractiveBookingMap({
                 )}
 
                 {/* Passenger Selector - Tactile Liquid Pills */}
-                <div className="p-2.5 rounded-2xl bg-white/70 backdrop-blur-xl border border-white/80 shadow-xs space-y-2">
+                <div className="p-2.5 rounded-2xl liquid-glass-pill bg-white/30 dark:bg-slate-800/30 border border-white/60 dark:border-white/10 shadow-xs space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <div className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-600" />

@@ -115,30 +115,49 @@ export async function GET(req: Request) {
     }> = [];
     let isExactRoadRoute = false;
 
-    // 1. PRIMARY ENGINE: Mapbox Driving API (100,000 requests/month free forever)
+    // 1. PRIMARY ENGINE: Mapbox Directions API (100,000 requests/month free forever)
     const mapboxToken =
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
-        // Try with 3000m road-snapping first
-        let mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=3000;3000&access_token=${mapboxToken}`;
-        let mbRes = await fetch(mbUrl, {
-          headers: { "User-Agent": "SundarbanRiders/2.0" },
-          signal: AbortSignal.timeout(6000),
-        });
+        const directDistKm = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
 
-        // If road snapping failed, retry without radiuses
-        if (!mbRes.ok) {
-          mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
-          mbRes = await fetch(mbUrl, {
-            headers: { "User-Agent": "SundarbanRiders/2.0" },
-            signal: AbortSignal.timeout(5000),
-          });
+        // Query both driving and cycling in parallel
+        // Mapbox cycling is light-vehicle friendly: it freely routes through inside galis, small residential lanes, and village brick paths without car-width restrictions
+        const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
+        const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
+
+        const [mbDriveRes, mbCycleRes] = await Promise.all([
+          fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(5000) }).catch(() => null),
+          fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(5000) }).catch(() => null),
+        ]);
+
+        let driveRoute: any = null;
+        let cycleRoute: any = null;
+
+        if (mbDriveRes && mbDriveRes.ok) {
+          const dData = await mbDriveRes.json();
+          driveRoute = dData?.routes?.[0];
+        }
+        if (mbCycleRes && mbCycleRes.ok) {
+          const cData = await mbCycleRes.json();
+          cycleRoute = cData?.routes?.[0];
         }
 
-        if (mbRes.ok) {
-          const mbData = await mbRes.json();
-          const route = mbData?.routes?.[0];
+        // Selection strategy for rural Totos (3-wheeled electric rickshaws):
+        // 1. If cycling route exists and navigates through small galis/roads (shorter or within 1.1x of driving, or driving took a huge detour):
+        //    use cycling route!
+        // 2. If only one exists, use the available one.
+        let route = driveRoute;
+        if (cycleRoute) {
+          if (!driveRoute) {
+            route = cycleRoute;
+          } else if (cycleRoute.distance <= driveRoute.distance * 1.15) {
+            // Cycling takes the direct gali/village road instead of staying only on the main highway
+            route = cycleRoute;
+          }
+        }
+
           if (
             route &&
             Array.isArray(route.geometry?.coordinates) &&
@@ -165,7 +184,6 @@ export async function GET(req: Request) {
               });
             }
           }
-        }
       } catch (err) {
         console.warn("Mapbox Directions API failed, falling back to OSRM:", err);
       }
@@ -240,6 +258,22 @@ export async function GET(req: Request) {
       // Do NOT generate artificial straight lines cutting across fields
       coordinates = [];
       isExactRoadRoute = false;
+    } else {
+      // 4. Seamless Marker Connection: Ensure route coordinates physically touch both pickup & drop pins
+      const firstCoord = coordinates[0];
+      const lastCoord = coordinates[coordinates.length - 1];
+      const connected: [number, number][] = [];
+
+      // Prepend exact origin if road snap had an offset
+      if (Math.hypot(firstCoord[0] - fromLat, firstCoord[1] - fromLng) > 0.00005) {
+        connected.push([fromLat, fromLng]);
+      }
+      connected.push(...coordinates);
+      // Append exact destination so polyline ends right inside the red drop marker
+      if (Math.hypot(lastCoord[0] - toLat, lastCoord[1] - toLng) > 0.00005) {
+        connected.push([toLat, toLng]);
+      }
+      coordinates = connected;
     }
 
     // Anchor-based Road Identification (ensures even unnamed rural roads have rich Bengali names)

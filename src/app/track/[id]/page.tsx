@@ -119,23 +119,21 @@ export default function TrackRidePage() {
   // Fetch real road route geometry
   useEffect(() => {
     if (!booking) return;
-    const pLat = booking.pickup_lat ? Number(booking.pickup_lat) : 21.876;
-    const pLng = booking.pickup_lng ? Number(booking.pickup_lng) : 88.192;
-    const dLat = booking.drop_lat ? Number(booking.drop_lat) : pLat + 0.012;
-    const dLng = booking.drop_lng ? Number(booking.drop_lng) : pLng + 0.012;
+    const pLat = booking.pickup_lat ? Number(booking.pickup_lat) : 0;
+    const pLng = booking.pickup_lng ? Number(booking.pickup_lng) : 0;
+    const dLat = booking.drop_lat ? Number(booking.drop_lat) : 0;
+    const dLng = booking.drop_lng ? Number(booking.drop_lng) : 0;
+
+    if (pLat === 0 || dLat === 0) return;
 
     fetch(`/api/route?fromLat=${pLat}&fromLng=${pLng}&toLat=${dLat}&toLng=${dLng}`)
       .then((r) => r.json())
       .then((data) => {
         if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
           setRouteCoords(data.coordinates);
-        } else {
-          setRouteCoords([[pLat, pLng], [dLat, dLng]]);
         }
       })
-      .catch(() => {
-        setRouteCoords([[pLat, pLng], [dLat, dLng]]);
-      });
+      .catch(() => {});
   }, [booking?.pickup_lat, booking?.pickup_lng, booking?.drop_lat, booking?.drop_lng]);
 
   // Real interactive Leaflet Map Engine

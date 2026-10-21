@@ -305,6 +305,12 @@ export function DriverActiveTripMap({
     let cancelled = false;
     const from: [number, number] = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : pickupCoords;
     const to: [number, number] = status === "heading_pickup" ? pickupCoords : dropCoords;
+    
+    // Metered trip without preset drop — do not attempt route to [0,0]
+    if (!to || to[0] === 0 || isNaN(to[0])) {
+      return;
+    }
+
     fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${to[0]}&toLng=${to[1]}`)
       .then((r) => r.json())
       .then((data) => {

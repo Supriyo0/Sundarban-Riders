@@ -44,20 +44,6 @@ import {
 } from "@/lib/pricing/service-area";
 import { SUNDARBAN_COMPREHENSIVE_PLACES } from "@/lib/data/sundarban-places";
 
-// Top Verified Corridor Hubs for instant pre-typing suggestions
-const POPULAR_CORRIDOR_HUBS = [
-  { name: "Bakkhali Sea Beach (Main Beach)", full_address: "Bakkhali Sea Beach (Sea Beach), Namkhana, South 24 Parganas", lat: 21.5605, lng: 88.2574, emoji: "🏖️", category: "Sea Beach" },
-  { name: "Bakkhali Bus Stand", full_address: "Bakkhali Bus Stand (Bus Stand), Namkhana, South 24 Parganas", lat: 21.5642, lng: 88.2541, emoji: "🚌", category: "Bus Stand" },
-  { name: "Henry Island Watchtower & Beach", full_address: "Henry Island Watchtower & Beach (Sea Beach), Fraserganj, South 24 Parganas", lat: 21.5768, lng: 88.2935, emoji: "🏖️", category: "Sea Beach" },
-  { name: "Fraserganj Fishing Harbour", full_address: "Fraserganj Fishing Harbour (Jetty Ghat), Fraserganj, South 24 Parganas", lat: 21.5972, lng: 88.2435, emoji: "⛴️", category: "Jetty Ghat" },
-  { name: "Namkhana Railway Station", full_address: "Namkhana Railway Station (Railway Station), Namkhana, South 24 Parganas", lat: 21.7645, lng: 88.2325, emoji: "🚆", category: "Railway Station" },
-  { name: "Kakdwip Central Bus Terminus", full_address: "Kakdwip Central Bus Terminus (Bus Stand), Kakdwip, South 24 Parganas", lat: 21.8745, lng: 88.1852, emoji: "🚌", category: "Bus Stand" },
-  { name: "Kakdwip Railway Station", full_address: "Kakdwip Railway Station (Railway Station), Kakdwip, South 24 Parganas", lat: 21.8797, lng: 88.1906, emoji: "🚆", category: "Railway Station" },
-  { name: "Kapil Muni Temple, Gangasagar", full_address: "Kapil Muni Temple, Gangasagar (Temple / Ashram), Gangasagar, Sagar Island", lat: 21.6495, lng: 88.0315, emoji: "🏛️", category: "Temple / Ashram" },
-  { name: "Diamond Harbour Railway Station", full_address: "Diamond Harbour Railway Station (Railway Station), Diamond Harbour, South 24 Parganas", lat: 22.1895, lng: 88.1942, emoji: "🚆", category: "Railway Station" },
-  { name: "Lakshmikantapur Railway Junction", full_address: "Lakshmikantapur Railway Junction (Railway Station), Lakshmikantapur, South 24 Parganas", lat: 22.1585, lng: 88.3182, emoji: "🚆", category: "Railway Station" },
-];
-
 // Instant client-side place search (0ms response time - never shows "No places found" for real hubs)
 function searchClientPlaces(query: string, biasLat: number, biasLng: number) {
   const cleanQ = (query || "").trim().toLowerCase();
@@ -789,6 +775,16 @@ export function InteractiveBookingMap({
               const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
               setDistanceKm(estDist);
             }
+            // Keep green/black line physically attached to pickup pin during drag
+            if (routeLineRef.current && routeLineBorderRef.current) {
+              const currentLatLngs = routeLineRef.current.getLatLngs();
+              if (currentLatLngs && currentLatLngs.length > 1) {
+                const updated = [...currentLatLngs];
+                updated[0] = newPos;
+                routeLineBorderRef.current.setLatLngs(updated);
+                routeLineRef.current.setLatLngs(updated);
+              }
+            }
           });
 
           pMarker.on("dragend", (e: any) => {
@@ -833,6 +829,16 @@ export function InteractiveBookingMap({
               const directD = calculateDistanceKm(p[0], p[1], newPosCoords[0], newPosCoords[1]);
               const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
               setDistanceKm(estDist);
+            }
+            // Keep green/black line physically attached to red drop pin during drag
+            if (routeLineRef.current && routeLineBorderRef.current) {
+              const currentLatLngs = routeLineRef.current.getLatLngs();
+              if (currentLatLngs && currentLatLngs.length > 1) {
+                const updated = [...currentLatLngs];
+                updated[updated.length - 1] = newPos;
+                routeLineBorderRef.current.setLatLngs(updated);
+                routeLineRef.current.setLatLngs(updated);
+              }
             }
           });
 
@@ -888,8 +894,20 @@ export function InteractiveBookingMap({
         const applyRouteGeometry = (coords: [number, number][]) => {
           if (!map || !coords || coords.length === 0) return;
 
+          // Always ensure the route line touches both pickup and drop pins seamlessly
+          const fullPath: [number, number][] = [
+            pCoords,
+            ...coords.filter((c) => {
+              return (
+                (c[0] !== pCoords[0] || c[1] !== pCoords[1]) &&
+                (c[0] !== dCoords[0] || c[1] !== dCoords[1])
+              );
+            }),
+            dCoords,
+          ];
+
           if (!routeLineBorderRef.current || !map.hasLayer(routeLineBorderRef.current)) {
-            routeLineBorderRef.current = L.polyline(coords, {
+            routeLineBorderRef.current = L.polyline(fullPath, {
               color: "#064e3b",
               weight: 8,
               opacity: 0.95,
@@ -897,11 +915,11 @@ export function InteractiveBookingMap({
               lineJoin: "round",
             }).addTo(map);
           } else {
-            routeLineBorderRef.current.setLatLngs(coords);
+            routeLineBorderRef.current.setLatLngs(fullPath);
           }
 
           if (!routeLineRef.current || !map.hasLayer(routeLineRef.current)) {
-            routeLineRef.current = L.polyline(coords, {
+            routeLineRef.current = L.polyline(fullPath, {
               color: "#10b981",
               weight: 5,
               opacity: 1,
@@ -910,7 +928,7 @@ export function InteractiveBookingMap({
               className: "uber-route-flow",
             }).addTo(map);
           } else {
-            routeLineRef.current.setLatLngs(coords);
+            routeLineRef.current.setLatLngs(fullPath);
           }
 
           try {
@@ -918,9 +936,9 @@ export function InteractiveBookingMap({
             routeLineRef.current.bringToFront();
           } catch {}
 
-          if (coords.length > 1 && options?.fitBounds !== false) {
+          if (fullPath.length > 1 && options?.fitBounds !== false) {
             try {
-              map.fitBounds(L.latLngBounds(coords), {
+              map.fitBounds(L.latLngBounds(fullPath), {
                 paddingTopLeft: [40, 160],
                 paddingBottomRight: [40, 240],
                 maxZoom: 16,
@@ -953,6 +971,10 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
+          // Clear stale polyline immediately so an old route pointing in a different direction is never left visible
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+
           try {
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
@@ -969,7 +991,7 @@ export function InteractiveBookingMap({
               if (
                 data?.coordinates &&
                 Array.isArray(data.coordinates) &&
-                data.coordinates.length > 1 &&
+                data.coordinates.length > 0 &&
                 data.isExactRoadRoute
               ) {
                 applyRouteGeometry(data.coordinates);
@@ -1009,6 +1031,8 @@ export function InteractiveBookingMap({
               // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
+            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
+            if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
           } finally {
             setIsCalculatingRoute(false);
           }
@@ -1932,6 +1956,54 @@ export function InteractiveBookingMap({
     onConfirmBooking?.();
   };
 
+  // Metered Ride Booking Handler (When user has pickup but wants to decide drop later or pay via live meter)
+  const handleBookMeteredRide = () => {
+    if (isBlocked) return;
+
+    let currentPCoords = pickupCoords;
+    if (currentPCoords[0] === 0 && typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          currentPCoords = [lat, lng];
+          setPickupCoords(currentPCoords);
+          setHasValidPickup(true);
+        }
+      }
+    }
+
+    if (!pickupInputValue.trim() || currentPCoords[0] === 0) {
+      const msg = "⚠️ Please select a pickup location first or allow GPS!";
+      setLocationError(msg);
+      toast.error(msg);
+      setActiveSearchField("pickup");
+      return;
+    }
+
+    const pickupText = pickupInputValue || "Current Location";
+    const dropText = "মিটারযুক্ত রাইড (Metered Trip - Pay at Finish)";
+
+    setDropInputValue(dropText);
+    setDropCoords([0, 0]);
+
+    onRouteSelectedRef.current?.({
+      pickup: pickupText,
+      drop: dropText,
+      distanceKm: 0,
+      estimatedFare: fareResult.totalFare || 30,
+      rideTier: "standard",
+      pickupCoords: currentPCoords,
+      dropCoords: [0, 0],
+      paymentMode: "cash",
+      passengerCount,
+    });
+
+    onConfirmBooking?.();
+  };
+
   return (
     <div className="relative w-full h-full min-h-0 flex-1 overflow-hidden select-none">
       {/* ------------------------------------------------------------- */}
@@ -2233,36 +2305,11 @@ export function InteractiveBookingMap({
                         ))
                       ) : null}
 
-                      {/* Popular South 24 Parganas Corridor Destinations */}
-                      <div className="pt-1.5 space-y-1">
-                        <div className="px-1 text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                          ⭐ Popular Destinations in South 24 Parganas
+                      {recentSearches.length === 0 && (
+                        <div className="p-4 text-center text-xs text-slate-500 font-medium">
+                          📍 Tap anywhere on the map or type in the search bar to find live accurate locations.
                         </div>
-                        {POPULAR_CORRIDOR_HUBS.map((hub, hIdx) => (
-                          <button
-                            key={`hub-${hIdx}`}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectSuggestion(hub);
-                            }}
-                            className="w-full p-2.5 rounded-xl text-left transition-all flex items-center gap-2.5 cursor-pointer border border-slate-100 dark:border-white/10 bg-slate-50/70 dark:bg-slate-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 shadow-2xs active:scale-[0.99]"
-                          >
-                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 text-sm">
-                              {hub.emoji}
-                            </div>
-                            <div className="overflow-hidden flex-1">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="text-xs font-black text-slate-900 dark:text-white truncate block">{hub.name}</span>
-                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded-full shrink-0">
-                                  {hub.category}
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate block mt-0.5">{hub.full_address}</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -2929,6 +2976,24 @@ export function InteractiveBookingMap({
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </button>
+
+                {/* Metered Ride Option (When no drop location is selected) */}
+                <div className="pt-1.5 space-y-1">
+                  <Button
+                    size="lg"
+                    disabled={isBlocked || !hasValidPickup}
+                    onClick={() => {
+                      triggerHaptic(30);
+                      handleBookMeteredRide();
+                    }}
+                    className="w-full h-12 rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <span>🛺 Book Metered Toto Ride (Pay at Finish)</span>
+                  </Button>
+                  <p className="text-[10.5px] text-center text-slate-500 font-semibold">
+                    No fixed drop needed • Live GPS road meter calculates fare on ride finish
+                  </p>
+                </div>
 
                 <div className="flex items-center justify-between text-[11px] text-emerald-800 font-bold pt-1 px-1">
                   <span className="flex items-center gap-1.5">

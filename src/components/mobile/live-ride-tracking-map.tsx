@@ -224,19 +224,21 @@ export function LiveRideTrackingMap({
     let cancelled = false;
     const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
     const from = driverPos;
+    
+    // Metered trip without preset drop — do not attempt route to [0,0]
+    if (!target || target[0] === 0 || isNaN(target[0])) {
+      return;
+    }
+
     fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${target[0]}&toLng=${target[1]}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
           setRouteCoords(data.coordinates);
-        } else {
-          setRouteCoords([from, target]);
         }
       })
-      .catch(() => {
-        if (!cancelled) setRouteCoords([from, target]);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

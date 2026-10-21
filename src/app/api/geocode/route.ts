@@ -252,16 +252,16 @@ export async function GET(req: Request) {
         })()
       );
 
-      // 2. Photon (Komoot ElasticSearch over full OpenStreetMap database)
+      // 2. Photon (Komoot ElasticSearch over full OpenStreetMap database - fast text lookup)
       osmTasks.push(
         (async () => {
           try {
             const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
               cleanQ
-            )}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=15&bbox=85.8,21.2,89.95,27.4`;
+            )}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=10`;
             const pRes = await fetch(photonUrl, {
               headers: { "User-Agent": "SundarbanRiders/2.0" },
-              signal: AbortSignal.timeout(liveTimeoutMs),
+              signal: AbortSignal.timeout(3000),
             });
             if (pRes.ok) {
               const pData = await pRes.json();
@@ -312,10 +312,10 @@ export async function GET(req: Request) {
         })()
       );
 
-      // 3. OSM Nominatim Search with Multi-Query Token Relaxation
+      // 3. OSM Nominatim Search (Fast PostgreSQL Text Index without heavy GIS viewbox overhead)
       osmTasks.push(
         (async () => {
-          // Prepare relaxed candidate queries in case of slight typo or compound word
+          // Prepare candidate queries in case of slight typo or compound word
           const queryCandidates = [cleanQ];
           const simplified = cleanQ
             .replace(/seabeach/gi, "beach")
@@ -323,19 +323,15 @@ export async function GET(req: Request) {
             .replace(/\bmore\b/gi, "")
             .trim();
           if (simplified && simplified !== cleanQ) queryCandidates.push(simplified);
-          const firstWord = cleanQ.split(" ")[0];
-          if (firstWord && firstWord.length > 3 && !queryCandidates.includes(firstWord)) {
-            queryCandidates.push(firstWord);
-          }
 
           for (const cand of queryCandidates) {
             try {
               const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
                 cand
-              )}&countrycodes=in&viewbox=85.8,21.2,89.95,27.4&bounded=0&limit=8&addressdetails=1&accept-language=en`;
+              )}&countrycodes=in&limit=8&accept-language=en`;
               const nRes = await fetch(nomUrl, {
                 headers: { "User-Agent": "SundarbanRiders/2.0 (dispatch@sundarbanriders.com)" },
-                signal: AbortSignal.timeout(liveTimeoutMs),
+                signal: AbortSignal.timeout(3000),
               });
               if (nRes.ok) {
                 const nData = await nRes.json();
@@ -374,7 +370,7 @@ export async function GET(req: Request) {
                 });
 
                 if (addedAny && suggestions.length >= 6) {
-                  break; // Found sufficient high-quality matches
+                  break; // Sufficient high-quality matches found
                 }
               }
             } catch {}

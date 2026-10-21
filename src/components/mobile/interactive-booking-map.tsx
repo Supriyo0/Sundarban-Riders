@@ -127,7 +127,12 @@ export function InteractiveBookingMap({
     initialPickupCoords[0] !== 0
   );
   const [hasValidPickup, setHasValidPickup] = useState(isInitialValid);
+  const [isLocatingInitialLock, setIsLocatingInitialLock] = useState(!isInitialValid);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Real-time Compass Heading (Phone's Head Direction)
+  const [deviceHeading, setDeviceHeading] = useState<number>(0);
+  const deviceHeadingRef = useRef<number>(0);
 
   // Service territory tracking
   const [isDropOutOfService, setIsDropOutOfService] = useState(false);
@@ -352,6 +357,58 @@ export function InteractiveBookingMap({
     return () => {
       removeListener?.();
       window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  // Real-time Compass Heading Watcher (Rotates live user arrow with physical phone orientation)
+  useEffect(() => {
+    let active = true;
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (!active) return;
+      let angle: number | null = null;
+
+      // 1. iOS Safari compass heading (0 = North)
+      if (typeof (e as any).webkitCompassHeading === "number") {
+        angle = (e as any).webkitCompassHeading;
+      }
+      // 2. Android deviceorientationabsolute or alpha
+      else if (e.alpha !== null) {
+        angle = (360 - e.alpha) % 360;
+      }
+
+      if (angle !== null && !isNaN(angle)) {
+        const rounded = Math.round(angle);
+        if (Math.abs(rounded - deviceHeadingRef.current) >= 2) {
+          deviceHeadingRef.current = rounded;
+          setDeviceHeading(rounded);
+          const headingCone = document.getElementById("sr-live-user-heading-cone");
+          if (headingCone) {
+            headingCone.style.transform = `translate(-50%, -50%) rotate(${rounded}deg)`;
+          }
+        }
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      const win = window as any;
+      if ("ondeviceorientationabsolute" in win) {
+        win.addEventListener("deviceorientationabsolute", handleOrientation, true);
+      } else if ("ondeviceorientation" in win) {
+        win.addEventListener("deviceorientation", handleOrientation, true);
+      }
+    }
+
+    return () => {
+      active = false;
+      if (typeof window !== "undefined") {
+        const win = window as any;
+        if ("ondeviceorientationabsolute" in win) {
+          win.removeEventListener("deviceorientationabsolute", handleOrientation, true);
+        } else if ("ondeviceorientation" in win) {
+          win.removeEventListener("deviceorientation", handleOrientation, true);
+        }
+      }
     };
   }, []);
 
@@ -828,6 +885,7 @@ export function InteractiveBookingMap({
       const handleFail = (msg?: string, isDenied = false) => {
         isLocatingRef.current = false;
         setIsLocating(false);
+        setIsLocatingInitialLock(false);
         setGpsDetected(false);
         setPermissionState(isDenied ? "denied" : "prompt");
 
@@ -852,6 +910,7 @@ export function InteractiveBookingMap({
       const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
         isLocatingRef.current = false;
         setIsLocating(false);
+        setIsLocatingInitialLock(false);
 
         if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) {
           handleFail();
@@ -907,7 +966,7 @@ export function InteractiveBookingMap({
         }
       };
 
-      // 1. Try Native Capacitor Geolocation first if in Android/iOS App
+      // 1. Try Native Capacitor Pure Satellite GPS first
       if (isNative) {
         try {
           const perm = await Geolocation.checkPermissions();
@@ -924,43 +983,40 @@ export function InteractiveBookingMap({
               (req as any).state === "granted";
             if (!reqGranted) {
               if (userInitiated) handleFail(undefined, true);
+              else setIsLocatingInitialLock(false);
               return;
             }
           }
 
-          // Stage 1: Try high accuracy position with 6s timeout
+          // Pure Hardware Satellite GPS with fresh live fix (maximumAge: 0)
           try {
             const position = await Geolocation.getCurrentPosition({
               enableHighAccuracy: true,
-              timeout: 6000,
-              maximumAge: 5000,
+              timeout: 10000,
+              maximumAge: 0,
             });
 
             if (position?.coords?.latitude && position?.coords?.longitude) {
-              await handleSuccess(position.coords.latitude, position.coords.longitude);
-              return;
+              const acc = position.coords.accuracy || 10;
+              // Reject coarse cellular guesses (> 1500 meters) that jump to distant towers
+              if (acc <= 1500) {
+                await handleSuccess(position.coords.latitude, position.coords.longitude);
+                return;
+              } else {
+                console.warn("[GPS] Low accuracy cell tower guess rejected:", acc, "m");
+              }
             }
-          } catch {}
-
-          // Stage 2: Quick fused network/cellular location
-          try {
-            const fastPos = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: false,
-              timeout: 4000,
-              maximumAge: 60000,
-            });
-            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
-              await handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
-              return;
-            }
-          } catch {}
+          } catch (e) {
+            console.warn("Capacitor high accuracy GPS error:", e);
+          }
         } catch (capErr) {
           console.warn("Capacitor Geolocation error, trying standard browser GPS:", capErr);
         }
       }
 
-      // 2. Standard Web Browser / WebView High-Accuracy Hardware GPS
+      // 2. Standard Web Browser / WebView Pure High-Accuracy Satellite GPS
       if (typeof window === "undefined" || !navigator.geolocation) {
+        setIsLocatingInitialLock(false);
         if (userInitiated) {
           handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান অনুসন্ধান করুন।");
         }
@@ -968,27 +1024,30 @@ export function InteractiveBookingMap({
       }
 
       navigator.geolocation.getCurrentPosition(
-        (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
-        (err) => {
-          // If high accuracy satellite GPS times out indoors, try cellular/network triangulated GPS
-          navigator.geolocation.getCurrentPosition(
-            (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
-            (fallbackErr) => {
-              if (userInitiated) {
-                if (fallbackErr.code === 1 || err.code === 1) {
-                  const deniedText = isNative
-                    ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
-                    : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ অনুসন্ধান করুন।";
-                  handleFail(deniedText, true);
-                } else {
-                  handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
-                }
-              }
-            },
-            { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
-          );
+        (pos) => {
+          const acc = pos.coords.accuracy || 10;
+          if (acc <= 1500) {
+            handleSuccess(pos.coords.latitude, pos.coords.longitude);
+          } else {
+            console.warn("[Web GPS] Cellular guess rejected due to poor accuracy:", acc, "m");
+            // If accuracy is too poor, don't jump to Kolkata cell tower
+            setIsLocatingInitialLock(false);
+          }
         },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
+        (err) => {
+          setIsLocatingInitialLock(false);
+          if (userInitiated) {
+            if (err.code === 1) {
+              const deniedText = isNative
+                ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
+                : "⚠️ ব্রাউজারে লোকেশন পারমিশন Blocked আছে। অনুগ্রহ করে সাইট সেটিংস থেকে Location 'Allow' করুন।";
+              handleFail(deniedText, true);
+            } else {
+              handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
+            }
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -1018,30 +1077,83 @@ export function InteractiveBookingMap({
       const L = await getLeaflet();
       if (isCancelled || !mapInstanceRef.current) return;
 
+      const currentHeading = deviceHeadingRef.current || 0;
+
       if (liveUserDotRef.current) {
         // Smooth positional update — no flickering, no re-render
         liveUserDotRef.current.setLatLng([latitude, longitude]);
       } else {
         const liveIcon = L.divIcon({
           className: "sr-live-user-dot-container",
-          html: `<div style="
-            position: relative;
-            width: 18px; height: 18px;
-            transform: translate(-50%, -50%);
-          ">
+          html: `<div style="position: relative; width: 44px; height: 44px; transform: translate(-50%, -50%); pointer-events: none;">
+            <!-- Rotating Direction Beam & Arrow (Phone's Head) -->
+            <div id="sr-live-user-heading-cone" style="
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              width: 50px;
+              height: 50px;
+              transform: translate(-50%, -50%) rotate(${currentHeading}deg);
+              transition: transform 0.12s linear;
+              pointer-events: none;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            ">
+              <!-- Field of View Light Beam -->
+              <div style="
+                position: absolute;
+                top: -12px;
+                width: 0;
+                height: 0;
+                border-left: 20px solid transparent;
+                border-right: 20px solid transparent;
+                border-top: 30px solid rgba(16, 185, 129, 0.4);
+                filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.6));
+              "></div>
+              <!-- Phone's Head Arrow Pointer -->
+              <div style="
+                position: absolute;
+                top: -16px;
+                width: 0;
+                height: 0;
+                border-left: 6px solid transparent;
+                border-right: 6px solid transparent;
+                border-bottom: 12px solid #065f46;
+                filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
+              "></div>
+            </div>
+
+            <!-- Pulsing Radar Wave -->
             <div style="
-              position: absolute; inset: -8px;
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              width: 32px;
+              height: 32px;
               border: 2px solid rgba(16,185,129,0.5);
               border-radius: 50%;
               animation: sr-live-pulse 1.8s ease-out infinite;
+              pointer-events: none;
             "></div>
+
+            <!-- Central User Position Dot (Google / Apple Maps Style) -->
             <div style="
-              width: 18px; height: 18px;
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              width: 20px;
+              height: 20px;
               background: #10b981;
-              border: 3px solid white;
+              border: 3.5px solid #ffffff;
               border-radius: 50%;
-              box-shadow: 0 3px 10px rgba(16,185,129,0.6);
-            "></div>
+              box-shadow: 0 4px 14px rgba(16, 185, 129, 0.7);
+              z-index: 5;
+            ">
+              <div style="width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #34d399, #059669);"></div>
+            </div>
           </div>`,
           iconSize: [0, 0],
           iconAnchor: [0, 0],
@@ -1914,6 +2026,58 @@ export function InteractiveBookingMap({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               <span>সরাসরি হাইওয়ে ও গ্রামীণ পথ বিশ্লেষণ</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 INITIAL LOCATION LOCKING FULL SCREEN MODAL (Appears on open until GPS locks perfectly) */}
+      {isLocatingInitialLock && !hasValidPickup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-300"
+          style={{
+            background: "radial-gradient(circle at 50% 35%, rgba(6,78,59,0.45) 0%, rgba(2,44,34,0.65) 50%, rgba(2,11,9,0.85) 100%)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+          }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          <div className="relative px-6 py-7 rounded-3xl backdrop-blur-3xl bg-white/90 dark:bg-slate-900/90 border border-white/80 dark:border-white/20 shadow-[0_32px_80px_rgba(0,0,0,0.45),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-250">
+            {/* Concentric Pulsing Radar Rings & Satellite Emblem */}
+            <div className="relative w-20 h-20 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full border-2 border-emerald-500/30 animate-ping" />
+              <div className="absolute inset-[-8px] rounded-full border border-emerald-400/20 animate-pulse" />
+              <div className="w-18 h-18 rounded-full bg-emerald-500/15 border-2 border-emerald-500/50 flex items-center justify-center text-3xl shadow-[0_0_24px_rgba(16,185,129,0.4)]">
+                🛰️
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+                আপনার সঠিক অবস্থান লক হচ্ছে...
+              </h3>
+              <p className="text-[11.5px] font-semibold text-emerald-800 dark:text-emerald-300 leading-snug">
+                সুন্দরবন রোড নেটওয়ার্ক থেকে স্যাটেলাইট জিপিএস সংযোগ সক্রিয় করা হচ্ছে
+              </p>
+            </div>
+
+            {/* Live Progress Indicator */}
+            <div className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10.5px] font-bold text-emerald-900 dark:text-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              <span>হাই-প্রিসিশন স্যাটেলাইট অবস্থান যাচাই</span>
+            </div>
+
+            {/* Manual Entry Fallback Button */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(20);
+                setIsLocatingInitialLock(false);
+              }}
+              className="text-xs font-black text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-300 hover:underline pt-1 cursor-pointer transition-colors"
+            >
+              বা নিজে পিকআপ লিখুন ➔
+            </button>
           </div>
         </div>
       )}

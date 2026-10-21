@@ -360,47 +360,110 @@ export function InteractiveBookingMap({
     };
   }, []);
 
-  // Real-time Compass Heading Watcher (Rotates live user arrow with physical phone orientation)
+  // Real-time Compass Heading Watcher (Smooth Continuous Heading without 360-degree spin glitch)
+  const targetHeadingRef = useRef<number>(0);
+  const smoothHeadingRef = useRef<number>(0);
+
   useEffect(() => {
     let active = true;
+    let rafId: number | null = null;
+
+    const getScreenAngle = () => {
+      if (typeof window !== "undefined") {
+        if (window.screen?.orientation?.angle !== undefined) {
+          return window.screen.orientation.angle;
+        }
+        if (typeof (window as any).orientation === "number") {
+          return (window as any).orientation;
+        }
+      }
+      return 0;
+    };
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
       if (!active) return;
-      let angle: number | null = null;
+      let rawAngle: number | null = null;
 
       // 1. iOS Safari compass heading (0 = North)
       if (typeof (e as any).webkitCompassHeading === "number") {
-        angle = (e as any).webkitCompassHeading;
+        rawAngle = (e as any).webkitCompassHeading;
       }
       // 2. Android deviceorientationabsolute or alpha
-      else if (e.alpha !== null) {
-        angle = (360 - e.alpha) % 360;
+      else if (e.alpha !== null && !isNaN(e.alpha)) {
+        const screenAngle = getScreenAngle();
+        rawAngle = ((360 - e.alpha) + screenAngle) % 360;
       }
 
-      if (angle !== null && !isNaN(angle)) {
-        const rounded = Math.round(angle);
-        if (Math.abs(rounded - deviceHeadingRef.current) >= 2) {
-          deviceHeadingRef.current = rounded;
-          setDeviceHeading(rounded);
-          const headingCone = document.getElementById("sr-live-user-heading-cone");
-          if (headingCone) {
-            headingCone.style.transform = `translate(-50%, -50%) rotate(${rounded}deg)`;
+      if (rawAngle !== null && !isNaN(rawAngle)) {
+        targetHeadingRef.current = rawAngle;
+        deviceHeadingRef.current = rawAngle;
+      }
+    };
+
+    // 60/120fps Silky Smooth GPU Interpolation Loop
+    const updateHeadingLoop = () => {
+      if (!active) return;
+
+      const target = targetHeadingRef.current;
+      const current = smoothHeadingRef.current;
+
+      // Mathematically foolproof shortest angular distance unwrapping
+      const currentNorm = ((current % 360) + 360) % 360;
+      let diff = target - currentNorm;
+      if (diff < -180) diff += 360;
+      if (diff > 180) diff -= 360;
+
+      // Deadband: filter out sensor trembling / magnetometer noise (< 0.35°)
+      if (Math.abs(diff) > 0.35) {
+        // Dynamic adaptive LERP: quick response on large phone swings, velvety glide on minor movements
+        const lerpFactor = Math.abs(diff) > 50 ? 0.32 : 0.16;
+        smoothHeadingRef.current += diff * lerpFactor;
+
+        const headingCone = document.getElementById("sr-live-user-heading-cone");
+        if (headingCone) {
+          headingCone.style.transform = `translate3d(-50%, -50%, 0) rotate(${smoothHeadingRef.current.toFixed(1)}deg)`;
+        }
+      }
+
+      rafId = requestAnimationFrame(updateHeadingLoop);
+    };
+
+    rafId = requestAnimationFrame(updateHeadingLoop);
+
+    // Permission check for iOS 13+ devices
+    const requestIosPermission = async () => {
+      if (typeof (DeviceOrientationEvent as any)?.requestPermission === "function") {
+        try {
+          const res = await (DeviceOrientationEvent as any).requestPermission();
+          if (res === "granted") {
+            attachListeners();
           }
+        } catch {}
+      }
+    };
+
+    const attachListeners = () => {
+      if (typeof window !== "undefined") {
+        const win = window as any;
+        if ("ondeviceorientationabsolute" in win) {
+          win.addEventListener("deviceorientationabsolute", handleOrientation, true);
+        } else if ("ondeviceorientation" in win) {
+          win.addEventListener("deviceorientation", handleOrientation, true);
         }
       }
     };
 
-    if (typeof window !== "undefined") {
-      const win = window as any;
-      if ("ondeviceorientationabsolute" in win) {
-        win.addEventListener("deviceorientationabsolute", handleOrientation, true);
-      } else if ("ondeviceorientation" in win) {
-        win.addEventListener("deviceorientation", handleOrientation, true);
-      }
+    attachListeners();
+
+    // Attach one-time gesture trigger on first touch for iOS permission
+    if (typeof window !== "undefined" && typeof (DeviceOrientationEvent as any)?.requestPermission === "function") {
+      window.addEventListener("touchstart", requestIosPermission, { once: true });
+      window.addEventListener("click", requestIosPermission, { once: true });
     }
 
     return () => {
       active = false;
+      if (rafId !== null) cancelAnimationFrame(rafId);
       if (typeof window !== "undefined") {
         const win = window as any;
         if ("ondeviceorientationabsolute" in win) {
@@ -661,11 +724,19 @@ export function InteractiveBookingMap({
           routeAbortControllerRef.current?.abort();
           controller = new AbortController();
           routeAbortControllerRef.current = controller;
+          const currentCtrl = controller;
+
+          // Safety timeout: Never leave modal stuck for more than 5 seconds!
+          const safetyTimer = setTimeout(() => {
+            if (routeAbortControllerRef.current === currentCtrl) {
+              setIsCalculatingRoute(false);
+            }
+          }, 5000);
 
           try {
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
-              { signal: controller.signal }
+              { signal: currentCtrl.signal }
             );
             const data = await res.json();
 
@@ -679,15 +750,36 @@ export function InteractiveBookingMap({
                 durationMin: routeDuration,
                 coordinates: routeCoords,
               });
+            } else {
+              // Direct client-side road query backup (bypasses server rate-limits)
+              try {
+                const directRes = await fetch(
+                  `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
+                  { signal: currentCtrl.signal }
+                );
+                if (directRes.ok) {
+                  const directData = await directRes.json();
+                  if (directData?.routes?.[0]?.geometry?.coordinates?.length) {
+                    routeCoords = directData.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+                    safeDist = Math.max(0.8, Math.round((directData.routes[0].distance / 1000) * 10) / 10);
+                    routeDuration = Math.max(2, Math.round(directData.routes[0].duration / 60));
+                    routeClientCache.set(cacheKey, {
+                      distanceKm: safeDist,
+                      durationMin: routeDuration,
+                      coordinates: routeCoords,
+                    });
+                  }
+                }
+              } catch {}
             }
           } catch (e: any) {
-            if (e?.name === "AbortError" || controller?.signal.aborted) {
-              // Superseded by newer search — exit immediately without drawing straight fallback line!
+            if (e?.name === "AbortError" || currentCtrl.signal.aborted) {
               return;
             }
             console.warn("Route API fetch error:", e);
           } finally {
-            if (!controller?.signal.aborted) {
+            clearTimeout(safetyTimer);
+            if (routeAbortControllerRef.current === currentCtrl) {
               setIsCalculatingRoute(false);
             }
           }
@@ -1085,43 +1177,34 @@ export function InteractiveBookingMap({
       } else {
         const liveIcon = L.divIcon({
           className: "sr-live-user-dot-container",
-          html: `<div style="position: relative; width: 44px; height: 44px; transform: translate(-50%, -50%); pointer-events: none;">
-            <!-- Rotating Direction Beam & Arrow (Phone's Head) -->
+          html: `<div style="position: relative; width: 64px; height: 64px; transform: translate(-50%, -50%); pointer-events: none;">
+            <!-- Rotating Direction Beam & Arrow (Phone's Head Direction) -->
             <div id="sr-live-user-heading-cone" style="
               position: absolute;
               top: 50%;
               left: 50%;
-              width: 50px;
-              height: 50px;
-              transform: translate(-50%, -50%) rotate(${currentHeading}deg);
-              transition: transform 0.12s linear;
+              width: 64px;
+              height: 64px;
+              transform: translate3d(-50%, -50%, 0) rotate(${currentHeading}deg);
               pointer-events: none;
+              will-change: transform;
               display: flex;
               align-items: center;
               justify-content: center;
             ">
-              <!-- Field of View Light Beam -->
-              <div style="
-                position: absolute;
-                top: -12px;
-                width: 0;
-                height: 0;
-                border-left: 20px solid transparent;
-                border-right: 20px solid transparent;
-                border-top: 30px solid rgba(16, 185, 129, 0.4);
-                filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.6));
-              "></div>
-              <!-- Phone's Head Arrow Pointer -->
-              <div style="
-                position: absolute;
-                top: -16px;
-                width: 0;
-                height: 0;
-                border-left: 6px solid transparent;
-                border-right: 6px solid transparent;
-                border-bottom: 12px solid #065f46;
-                filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4));
-              "></div>
+              <svg width="64" height="64" viewBox="0 0 64 64" style="position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible;">
+                <defs>
+                  <radialGradient id="sr-cone-beam-grad" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="#10b981" stop-opacity="0.55" />
+                    <stop offset="70%" stop-color="#10b981" stop-opacity="0.18" />
+                    <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+                  </radialGradient>
+                </defs>
+                <!-- 55-degree radiant vision beam radiating from center (32, 32) upwards -->
+                <path d="M 32 32 L 17 3 A 33 33 0 0 1 47 3 Z" fill="url(#sr-cone-beam-grad)" />
+                <!-- High-precision navigation pointer chevron pointing forward -->
+                <path d="M 32 3 L 36.5 13 L 32 10.5 L 27.5 13 Z" fill="#047857" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+              </svg>
             </div>
 
             <!-- Pulsing Radar Wave -->
@@ -1130,8 +1213,8 @@ export function InteractiveBookingMap({
               top: 50%;
               left: 50%;
               transform: translate(-50%, -50%);
-              width: 32px;
-              height: 32px;
+              width: 34px;
+              height: 34px;
               border: 2px solid rgba(16,185,129,0.5);
               border-radius: 50%;
               animation: sr-live-pulse 1.8s ease-out infinite;
@@ -1180,28 +1263,29 @@ export function InteractiveBookingMap({
               const { latitude, longitude } = position.coords;
               if (!latitude || !longitude) return;
 
-              // Always update the live dot
+              // Always update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
 
-              // Only update pickup text+coords if user is NOT actively typing and no manual override
-              const isTyping = pickupInputFocusedRef.current || hasManualPickupRef.current;
-              if (!isTyping || pickupCoordsRef.current[0] === 0) {
-                const resolved = await resolveLocationAddress(latitude, longitude);
-                if (!isCancelled) {
-                  setPickupCoords([latitude, longitude]);
-                  setPickupInputValue(resolved);
-                  setHasValidPickup(true);
-                  setGpsDetected(true);
-                  setLocationError(null);
-                  try {
-                    localStorage.setItem("sr_last_known_lat", latitude.toString());
-                    localStorage.setItem("sr_last_known_lng", longitude.toString());
-                    if (resolved) localStorage.setItem("sr_last_known_name", resolved);
-                  } catch {}
-                  // Only pan if user has NOT manually set pickup
-                  if (mapInstanceRef.current && !hasManualPickupRef.current) {
-                    mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+              // Only initialize pickup if it was never set before (0, 0), avoiding constant camera jitter/flicker
+              if (pickupCoordsRef.current[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+                setPickupCoords([latitude, longitude]);
+                setHasValidPickup(true);
+                setGpsDetected(true);
+                setIsLocatingInitialLock(false);
+                resolveLocationAddress(latitude, longitude).then((resolved) => {
+                  if (!isCancelled && resolved) {
+                    setPickupInputValue(resolved);
+                    try {
+                      localStorage.setItem("sr_last_known_name", resolved);
+                    } catch {}
                   }
+                });
+                try {
+                  localStorage.setItem("sr_last_known_lat", latitude.toString());
+                  localStorage.setItem("sr_last_known_lng", longitude.toString());
+                } catch {}
+                if (mapInstanceRef.current) {
+                  mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
                 }
               }
             }
@@ -1217,32 +1301,34 @@ export function InteractiveBookingMap({
             const { latitude, longitude } = pos.coords;
             if (!latitude || !longitude) return;
 
-            // Always update the live dot
+            // Always update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);
 
-            // Only update pickup text+coords if user is NOT actively typing and no manual override
-            const isTyping = pickupInputFocusedRef.current || hasManualPickupRef.current;
-            if (!isTyping || pickupCoordsRef.current[0] === 0) {
-              const resolved = await resolveLocationAddress(latitude, longitude);
-              if (!isCancelled) {
-                setPickupCoords([latitude, longitude]);
-                setPickupInputValue(resolved);
-                setHasValidPickup(true);
-                setGpsDetected(true);
-                setLocationError(null);
-                try {
-                  localStorage.setItem("sr_last_known_lat", latitude.toString());
-                  localStorage.setItem("sr_last_known_lng", longitude.toString());
-                  if (resolved) localStorage.setItem("sr_last_known_name", resolved);
-                } catch {}
-                if (mapInstanceRef.current && !hasManualPickupRef.current) {
-                  mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+            // Only initialize pickup if it was never set before (0, 0), avoiding constant camera jitter/flicker
+            if (pickupCoordsRef.current[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+              setPickupCoords([latitude, longitude]);
+              setHasValidPickup(true);
+              setGpsDetected(true);
+              setIsLocatingInitialLock(false);
+              resolveLocationAddress(latitude, longitude).then((resolved) => {
+                if (!isCancelled && resolved) {
+                  setPickupInputValue(resolved);
+                  try {
+                    localStorage.setItem("sr_last_known_name", resolved);
+                  } catch {}
                 }
+              });
+              try {
+                localStorage.setItem("sr_last_known_lat", latitude.toString());
+                localStorage.setItem("sr_last_known_lng", longitude.toString());
+              } catch {}
+              if (mapInstanceRef.current) {
+                mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
               }
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
         );
       }
     };
@@ -1996,63 +2082,103 @@ export function InteractiveBookingMap({
       </div>
 
       {/* Route Calculation Centered Screen-Blur Modal (Exact Middle, All Background Blurred, Non-touchable) */}
+      {/* Route Calculation Centered Screen-Blur Modal (100% Liquid Glass Orb, Non-touchable Background, With Escape/Dismiss) */}
       {isCalculatingRoute && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-200"
           style={{
-            background: "rgba(15, 23, 42, 0.35)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
+            background: "radial-gradient(circle at 50% 40%, rgba(6,78,59,0.35) 0%, rgba(15,23,42,0.65) 100%)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
           }}
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          <div className="relative px-6 py-6 rounded-3xl backdrop-blur-3xl bg-white/85 dark:bg-slate-900/85 border border-white/80 dark:border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(255,255,255,0.95)] flex flex-col items-center gap-3.5 max-w-xs w-full text-center animate-in zoom-in-95 duration-200">
-            {/* Refractive Liquid Spinner */}
-            <div className="relative w-16 h-16 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
-              <div className="w-16 h-16 rounded-full border-[3px] border-emerald-500/20 border-t-emerald-600 animate-spin" />
-              <span className="text-2xl animate-bounce">🛺</span>
+          <div className="relative px-6 py-7 rounded-[32px] backdrop-blur-3xl bg-white/85 dark:bg-slate-900/85 border border-white/90 dark:border-white/25 shadow-[0_32px_80px_rgba(0,0,0,0.35),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-200 overflow-hidden">
+            {/* Top liquid specular glass reflection sheen */}
+            <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-white/40 via-white/10 to-transparent pointer-events-none rounded-t-[32px]" />
+
+            {/* VisionOS-grade Dual-Orb Liquid Plasma Spinner */}
+            <div className="relative w-20 h-20 flex items-center justify-center">
+              {/* Outer Counter-Rotating Refractive Teal Ring */}
+              <div
+                className="absolute inset-0 rounded-full border-2 border-teal-400/30 border-t-teal-400 border-b-emerald-400"
+                style={{ animation: "spin 3.2s linear infinite reverse" }}
+              />
+              {/* Inner High-Speed Glowing Emerald Plasma Ring */}
+              <div
+                className="absolute inset-1.5 rounded-full border-[2.5px] border-emerald-500/20 border-t-emerald-500 border-r-teal-300 shadow-[0_0_16px_rgba(16,185,129,0.5)]"
+                style={{ animation: "spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite" }}
+              />
+              {/* Pulsing Core Glow */}
+              <div className="absolute inset-3 rounded-full bg-emerald-400/20 animate-ping opacity-50" />
+              {/* Center Floating 3D Toto Emblem */}
+              <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-white to-emerald-50 dark:from-slate-800 dark:to-slate-900 border border-emerald-400/40 flex items-center justify-center text-2xl shadow-lg">
+                🛺
+              </div>
             </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">
+
+            <div className="space-y-1 z-10">
+              <h4 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                 সঠিক রোড রুট ও ভাড়া গণনা হচ্ছে...
               </h4>
-              <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                ওএসআরএম ও স্যাটেলাইট রোড নেটওয়ার্ক থেকে দূরত্ব নির্ণয়
+              <p className="text-[11.5px] font-semibold text-emerald-800 dark:text-emerald-300 leading-snug">
+                স্যাটেলাইট রোড নেটওয়ার্ক ও ওএসআরএম রুট বিশ্লেষণ সক্রিয়
               </p>
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>সরাসরি হাইওয়ে ও গ্রামীণ পথ বিশ্লেষণ</span>
+
+            {/* Live Progress Telemetry Pill */}
+            <div className="z-10 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10.5px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+              <span>গ্রামীণ পথ ও হাইওয়ে ম্যাপিং সম্পন্ন হচ্ছে</span>
             </div>
+
+            {/* Dismiss / Cancel Button — Guarantees user is never trapped */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(20);
+                routeAbortControllerRef.current?.abort();
+                setIsCalculatingRoute(false);
+              }}
+              className="z-10 text-xs font-black text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 pt-0.5 cursor-pointer transition-colors flex items-center gap-1 active:scale-95"
+            >
+              <span>✕ গণনা বাতিল করুন</span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* 🚀 INITIAL LOCATION LOCKING FULL SCREEN MODAL (Appears on open until GPS locks perfectly) */}
+      {/* 🚀 INITIAL LOCATION LOCKING FULL SCREEN MODAL (100% Liquid Glass Orb) */}
       {isLocatingInitialLock && !hasValidPickup && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-300"
           style={{
             background: "radial-gradient(circle at 50% 35%, rgba(6,78,59,0.45) 0%, rgba(2,44,34,0.65) 50%, rgba(2,11,9,0.85) 100%)",
-            backdropFilter: "blur(16px)",
-            WebkitBackdropFilter: "blur(16px)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
           }}
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          <div className="relative px-6 py-7 rounded-3xl backdrop-blur-3xl bg-white/90 dark:bg-slate-900/90 border border-white/80 dark:border-white/20 shadow-[0_32px_80px_rgba(0,0,0,0.45),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-250">
+          <div className="relative px-6 py-7 rounded-[32px] backdrop-blur-3xl bg-white/90 dark:bg-slate-900/90 border border-white/90 dark:border-white/25 shadow-[0_32px_80px_rgba(0,0,0,0.45),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-250 overflow-hidden">
+            {/* Top liquid glass reflection sheen */}
+            <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-white/40 via-white/10 to-transparent pointer-events-none rounded-t-[32px]" />
+
             {/* Concentric Pulsing Radar Rings & Satellite Emblem */}
             <div className="relative w-20 h-20 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-2 border-emerald-500/30 animate-ping" />
-              <div className="absolute inset-[-8px] rounded-full border border-emerald-400/20 animate-pulse" />
-              <div className="w-18 h-18 rounded-full bg-emerald-500/15 border-2 border-emerald-500/50 flex items-center justify-center text-3xl shadow-[0_0_24px_rgba(16,185,129,0.4)]">
+              <div className="absolute inset-0 rounded-full border-2 border-emerald-400/40 animate-ping" />
+              <div className="absolute inset-[-6px] rounded-full border border-teal-300/30 animate-pulse" />
+              <div
+                className="absolute inset-1 rounded-full border border-emerald-500/40 border-t-emerald-400"
+                style={{ animation: "spin 2.5s linear infinite" }}
+              />
+              <div className="relative w-13 h-13 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-slate-800 dark:to-slate-900 border-2 border-emerald-400/60 flex items-center justify-center text-3xl shadow-[0_0_28px_rgba(16,185,129,0.5)]">
                 🛰️
               </div>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 z-10">
               <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                 আপনার সঠিক অবস্থান লক হচ্ছে...
               </h3>
@@ -2062,7 +2188,7 @@ export function InteractiveBookingMap({
             </div>
 
             {/* Live Progress Indicator */}
-            <div className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10.5px] font-bold text-emerald-900 dark:text-emerald-200">
+            <div className="z-10 w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10.5px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
               <span>হাই-প্রিসিশন স্যাটেলাইট অবস্থান যাচাই</span>
             </div>
@@ -2074,7 +2200,7 @@ export function InteractiveBookingMap({
                 triggerHaptic(20);
                 setIsLocatingInitialLock(false);
               }}
-              className="text-xs font-black text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-300 hover:underline pt-1 cursor-pointer transition-colors"
+              className="z-10 text-xs font-black text-slate-600 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-300 hover:underline pt-0.5 cursor-pointer transition-colors active:scale-95"
             >
               বা নিজে পিকআপ লিখুন ➔
             </button>

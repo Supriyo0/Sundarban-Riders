@@ -69,11 +69,12 @@ export async function GET(req: Request) {
       return NextResponse.json(serverRouteCache.get(cacheKey));
     }
     
-    // 1. Query Primary and Secondary OSRM Driving Engines in PARALLEL with resilient 4.5s timeout
+    // 1. Query Primary and Secondary OSRM Driving & Toto-friendly Engines in PARALLEL with road-snapping radiuses
     const osrmEndpoints = [
-      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
-      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
-      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
     ];
 
     let coordinates: [number, number][] = [];

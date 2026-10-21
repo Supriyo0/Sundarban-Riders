@@ -2051,7 +2051,23 @@ function MobileAppPageContent() {
     return (
       <AppSplashScreen
         minDurationMs={1800}
-        onComplete={() => {
+        onComplete={(detectedCoords) => {
+          if (detectedCoords && detectedCoords[0] !== 0) {
+            setPickupCoords(detectedCoords);
+            try {
+              localStorage.setItem("sr_live_lat", detectedCoords[0].toString());
+              localStorage.setItem("sr_live_lng", detectedCoords[1].toString());
+              fetch(`/api/geocode?lat=${detectedCoords[0]}&lng=${detectedCoords[1]}`)
+                .then((r) => r.json())
+                .then((data) => {
+                  if (data?.name) {
+                    setPickupText(data.name);
+                    localStorage.setItem("sr_last_known_name", data.name);
+                  }
+                })
+                .catch(() => {});
+            } catch {}
+          }
           if (typeof window === "undefined") return;
           const saved = localStorage.getItem("sr_mobile_session");
           if (saved) {

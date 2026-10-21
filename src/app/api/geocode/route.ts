@@ -329,7 +329,6 @@ export async function GET(req: Request) {
       osmTasks.push(
         (async () => {
           try {
-            const googleQueries = [cleanQ];
             const lowerQ = cleanQ.toLowerCase();
             const isCategory =
               lowerQ.includes("school") ||
@@ -345,15 +344,18 @@ export async function GET(req: Request) {
               lowerQ.includes("vidya") ||
               lowerQ.includes("beach") ||
               lowerQ.length <= 4;
-            if (isCategory) {
-              googleQueries.push(
-                `${cleanQ} south 24 parganas`,
-                `${cleanQ} kakdwip`,
-                `${cleanQ} bakkhali`,
-                `${cleanQ} diamond harbour`,
-                `${cleanQ} namkhana`
-              );
-            }
+
+            // For categories, query focused South 24 Parganas hubs directly
+            const googleQueries = isCategory
+              ? [
+                  `${cleanQ} kakdwip`,
+                  `${cleanQ} bakkhali`,
+                  `${cleanQ} diamond harbour`,
+                  `${cleanQ} namkhana`,
+                  `${cleanQ} sagar island`,
+                  `${cleanQ} south 24 parganas`,
+                ]
+              : [cleanQ, `${cleanQ} south 24 parganas`];
 
             const gFetchTasks = googleQueries.map(async (queryStr) => {
               try {
@@ -380,7 +382,7 @@ export async function GET(req: Request) {
             const allGResults = await Promise.all(gFetchTasks);
             const rawQueries = Array.from(new Set(allGResults.flat()));
 
-            const junkRegex = /\b(train time|time table|today|weather|pin code|distance|ticket|status|chart|meaning|bag|holiday|leave application|uniform|image|images|generator|ideas|recipe|curry|masala|fees|vacancy|style|dress|name list|name generator|in hindi|in bengali|in english)\b/i;
+            const junkRegex = /\b(train time|time table|today|weather|pin code|distance|ticket|status|chart|meaning|bag|shoes|friends|runaway|game|movie|song|video|holiday|leave application|leave|uniform|image|images|generator|ideas|recipe|curry|masala|fees|vacancy|style|dress|name list|name generator|in hindi|in bengali|in english|jaipur|lucknow|noida|delhi|mumbai|pune|bangalore|hyderabad|chennai|dlf|gurgaon|chandigarh|kolkata|sealdah|howrah|digha|puri|mandarmani)\b/i;
             const stripTrailing = /\b(photos|reviews|review|contact number|phone number|phone|number|price|low price list|low price|booking|room booking|menu|online|menu card|timings|timing|time)\b/gi;
             const filtered = rawQueries
               .filter((item) => typeof item === "string")
@@ -426,7 +428,7 @@ export async function GET(req: Request) {
                   REGIONAL_TOWN_ANCHORS.find((a) =>
                     a.keywords.some((k) => gLower.includes(k) || cleanQ.toLowerCase().includes(k))
                   ) ||
-                  REGIONAL_TOWN_ANCHORS[0]; // defaults to Bakkhali / South 24 Parganas
+                  (gLower.includes("south 24") || gLower.includes("sundarban") ? REGIONAL_TOWN_ANCHORS[1] : null);
 
                 if (matchedAnchor) {
                   const isDup = suggestions.some(

@@ -49,6 +49,8 @@ function translateRoadName(name: string): string {
   return name;
 }
 
+const serverRouteCache = new Map<string, any>();
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -61,13 +63,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing fromLat/fromLng/toLat/toLng" }, { status: 400 });
     }
 
-    // Fast in-memory cache for repeated routes
+    // Fast in-memory cache for repeated routes (0ms response)
     const cacheKey = `${fromLat.toFixed(4)},${fromLng.toFixed(4)}-${toLat.toFixed(4)},${toLng.toFixed(4)}`;
+    if (serverRouteCache.has(cacheKey)) {
+      return NextResponse.json(serverRouteCache.get(cacheKey));
+    }
     
-    // 1. Query Primary and Secondary OSRM Driving Engines in PARALLEL with fast 3.5s timeout
+    // 1. Query Primary and Secondary OSRM Driving Engines in PARALLEL with resilient 4.5s timeout
     const osrmEndpoints = [
       `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
     ];
 
     let coordinates: [number, number][] = [];
@@ -83,7 +89,7 @@ export async function GET(req: Request) {
 
     const queryEndpoint = async (url: string) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
       try {
         const res = await fetch(url, {
           headers: { "User-Agent": "SundarbanRiders/1.0" },
@@ -105,7 +111,7 @@ export async function GET(req: Request) {
     };
 
     try {
-      // Race both OSRM mirrors — whichever responds first wins!
+      // Race OSRM mirrors — whichever responds first with full geometry wins!
       const bestRoute = await Promise.any(osrmEndpoints.map((url) => queryEndpoint(url)));
       if (bestRoute) {
         distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
@@ -187,7 +193,7 @@ export async function GET(req: Request) {
     const primaryRoad = routePathPills[0] || "ডায়মন্ড হারবার রোড (NH-117)";
     const viaRoads = routePathPills.length > 2 ? routePathPills.slice(1, -1).join(", ") : routePathPills[1] || "";
 
-    return NextResponse.json({
+    const payload = {
       success: true,
       isExactRoadRoute,
       distanceKm,
@@ -200,7 +206,13 @@ export async function GET(req: Request) {
       originRoad: originAnchor || "পিকআপ রোড",
       destRoad: destAnchor || "গন্তব্য রোড",
       steps: detailedSteps,
-    });
+    };
+
+    if (isExactRoadRoute && coordinates.length > 0) {
+      serverRouteCache.set(cacheKey, payload);
+    }
+
+    return NextResponse.json(payload);
   } catch (error: any) {
     console.error("Route calculation error:", error);
     return NextResponse.json(

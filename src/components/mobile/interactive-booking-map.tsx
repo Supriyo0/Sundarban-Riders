@@ -591,6 +591,7 @@ export function InteractiveBookingMap({
         let safeDist = 0;
         let routeDuration = 5;
         let routeCoords: [number, number][] = [];
+        let controller: AbortController | null = null;
 
         if (routeClientCache.has(cacheKey)) {
           // Instant cache hit — 0 ms!
@@ -601,7 +602,7 @@ export function InteractiveBookingMap({
         } else {
           setIsCalculatingRoute(true);
           routeAbortControllerRef.current?.abort();
-          const controller = new AbortController();
+          controller = new AbortController();
           routeAbortControllerRef.current = controller;
 
           try {
@@ -623,12 +624,20 @@ export function InteractiveBookingMap({
               });
             }
           } catch (e: any) {
-            if (e?.name !== "AbortError") {
-              console.warn("Route API fetch error:", e);
+            if (e?.name === "AbortError" || controller?.signal.aborted) {
+              // Superseded by newer search — exit immediately without drawing straight fallback line!
+              return;
             }
+            console.warn("Route API fetch error:", e);
           } finally {
-            setIsCalculatingRoute(false);
+            if (!controller?.signal.aborted) {
+              setIsCalculatingRoute(false);
+            }
           }
+        }
+
+        if (controller?.signal.aborted) {
+          return;
         }
 
         // If coordinates found, plot them
@@ -1473,7 +1482,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 2. TOP FLOATING LIQUID GLASS UBER SEARCH CARD & QUICK SHORTCUTS */}
       {/* ------------------------------------------------------------- */}
-      <div className={`absolute top-3 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
+      <div className={`absolute top-16 sm:top-18 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
           className={`pointer-events-auto rounded-3xl p-3 sm:p-3.5 backdrop-blur-2xl bg-white/80 dark:bg-slate-900/80 border border-white/80 dark:border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.10),inset_0_1px_1px_rgba(255,255,255,0.9)] space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
@@ -1833,7 +1842,7 @@ export function InteractiveBookingMap({
       {/* Active Driver Radar Indicator (Docked cleanly below peek bar, fades on card expand) */}
       <div
         className={`absolute left-3.5 z-20 pointer-events-auto bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200/80 flex items-center gap-2 transition-all duration-300 ${
-          topCardExpanded ? "opacity-0 pointer-events-none -translate-y-2" : "top-[72px] opacity-100 translate-y-0"
+          topCardExpanded ? "opacity-0 pointer-events-none -translate-y-2" : "top-[132px] opacity-100 translate-y-0"
         }`}
       >
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -1846,7 +1855,7 @@ export function InteractiveBookingMap({
 
       {/* Map Interactive Zoom Controls (Right Side - Placed safely above bottom sheet) */}
       <div
-        className={`absolute bottom-62 right-3.5 z-20 flex flex-col gap-1.5 transition-all duration-300 ${
+        className={`absolute bottom-70 right-3.5 z-20 flex flex-col gap-1.5 transition-all duration-300 ${
           sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
         }`}
       >
@@ -1874,20 +1883,37 @@ export function InteractiveBookingMap({
         </button>
       </div>
 
-      {/* Route Calculation Floating Glassmorphism Circular Loading Badge (Floating clearly above bottom sheet) */}
+      {/* Route Calculation Centered Screen-Blur Modal (Exact Middle, All Background Blurred, Non-touchable) */}
       {isCalculatingRoute && (
-        <div className="absolute bottom-38 sm:bottom-44 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex items-center gap-3 px-4 py-2 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/80 dark:border-white/20 shadow-[0_8px_32px_0_rgba(16,185,129,0.30)] ring-1 ring-emerald-500/30 animate-in fade-in zoom-in-95 duration-200">
-          <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
-            <div className="absolute inset-0 rounded-full border-2 border-emerald-500/20 animate-ping" />
-            <div className="w-5 h-5 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-black text-slate-800 dark:text-slate-100 tracking-wide">
-              রোড রুট গণনা হচ্ছে...
-            </span>
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-              সঠিক দূরত্ব ও ভাড়ার হিসেব
-            </span>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-200"
+          style={{
+            background: "rgba(15, 23, 42, 0.35)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+          }}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          <div className="relative px-6 py-6 rounded-3xl backdrop-blur-3xl bg-white/85 dark:bg-slate-900/85 border border-white/80 dark:border-white/20 shadow-[0_24px_64px_rgba(0,0,0,0.25),inset_0_1px_1px_rgba(255,255,255,0.95)] flex flex-col items-center gap-3.5 max-w-xs w-full text-center animate-in zoom-in-95 duration-200">
+            {/* Refractive Liquid Spinner */}
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping" />
+              <div className="w-16 h-16 rounded-full border-[3px] border-emerald-500/20 border-t-emerald-600 animate-spin" />
+              <span className="text-2xl animate-bounce">🛺</span>
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-black text-slate-900 dark:text-white tracking-tight">
+                সঠিক রোড রুট ও ভাড়া গণনা হচ্ছে...
+              </h4>
+              <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                ওএসআরএম ও স্যাটেলাইট রোড নেটওয়ার্ক থেকে দূরত্ব নির্ণয়
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-800">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>সরাসরি হাইওয়ে ও গ্রামীণ পথ বিশ্লেষণ</span>
+            </div>
           </div>
         </div>
       )}
@@ -1900,7 +1926,7 @@ export function InteractiveBookingMap({
           toggleMapLayer();
         }}
         title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "স্ট্রিট ভিউ"}
-        className={`absolute bottom-49 right-3.5 z-20 w-11 h-11 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+        className={`absolute bottom-57 right-3.5 z-20 w-11 h-11 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
         }`}
       >
@@ -1919,7 +1945,7 @@ export function InteractiveBookingMap({
         }}
         disabled={isLocating}
         title="আমার জিপিএস অবস্থান"
-        className={`absolute bottom-36 right-3.5 z-20 w-11 h-11 rounded-2xl shadow-lg border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+        className={`absolute bottom-44 right-3.5 z-20 w-11 h-11 rounded-2xl shadow-lg border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
         } ${
           hasValidPickup
@@ -1937,7 +1963,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
-      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
+      <div className="absolute bottom-16 sm:bottom-18 left-0 right-0 z-30 pointer-events-none">
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-3xl shadow-[0_-16px_48px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/80 dark:border-white/15 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none ${
             sheetExpanded
@@ -1997,10 +2023,12 @@ export function InteractiveBookingMap({
                   <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
                     🛺
                   </div>
-                  <div className="min-w-0">
+                    <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
-                      <span className="text-xs font-black text-emerald-700 font-mono">₹{fareResult.totalFare}.০০</span>
+                      <span className="text-xs font-black text-emerald-700 font-mono">
+                        {isCalculatingRoute ? "₹০০" : `₹${fareResult.totalFare}.০০`}
+                      </span>
                       {isDropOutOfService && (
                         <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
                           পরিষেবা বাইরে
@@ -2008,7 +2036,7 @@ export function InteractiveBookingMap({
                       )}
                     </div>
                     <span className="text-[10px] text-slate-500 font-bold truncate block">
-                      {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"} ➔ {dropInputValue.slice(0, 14)} • {distanceKm} কিমি
+                      {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"} ➔ {dropInputValue.slice(0, 14)} • {isCalculatingRoute ? "দূরত্ব গণনা হচ্ছে..." : `${distanceKm} কিমি`}
                     </span>
                   </div>
                 </div>
@@ -2106,10 +2134,10 @@ export function InteractiveBookingMap({
 
                   <div className="text-right shrink-0">
                     <div className="text-2xl font-black text-emerald-700 font-mono">
-                      ₹{fareResult.totalFare}.০০
+                      {isCalculatingRoute ? "₹০০" : `₹${fareResult.totalFare}.০০`}
                     </div>
                     <span className="text-[9.5px] font-bold text-slate-500 block">
-                      {distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
+                      {isCalculatingRoute ? "⏳ ভাড়া গণনা হচ্ছে..." : distanceKm > 0 ? `দূরত্ব: ${distanceKm} কিমি` : "বেস ভাড়া: ₹৩০"}
                     </span>
                   </div>
                 </div>
@@ -2187,7 +2215,7 @@ export function InteractiveBookingMap({
 
                 <Button
                   size="lg"
-                  disabled={isBlocked}
+                  disabled={isBlocked || isCalculatingRoute}
                   onClick={() => {
                     triggerHaptic(30);
                     handleConfirmClick();
@@ -2195,6 +2223,8 @@ export function InteractiveBookingMap({
                   className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
                     isBlocked
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
+                      : isCalculatingRoute
+                      ? "bg-slate-300 text-slate-600 cursor-wait shadow-none animate-pulse"
                       : !hasValidPickup
                       ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
                       : "bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:brightness-105 text-white shadow-[0_8px_24px_rgba(16,185,129,0.35),inset_0_1px_1px_rgba(255,255,255,0.4)]"
@@ -2203,6 +2233,8 @@ export function InteractiveBookingMap({
                   <span>
                     {isBlocked
                       ? "🚫 অ্যাকাউন্ট সাময়িকভাবে স্থগিত"
+                      : isCalculatingRoute
+                      ? "⏳ রোড রুট ও ভাড়া গণনা হচ্ছে..."
                       : !hasValidPickup
                       ? "⚠️ প্রথমে পিকআপ লোকেশন নির্ধারণ করুন"
                       : `🛺 টোটো রাইড বুক করুন • ₹${fareResult.totalFare}.০০`}

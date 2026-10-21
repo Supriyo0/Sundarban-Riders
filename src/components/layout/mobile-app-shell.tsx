@@ -56,32 +56,29 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
           </div>
         </div>
 
-        {/* Dedicated Sticky Top Header (Pinned at the top across all screen sizes) */}
+        {/* Full-bleed Edge-to-Edge Screen Content (Map and views fill 100% of the screen under header and footer) */}
+        <div className="absolute inset-0 z-0 flex flex-col overflow-hidden relative w-full h-full no-scrollbar">
+          {children}
+        </div>
+
+        {/* Dedicated Floating Top Header (Floating Liquid Glass over Map) */}
         {topHeader && (
-          <div className="sticky top-0 z-40 w-full shrink-0 bg-white/95 backdrop-blur-xl border-b border-slate-200/80">
+          <div className="absolute top-0 sm:top-7 left-0 right-0 z-40 w-full shrink-0">
             {topHeader}
           </div>
         )}
 
-        {/* Scrollable Screen Content (The only element that scrolls) */}
-        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative w-full no-scrollbar overscroll-contain">
-          {children}
-        </div>
-
-        {/* Docked Sticky Mobile Bottom Navigation Bar (Pinned at the bottom across all screen sizes) */}
+        {/* Floating Liquid Glass Mobile Bottom Navigation Bar (Floating over Map) */}
         {bottomNav && (
           <div
-            className="sticky bottom-0 z-40 w-full shrink-0 bg-white/95 border-t border-slate-200/80 backdrop-blur-xl"
-            style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom, 0px))" }}
+            className="absolute bottom-0 left-0 right-0 z-40 w-full pointer-events-none"
+            style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom, 0px))" }}
           >
-            {bottomNav}
+            <div className="pointer-events-auto w-full">
+              {bottomNav}
+            </div>
           </div>
         )}
-
-        {/* Smartphone Home Indicator Bar (Shown on desktop framing) */}
-        <div className="hidden sm:block shrink-0 py-1.5 bg-white/90 backdrop-blur-sm z-40 text-center border-t border-slate-100">
-          <div className="w-32 h-1 bg-slate-300 hover:bg-slate-400 rounded-full mx-auto transition-colors" />
-        </div>
       </div>
     </div>
   );

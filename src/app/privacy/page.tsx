@@ -15,14 +15,14 @@ export default function PrivacyPolicyPage() {
             সুন্দরবন রাইডার্স (Sundarban Riders)
           </Link>
           <h1 className="text-3xl font-extrabold text-white mt-2">Privacy Policy</h1>
-          <p className="text-sm text-slate-400 mt-1">Last updated: September 23, 2026</p>
+          <p className="text-sm text-slate-400 mt-1">Last updated: October 22, 2026 • Official Website: https://sundarbanrider.in</p>
         </div>
 
         <div className="space-y-6 text-slate-300 text-sm leading-relaxed">
           <section>
             <h2 className="text-lg font-semibold text-white mb-2">1. Overview</h2>
             <p>
-              Sundarban Riders (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) operates a Toto (E-Rickshaw) booking and driver dispatch service in the Sundarban delta region, facilitated through WhatsApp Business messaging and our web platform. We respect your privacy and are committed to protecting your personal data.
+              Sundarban Riders (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) operates a Toto (E-Rickshaw) booking and driver dispatch service in the Sundarban delta region via our official website (https://sundarbanrider.in) and mobile platform. We respect your privacy and are committed to protecting your personal data.
             </p>
           </section>
 

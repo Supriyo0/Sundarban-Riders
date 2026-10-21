@@ -37,25 +37,26 @@ export function AppSplashScreen({
                 timeout: 9000,
                 maximumAge: 0,
               });
-            if (pos?.coords?.latitude && pos?.coords?.longitude) {
-              const acc = pos.coords.accuracy || 10;
-              // Reject coarse cellular tower guesses (>1500m)
-              if (acc <= 1500) {
-                detectedLocation = [pos.coords.latitude, pos.coords.longitude];
-                try {
-                  localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
-                  localStorage.setItem("sr_last_known_lng", pos.coords.longitude.toString());
-                } catch {}
-                if (!isCancelled) {
-                  setLocationFound(true);
-                  setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
-                  setProgress(92);
+                if (pos?.coords?.latitude && pos?.coords?.longitude) {
+                  const acc = pos.coords.accuracy || 10;
+                  // Reject coarse cellular tower guesses (>1500m)
+                  if (acc <= 1500) {
+                    detectedLocation = [pos.coords.latitude, pos.coords.longitude];
+                    try {
+                      localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
+                      localStorage.setItem("sr_last_known_lng", pos.coords.longitude.toString());
+                    } catch {}
+                    if (!isCancelled) {
+                      setLocationFound(true);
+                      setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
+                      setProgress(92);
+                    }
+                    return;
+                  }
                 }
-                return;
               }
-            }
-          } catch {}
-        }
+            } catch {}
+          }
 
         // Web fallback high-accuracy GPS
         if (typeof window !== "undefined" && navigator.geolocation) {

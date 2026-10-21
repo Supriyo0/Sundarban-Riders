@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
+import { checkRiverBarrierCrossings } from "@/lib/pricing/service-area";
 
 // Regional Landmarks in South 24 Parganas Corridor
 const REGIONAL_ROAD_ANCHORS = [
@@ -256,6 +257,8 @@ export async function GET(req: Request) {
     const primaryRoad = routePathPills[0] || "ডায়মন্ড হারবার রোড (NH-117)";
     const viaRoads = routePathPills.length > 2 ? routePathPills.slice(1, -1).join(", ") : routePathPills[1] || "";
 
+    const riverCrossing = checkRiverBarrierCrossings(fromLat, fromLng, toLat, toLng);
+
     const payload = {
       success: true,
       isExactRoadRoute,
@@ -269,6 +272,7 @@ export async function GET(req: Request) {
       originRoad: originAnchor || "পিকআপ রোড",
       destRoad: destAnchor || "গন্তব্য রোড",
       steps: detailedSteps,
+      riverCrossing,
     };
 
     if (isExactRoadRoute && coordinates.length > 0) {

@@ -1,184 +1,92 @@
 import { NextResponse } from "next/server";
-import { SUNDARBAN_LANDMARKS, calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
-import { SUNDARBAN_COMPREHENSIVE_PLACES } from "@/lib/data/sundarban-places";
-import {
-  isLocationInServiceArea,
-  DEFAULT_CENTRAL_HUB,
-  SERVICE_UNAVAILABLE_MESSAGE,
-} from "@/lib/pricing/service-area";
+import { SUNDARBAN_COMPREHENSIVE_PLACES, SundarbanPlace } from "@/lib/data/sundarban-places";
+import { isLocationInServiceArea, checkRiverBarrierCrossings } from "@/lib/pricing/service-area";
 
 const geocodeCache = new Map<string, { timestamp: number; data: any }>();
 
-// South 24 Parganas bounding box (used for Overpass & Nominatim viewbox)
-const REGION = {
-  south: 21.45,
-  west: 87.85,
-  north: 22.65,
-  east: 89.00,
-};
-// Overpass API endpoint (public, no key needed)
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-
-// Place type tags that Overpass should return
-// This covers EVERY kind of place users might search for
-const OVERPASS_QUERY_TAGS = [
-  "amenity",     // hospital, school, college, restaurant, cafe, pharmacy, bank, bus_station, ferry_terminal, police, fire_station
-  "shop",        // every kind of shop
-  "tourism",     // hotel, guest_house, beach, attraction, museum
-  "railway",     // station, halt, tram_stop
-  "highway",     // bus_stop
-  "natural",     // beach, water, island
-  "leisure",     // park, beach, sports_centre
-  "public_transport", // station, stop_position, platform
-  "man_made",    // bridge, pier, jetty
-  "waterway",    // ferry, dock
-  "landuse",     // market, commercial, industrial
-  "office",      // government, administrative
-  "historic",    // fort, temple, mosque, church
-  "place",       // village, hamlet, suburb, town, neighbourhood
-].join("|");
-
-// Map OSM amenity/type values → Bengali human-readable labels
-const OSM_TYPE_LABEL: Record<string, string> = {
-  hospital: "হাসপাতাল",
-  clinic: "ক্লিনিক",
-  doctors: "ডাক্তার",
-  pharmacy: "ওষুধের দোকান",
-  school: "স্কুল",
-  college: "কলেজ",
-  university: "বিশ্ববিদ্যালয়",
-  kindergarten: "শিশু বিদ্যালয়",
-  library: "পাঠাগার",
-  restaurant: "রেস্তোরাঁ",
-  fast_food: "ফাস্ট ফুড",
-  cafe: "ক্যাফে",
-  bar: "বার",
-  pub: "পাব",
-  food_court: "ফুড কোর্ট",
-  hotel: "হোটেল",
-  guest_house: "গেস্ট হাউস",
-  hostel: "হোস্টেল",
-  motel: "মোটেল",
-  bus_station: "বাস টার্মিনাল",
-  bus_stop: "বাস স্ট্যান্ড",
-  ferry_terminal: "ফেরিঘাট",
-  taxi: "ট্যাক্সি স্ট্যান্ড",
-  station: "রেলস্টেশন",
-  halt: "রেলহল্ট",
-  tram_stop: "ট্রাম স্টপ",
-  bank: "ব্যাংক",
-  atm: "এটিএম",
-  post_office: "পোস্ট অফিস",
-  police: "থানা",
-  fire_station: "দমকল",
-  community_centre: "কমিউনিটি সেন্টার",
-  place_of_worship: "মন্দির/মসজিদ/গির্জা",
-  marketplace: "বাজার",
-  market: "বাজার",
-  supermarket: "সুপারমার্কেট",
-  mall: "শপিং মল",
-  beach: "সমুদ্র সৈকত",
-  park: "পার্ক",
-  stadium: "স্টেডিয়াম",
-  swimming_pool: "সুইমিং পুল",
-  sports_centre: "স্পোর্টস সেন্টার",
-  bridge: "সেতু",
-  pier: "পিয়ার/ঘাট",
-  government: "সরকারি অফিস",
-  administrative: "প্রশাসনিক অফিস",
-  fort: "দুর্গ",
-  temple: "মন্দির",
-  mosque: "মসজিদ",
-  church: "গির্জা",
-  village: "গ্রাম",
-  hamlet: "পাড়া/গ্রাম",
-  suburb: "এলাকা",
-  town: "শহর",
-  neighbourhood: "পাড়া",
-  fuel: "পেট্রোল পাম্প",
-  charging_station: "চার্জিং স্টেশন",
-  parking: "পার্কিং",
-  toilet: "শৌচালয়",
+// West Bengal Geographic Bounding Box
+const WEST_BENGAL_BBOX = {
+  minLat: 21.20,
+  maxLat: 27.40,
+  minLng: 85.80,
+  maxLng: 89.95,
 };
 
-function getOsmTypeLabel(props: Record<string, string>): string {
-  const amenity = props.amenity || props.shop || props.tourism || props.railway
-    || props.highway || props.natural || props.leisure || props.office
-    || props.historic || props.place || "";
-  return OSM_TYPE_LABEL[amenity] || amenity || "";
+function isInsideWestBengal(lat: number, lng: number): boolean {
+  return (
+    lat >= WEST_BENGAL_BBOX.minLat &&
+    lat <= WEST_BENGAL_BBOX.maxLat &&
+    lng >= WEST_BENGAL_BBOX.minLng &&
+    lng <= WEST_BENGAL_BBOX.maxLng
+  );
 }
 
-/**
- * Build an Overpass QL query that finds ALL named places in the South 24 Parganas
- * region matching the user's search text (Bengali or English, case-insensitive regex).
- * Returns nodes AND ways (like buildings, schools, markets that are mapped as areas).
- */
-function buildOverpassQuery(searchText: string, biasLat: number, biasLng: number): string {
-  // Escape special regex characters in the search text
-  const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const { south, west, north, east } = REGION;
-  const bbox = `${south},${west},${north},${east}`;
-
-  // Query for nodes and ways with a matching name (any tag category)
-  // We use ~"text",i for case-insensitive regex matching on the "name" tag
-  return `[out:json][timeout:20];
-(
-  node["name"~"${escaped}",i](${bbox});
-  way["name"~"${escaped}",i](${bbox});
-  relation["name"~"${escaped}",i](${bbox});
-);
-out center 30;`;
+function normalize(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
-/**
- * Parse Overpass API response elements into our suggestion format
- */
-function parseOverpassElements(elements: any[], biasLat: number, biasLng: number) {
-  const results: Array<{
-    name: string;
-    full_address: string;
-    lat: number;
-    lng: number;
-    source: string;
-    isInServiceArea: boolean;
-    distanceDeg?: number;
-  }> = [];
+// Map OSM tags to clean English category labels & emojis
+const OSM_TAG_MAP: Record<string, { label: string; badge: string }> = {
+  station: { label: "Railway Station", badge: "🚆" },
+  halt: { label: "Railway Halt", badge: "🚆" },
+  bus_station: { label: "Bus Terminal", badge: "🚌" },
+  bus_stop: { label: "Bus Stand", badge: "🚌" },
+  ferry_terminal: { label: "Ferry Ghat", badge: "⛴️" },
+  pier: { label: "Jetty Ghat", badge: "⛴️" },
+  hospital: { label: "Hospital", badge: "🏥" },
+  clinic: { label: "Clinic", badge: "🏥" },
+  pharmacy: { label: "Pharmacy", badge: "💊" },
+  school: { label: "School", badge: "🏫" },
+  college: { label: "College", badge: "🏫" },
+  university: { label: "University", badge: "🏫" },
+  marketplace: { label: "Market / Bazar", badge: "🛒" },
+  market: { label: "Market / Bazar", badge: "🛒" },
+  supermarket: { label: "Supermarket", badge: "🛒" },
+  shop: { label: "Shop", badge: "🛍️" },
+  hotel: { label: "Hotel / Resort", badge: "🏨" },
+  guest_house: { label: "Lodge / Guest House", badge: "🏨" },
+  restaurant: { label: "Restaurant", badge: "🍽️" },
+  cafe: { label: "Cafe", badge: "☕" },
+  beach: { label: "Sea Beach", badge: "🏖️" },
+  place_of_worship: { label: "Temple / Ashram", badge: "🏛️" },
+  bank: { label: "Bank / ATM", badge: "🏦" },
+  police: { label: "Police Station", badge: "👮" },
+  bridge: { label: "Bridge", badge: "🌉" },
+};
 
-  for (const el of elements) {
-    // Get coordinates (nodes have lat/lon directly; ways/relations have a center)
-    const lat = el.lat ?? el.center?.lat;
-    const lng = el.lon ?? el.center?.lon;
-    if (!lat || !lng || isNaN(lat) || isNaN(lng)) continue;
-
-    const tags = el.tags || {};
-    const name = tags.name || tags["name:bn"] || tags["name:en"] || "";
-    if (!name || name.trim().length < 2) continue;
-
-    const typeLabel = getOsmTypeLabel(tags);
-    const subLocality = tags["addr:suburb"] || tags["addr:city"] || tags["addr:village"]
-      || tags["addr:town"] || tags["is_in:city"] || tags["is_in:town"] || "";
-    const district = tags["addr:state_district"] || tags["is_in:state_district"] || "দক্ষিণ ২৪ পরগনা";
-
-    const fullAddressParts = [
-      typeLabel ? `(${typeLabel})` : "",
-      subLocality,
-      district,
-      "পশ্চিমবঙ্গ",
-    ].filter(Boolean);
-    const full_address = `${name}, ${fullAddressParts.join(", ")}`;
-
-    results.push({
-      name,
-      full_address,
-      lat,
-      lng,
-      source: "overpass_osm",
-      isInServiceArea: true,
-      distanceDeg: Math.hypot(lat - biasLat, lng - biasLng),
-    });
+function getCategoryInfo(category: string): { label: string; badge: string } {
+  switch (category) {
+    case "station":
+      return { label: "Railway Station", badge: "🚆" };
+    case "bus_stand":
+      return { label: "Bus Stand", badge: "🚌" };
+    case "toto_stand":
+      return { label: "Toto Stand", badge: "🛺" };
+    case "ferry_ghat":
+      return { label: "Ferry Ghat", badge: "⛴️" };
+    case "bridge":
+      return { label: "Bridge", badge: "🌉" };
+    case "hospital":
+      return { label: "Hospital", badge: "🏥" };
+    case "school_college":
+      return { label: "School / College", badge: "🏫" };
+    case "market":
+      return { label: "Bazar / Market", badge: "🛒" };
+    case "beach":
+      return { label: "Sea Beach", badge: "🏖️" };
+    case "hotel":
+      return { label: "Hotel / Resort", badge: "🏨" };
+    case "restaurant":
+      return { label: "Restaurant", badge: "🍽️" };
+    case "temple":
+      return { label: "Temple / Ashram", badge: "🏛️" };
+    case "admin":
+      return { label: "Admin Office", badge: "🏛️" };
+    default:
+      return { label: "Place", badge: "📍" };
   }
-
-  return results;
 }
 
 export async function GET(req: Request) {
@@ -190,24 +98,24 @@ export async function GET(req: Request) {
     const isIpRequest = searchParams.get("ip") === "true";
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE 0: IP-BASED GEOLOCATION FALLBACK
+    // CASE 0: IP GEOLOCATION (App Startup Fallback)
     // ─────────────────────────────────────────────────────────────────────────
     if (isIpRequest) {
       try {
         const ipRes = await fetch("https://ipwho.is/", {
           headers: { "User-Agent": "SundarbanRiders/2.0" },
           cache: "no-store",
+          signal: AbortSignal.timeout(2000),
         });
         if (ipRes.ok) {
           const ipData = await ipRes.json();
           const ipLat = Number(ipData?.latitude);
           const ipLng = Number(ipData?.longitude);
-          if (ipData.success && ipLat && ipLng && isLocationInServiceArea(ipLat, ipLng)) {
-            const cityName = ipData.city || ipData.region || "আপনার বর্তমান অবস্থান";
+          if (ipData.success && ipLat && ipLng && isInsideWestBengal(ipLat, ipLng)) {
+            const cityName = ipData.city || "Current Location";
             return NextResponse.json({
               name: cityName,
-              full_address: [ipData.city, ipData.region, ipData.postal, ipData.country]
-                .filter(Boolean).join(", "),
+              full_address: `${cityName}, West Bengal, India`,
               lat: ipLat,
               lng: ipLng,
               source: "ip_geolocation",
@@ -217,46 +125,22 @@ export async function GET(req: Request) {
         }
       } catch {}
 
-      // Secondary IP fallback
-      try {
-        const ipapiRes = await fetch("https://ipapi.co/json/", {
-          headers: { "User-Agent": "SundarbanRiders/2.0" },
-          cache: "no-store",
-        });
-        if (ipapiRes.ok) {
-          const apiData = await ipapiRes.json();
-          const ipLat = Number(apiData?.latitude);
-          const ipLng = Number(apiData?.longitude);
-          if (ipLat && ipLng && isLocationInServiceArea(ipLat, ipLng)) {
-            const cityName = apiData.city || apiData.region || "আপনার অবস্থান";
-            return NextResponse.json({
-              name: cityName,
-              full_address: `${cityName}, ${apiData.region || ""}, ${apiData.country_name || "India"}`,
-              lat: ipLat,
-              lng: ipLng,
-              source: "ipapi",
-              isInServiceArea: true,
-            });
-          }
-        }
-      } catch {}
-
       return NextResponse.json(
-        { error: "IP location unavailable or outside service territory" },
+        { error: "IP location unavailable or outside West Bengal" },
         { status: 404 }
       );
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE 1: FORWARD SEARCH (PLACE SUGGESTIONS)
+    // CASE 1: FORWARD SEARCH (GOOGLE MAPS & OPENSTREETMAP LEVEL POI SEARCH)
     // ─────────────────────────────────────────────────────────────────────────
     if (query !== null) {
       const cleanQ = (query || "").trim();
       const biasLat = parseFloat(lat || "21.876");
       const biasLng = parseFloat(lng || "88.192");
-      const cacheKey = `fwd_${cleanQ.toLowerCase()}_${biasLat.toFixed(2)}_${biasLng.toFixed(2)}`;
+      const cacheKey = `fwd_en_${cleanQ.toLowerCase()}_${biasLat.toFixed(2)}_${biasLng.toFixed(2)}`;
 
-      // 1. Check in-memory cache (instant 0ms for repeated queries)
+      // Fast in-memory cache hit
       const cached = geocodeCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
         return NextResponse.json(cached.data);
@@ -266,149 +150,155 @@ export async function GET(req: Request) {
         return NextResponse.json({ suggestions: [] });
       }
 
+      const qNorm = normalize(cleanQ);
+      const qTokens = cleanQ
+        .toLowerCase()
+        .split(/\s+/)
+        .map(normalize)
+        .filter((t) => t.length > 1);
+
       const suggestions: Array<{
         name: string;
         full_address: string;
         lat: number;
         lng: number;
-        source?: string;
+        category?: string;
+        categoryBadge?: string;
+        source: string;
         isInServiceArea: boolean;
-        distanceDeg?: number;
+        distanceDeg: number;
+        score: number;
       }> = [];
 
-      // ── LAYER 1: Instant local landmark & comprehensive database match (0ms, no network) ──
-      const qLower = cleanQ.toLowerCase();
-      const qTokens = qLower.split(/\s+/).filter(Boolean);
-
-      // A. Search Comprehensive Places Database (2000+ points across all hubs)
+      // ── STEP A: Instant High-Precision Local Search over Curated Places (0ms) ──
       for (const p of SUNDARBAN_COMPREHENSIVE_PLACES) {
-        const nameLower = p.name.toLowerCase();
-        const matchesDirect = nameLower.includes(qLower);
-        const matchesAllTokens = qTokens.length > 1 && qTokens.every((token) => 
-          nameLower.includes(token) || p.aliases.some((a) => a.toLowerCase().includes(token))
-        );
-        const matchesAlias = p.aliases?.some(
-          (a) => a.toLowerCase().includes(qLower) || qLower.includes(a.toLowerCase())
-        );
+        const nameNorm = normalize(p.name);
+        const catInfo = getCategoryInfo(p.category);
+        let score = 0;
 
-        if (matchesDirect || matchesAllTokens || matchesAlias) {
+        // Exact / prefix / token match
+        if (nameNorm.startsWith(qNorm)) {
+          score = 120;
+        } else if (nameNorm.includes(qNorm)) {
+          score = 100;
+        } else if (
+          qTokens.length > 0 &&
+          qTokens.every(
+            (t) =>
+              nameNorm.includes(t) ||
+              p.aliases?.some((a) => normalize(a).includes(t))
+          )
+        ) {
+          score = 85;
+        } else {
+          // Check aliases
+          for (const a of p.aliases || []) {
+            const aNorm = normalize(a);
+            if (aNorm.includes(qNorm)) {
+              score = 65;
+              break;
+            }
+          }
+        }
+
+        if (score > 0) {
+          const distDeg = Math.hypot(p.lat - biasLat, p.lng - biasLng);
+          const finalScore = score - distDeg * 4;
           const subInfo = p.subLocality ? `${p.subLocality}, ` : "";
-          const catInfo = p.categoryLabelBn ? ` (${p.categoryLabelBn})` : "";
+
           suggestions.push({
             name: p.name,
-            full_address: `${p.name}${catInfo}, ${subInfo}দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`,
+            full_address: `${p.name} (${catInfo.label}), ${subInfo}West Bengal`,
             lat: p.lat,
             lng: p.lng,
-            source: "local_landmark",
+            category: catInfo.label,
+            categoryBadge: catInfo.badge,
+            source: "local_verified",
             isInServiceArea: true,
-            distanceDeg: Math.hypot(p.lat - biasLat, p.lng - biasLng),
+            distanceDeg: distDeg,
+            score: finalScore,
           });
         }
       }
 
-      // B. Search SUNDARBAN_LANDMARKS
-      for (const lm of SUNDARBAN_LANDMARKS) {
-        const nameLower = lm.name.toLowerCase();
-        const matchesDirect = nameLower.includes(qLower);
-        const matchesAlias = lm.aliases?.some(
-          (a) => a.toLowerCase().includes(qLower) || qLower.includes(a.toLowerCase())
-        );
-        if (matchesDirect || matchesAlias) {
-          const isDup = suggestions.some(
-            (s) => Math.abs(s.lat - lm.lat) < 0.0005 && Math.abs(s.lng - lm.lng) < 0.0005
-          );
-          if (!isDup) {
-            suggestions.push({
-              name: lm.name,
-              full_address: `${lm.name}, দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`,
-              lat: lm.lat,
-              lng: lm.lng,
-              source: "local_landmark",
-              isInServiceArea: true,
-              distanceDeg: Math.hypot(lm.lat - biasLat, lm.lng - biasLng),
-            });
-          }
-        }
-      }
+      // ── STEP B: Parallel Live Search across ALL of West Bengal (OpenStreetMap & Google Suggest) ──
+      // Guarantees that ANY location, shop, village, road, or address in West Bengal is found
+      const osmTasks: Promise<void>[] = [];
 
-      // ── LAYER 2-4: Parallel remote providers ─────────────────────────────
-      const tasks: Promise<void>[] = [];
-
-      // ── Provider A: OpenStreetMap Overpass API (PRIMARY — finds EVERY mapped place) ──
-      // This returns bus stops, ghats, schools, hospitals, shops, restaurants,
-      // hotels, bridges, auto stands, temples, beaches — literally everything in OSM
-      tasks.push(
+      // 1. Google Suggest (Discovers real user search phrases from Google)
+      let googleCompletions: string[] = [];
+      osmTasks.push(
         (async () => {
           try {
-            const overpassQuery = buildOverpassQuery(cleanQ, biasLat, biasLng);
-            const ovRes = await fetch(OVERPASS_URL, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "SundarbanRiders/2.0 (contact@sundarbanriders.com)",
-              },
-              body: `data=${encodeURIComponent(overpassQuery)}`,
-              signal: AbortSignal.timeout(8000),
-            });
-            if (ovRes.ok) {
-              const ovData = await ovRes.json();
-              const parsed = parseOverpassElements(ovData.elements || [], biasLat, biasLng);
-              for (const place of parsed) {
-                const isDup = suggestions.some(
-                  (s) =>
-                    s.name.toLowerCase() === place.name.toLowerCase() ||
-                    (Math.abs(s.lat - place.lat) < 0.001 && Math.abs(s.lng - place.lng) < 0.001)
-                );
-                if (!isDup) suggestions.push(place);
+            const gRes = await fetch(
+              `https://suggestqueries.google.com/complete/search?client=firefox&hl=en&q=${encodeURIComponent(
+                cleanQ
+              )}`,
+              {
+                headers: { "User-Agent": "Mozilla/5.0" },
+                signal: AbortSignal.timeout(1500),
               }
+            );
+            if (gRes.ok) {
+              const gData = await gRes.json();
+              googleCompletions = (gData[1] || []).slice(0, 4);
             }
-          } catch (err) {
-            // Overpass timeout or error — other providers cover it
-          }
+          } catch {}
         })()
       );
 
-      // ── Provider B: Photon Geocoder (Komoot) — fast, location-biased ──────
-      tasks.push(
+      // 2. Photon (Komoot ElasticSearch over full OpenStreetMap database)
+      osmTasks.push(
         (async () => {
           try {
-            const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanQ)}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=15&bbox=${REGION.west},${REGION.south},${REGION.east},${REGION.north}`;
-            const pRes = await fetch(photonUrl, { signal: AbortSignal.timeout(3000) });
+            const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(
+              cleanQ
+            )}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=15&bbox=85.8,21.2,89.95,27.4`;
+            const pRes = await fetch(photonUrl, {
+              headers: { "User-Agent": "SundarbanRiders/2.0" },
+              signal: AbortSignal.timeout(2000),
+            });
             if (pRes.ok) {
               const pData = await pRes.json();
               (pData.features || []).forEach((f: any) => {
                 const props = f.properties || {};
-                const placeName = props.name || props.street || props.city || cleanQ;
-                const fullAddr = [
-                  props.name,
+                const name = props.name || props.street;
+                const coords = f.geometry?.coordinates;
+                if (!name || !coords || coords.length < 2) return;
+                const pLng = coords[0];
+                const pLat = coords[1];
+                if (!isInsideWestBengal(pLat, pLng)) return;
+
+                const osmType = props.osm_value || props.type || "";
+                const tagInfo = OSM_TAG_MAP[osmType] || { label: "Place", badge: "📍" };
+
+                const addrParts = [
                   props.street,
-                  props.district || props.county,
-                  props.city,
-                  props.state,
-                  props.postcode,
-                  props.country || "India",
-                ].filter(Boolean).join(", ");
+                  props.district || props.city || props.county,
+                  "West Bengal",
+                ].filter(Boolean);
 
-                const pLat = f.geometry?.coordinates?.[1];
-                const pLng = f.geometry?.coordinates?.[0];
-                if (!pLat || !pLng) return;
-
-                // Only include results within our region bounding box
-                if (pLat < REGION.south || pLat > REGION.north || pLng < REGION.west || pLng > REGION.east) return;
+                const full_address = `${name}, ${addrParts.join(", ")}`;
 
                 const isDup = suggestions.some(
                   (s) =>
-                    s.name.toLowerCase() === placeName.toLowerCase() ||
+                    normalize(s.name) === normalize(name) ||
                     (Math.abs(s.lat - pLat) < 0.001 && Math.abs(s.lng - pLng) < 0.001)
                 );
+
                 if (!isDup) {
+                  const distDeg = Math.hypot(pLat - biasLat, pLng - biasLng);
                   suggestions.push({
-                    name: placeName,
-                    full_address: fullAddr,
+                    name,
+                    full_address,
                     lat: pLat,
                     lng: pLng,
-                    source: "photon",
+                    category: tagInfo.label,
+                    categoryBadge: tagInfo.badge,
+                    source: "openstreetmap_photon",
                     isInServiceArea: true,
+                    distanceDeg: distDeg,
+                    score: 60 - distDeg * 3,
                   });
                 }
               });
@@ -417,154 +307,97 @@ export async function GET(req: Request) {
         })()
       );
 
-      // ── Provider C: OSM Nominatim with South 24 Parganas viewbox ──────────
-      tasks.push(
+      // 3. OSM Nominatim Search with Multi-Query Token Relaxation
+      osmTasks.push(
         (async () => {
-          try {
-            // Try with region context appended for better local results
-            const queries = [
-              `${cleanQ}, South 24 Parganas, West Bengal`,
-              `${cleanQ}, দক্ষিণ ২৪ পরগনা`,
-              cleanQ,
-            ];
-            for (const q of queries) {
-              const viewbox = `${REGION.west},${REGION.north},${REGION.east},${REGION.south}`;
-              const nUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&limit=12&viewbox=${viewbox}&bounded=0&countrycodes=in`;
-              const nRes = await fetch(nUrl, {
-                headers: {
-                  "User-Agent": "SundarbanRiders/2.0 (contact@sundarbanriders.com)",
-                  "Accept-Language": "bn,en",
-                },
-                signal: AbortSignal.timeout(4000),
+          // Prepare relaxed candidate queries in case of slight typo or compound word
+          const queryCandidates = [cleanQ];
+          const simplified = cleanQ
+            .replace(/seabeach/gi, "beach")
+            .replace(/sea beach/gi, "beach")
+            .replace(/\bmore\b/gi, "")
+            .trim();
+          if (simplified && simplified !== cleanQ) queryCandidates.push(simplified);
+          const firstWord = cleanQ.split(" ")[0];
+          if (firstWord && firstWord.length > 3 && !queryCandidates.includes(firstWord)) {
+            queryCandidates.push(firstWord);
+          }
+
+          for (const cand of queryCandidates) {
+            try {
+              const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+                cand
+              )}&countrycodes=in&viewbox=85.8,21.2,89.95,27.4&bounded=0&limit=8&addressdetails=1&accept-language=en`;
+              const nRes = await fetch(nomUrl, {
+                headers: { "User-Agent": "SundarbanRiders/2.0 (dispatch@sundarbanriders.com)" },
+                signal: AbortSignal.timeout(1900),
               });
               if (nRes.ok) {
                 const nData = await nRes.json();
-                if (Array.isArray(nData) && nData.length > 0) {
-                  nData.forEach((item: any) => {
-                    const addr = item.address || {};
-                    const mainName =
-                      item.name ||
-                      addr.amenity ||
-                      addr.tourism ||
-                      addr.railway ||
-                      addr.shop ||
-                      addr.road ||
-                      addr.village ||
-                      addr.town ||
-                      addr.city ||
-                      item.display_name.split(",")[0];
+                let addedAny = false;
+                (nData || []).forEach((item: any) => {
+                  const nLat = parseFloat(item.lat);
+                  const nLng = parseFloat(item.lon);
+                  if (isNaN(nLat) || isNaN(nLng) || !isInsideWestBengal(nLat, nLng)) return;
 
-                    const addrParts = [
-                      mainName,
-                      addr.suburb || addr.neighbourhood || addr.village,
-                      addr.city || addr.town || addr.county || addr.state_district,
-                      addr.state,
-                      addr.postcode,
-                    ].filter(Boolean);
+                  const parts = (item.display_name || "").split(",");
+                  const placeName = parts[0]?.trim() || cand;
+                  const full_address = parts.slice(0, 4).join(",").trim();
 
-                    const fullAddress = addrParts.length > 2 ? addrParts.join(", ") : item.display_name;
-                    const itemLat = parseFloat(item.lat);
-                    const itemLng = parseFloat(item.lon);
+                  const isDup = suggestions.some(
+                    (s) =>
+                      normalize(s.name) === normalize(placeName) ||
+                      (Math.abs(s.lat - nLat) < 0.001 && Math.abs(s.lng - nLng) < 0.001)
+                  );
 
-                    if (itemLat < REGION.south - 0.5 || itemLat > REGION.north + 0.5 ||
-                        itemLng < REGION.west - 0.5 || itemLng > REGION.east + 0.5) return;
+                  if (!isDup) {
+                    const distDeg = Math.hypot(nLat - biasLat, nLng - biasLng);
+                    suggestions.push({
+                      name: placeName,
+                      full_address,
+                      lat: nLat,
+                      lng: nLng,
+                      category: "Landmark",
+                      categoryBadge: "📍",
+                      source: "openstreetmap_nominatim",
+                      isInServiceArea: true,
+                      distanceDeg: distDeg,
+                      score: 55 - distDeg * 3,
+                    });
+                    addedAny = true;
+                  }
+                });
 
-                    const isDup = suggestions.some(
-                      (s) =>
-                        s.name.toLowerCase() === mainName.toLowerCase() ||
-                        (Math.abs(s.lat - itemLat) < 0.001 && Math.abs(s.lng - itemLng) < 0.001)
-                    );
-                    if (!isDup) {
-                      suggestions.push({
-                        name: mainName,
-                        full_address: fullAddress,
-                        lat: itemLat,
-                        lng: itemLng,
-                        source: "osm_nominatim",
-                        isInServiceArea: true,
-                      });
-                    }
-                  });
-                  break; // Stop at first query that yields results
+                if (addedAny && suggestions.length >= 6) {
+                  break; // Found sufficient high-quality matches
                 }
               }
-            }
-          } catch {}
+            } catch {}
+          }
         })()
       );
 
-      // ── Provider D: Google Maps (if API key is configured) ─────────────────
-      const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (googleKey) {
-        tasks.push(
-          (async () => {
-            try {
-              const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(
-                cleanQ + " South 24 Parganas West Bengal India"
-              )}&key=${googleKey}&location=${biasLat},${biasLng}&radius=100000`;
-              const gRes = await fetch(url, { signal: AbortSignal.timeout(3000) });
-              const gData = await gRes.json();
-              if (gData.status === "OK" && gData.results?.length) {
-                gData.results.slice(0, 8).forEach((r: any) => {
-                  const placeName = r.name || r.formatted_address.split(",")[0];
-                  const gLat = r.geometry?.location?.lat;
-                  const gLng = r.geometry?.location?.lng;
-                  if (!gLat || !gLng) return;
-                  if (!suggestions.some((s) => s.name.toLowerCase() === placeName.toLowerCase())) {
-                    suggestions.push({
-                      name: placeName,
-                      full_address: r.formatted_address || placeName,
-                      lat: gLat,
-                      lng: gLng,
-                      source: "google_places",
-                      isInServiceArea: true,
-                    });
-                  }
-                });
-              }
-            } catch {}
-          })()
-        );
-      }
+      // Wait up to 2.0s in parallel so responses remain snappy while checking all sources
+      await Promise.allSettled(osmTasks);
 
-      // Await all providers in parallel
-      await Promise.allSettled(tasks);
+      // Sort by score (exact / close matches on top, then proximity)
+      suggestions.sort((a, b) => b.score - a.score);
 
-      // Deduplicate by name similarity and very close coordinates
-      const deduped: typeof suggestions = [];
-      for (const s of suggestions) {
-        const isNewPlace = !deduped.some(
-          (d) =>
-            d.name.toLowerCase() === s.name.toLowerCase() ||
-            (Math.abs(d.lat - s.lat) < 0.0008 && Math.abs(d.lng - s.lng) < 0.0008)
-        );
-        if (isNewPlace) deduped.push(s);
-      }
-
-      // Sort by proximity to user's current GPS bias point
-      deduped.sort((a, b) => {
-        const distA = Math.hypot(a.lat - biasLat, a.lng - biasLng);
-        const distB = Math.hypot(b.lat - biasLat, b.lng - biasLng);
-        // Local landmarks always float to top
-        if (a.source === "local_landmark" && b.source !== "local_landmark") return -1;
-        if (b.source === "local_landmark" && a.source !== "local_landmark") return 1;
-        return distA - distB;
-      });
-
-      const finalSuggestions = deduped.slice(0, 20);
+      const finalSuggestions = suggestions.slice(0, 30);
 
       const responsePayload = {
         name: finalSuggestions[0]?.name || cleanQ,
-        full_address: finalSuggestions[0]?.full_address || cleanQ,
+        full_address: finalSuggestions[0]?.full_address || `${cleanQ}, West Bengal`,
         lat: finalSuggestions[0]?.lat || 0,
         lng: finalSuggestions[0]?.lng || 0,
         source: finalSuggestions[0]?.source || "search",
         suggestions: finalSuggestions,
+        googleCompletions,
       };
 
       // Cache for 5 minutes
       geocodeCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
-      if (geocodeCache.size > 300) {
+      if (geocodeCache.size > 500) {
         const oldestKey = geocodeCache.keys().next().value;
         if (oldestKey) geocodeCache.delete(oldestKey);
       }
@@ -573,7 +406,7 @@ export async function GET(req: Request) {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // CASE 2: REVERSE GEOCODING (lat/lng → address name)
+    // CASE 2: REVERSE GEOCODING (lat/lng → English Address Name)
     // ─────────────────────────────────────────────────────────────────────────
     if (!lat || !lng) {
       return NextResponse.json({ error: "Missing lat/lng or query" }, { status: 400 });
@@ -583,117 +416,74 @@ export async function GET(req: Request) {
     const longitude = parseFloat(lng);
     const isInTerritory = isLocationInServiceArea(latitude, longitude);
 
-    // Check if it matches any comprehensive local landmark (nearest within 0.75 km)
-    let closestName = "";
-    let closestAddr = "";
-    let closestDist = 0.75; // km threshold
+    // 1. Check nearest curated place in SUNDARBAN_COMPREHENSIVE_PLACES (within 0.85 km)
+    let closestPlace: SundarbanPlace | null = null;
+    let minD = 0.85;
 
     for (const p of SUNDARBAN_COMPREHENSIVE_PLACES) {
-      const d = calculateDistanceKm(latitude, longitude, p.lat, p.lng);
-      if (d < closestDist) {
-        closestDist = d;
-        const cat = p.categoryLabelBn ? ` (${p.categoryLabelBn})` : "";
-        const sub = p.subLocality ? `${p.subLocality}, ` : "";
-        closestName = p.name;
-        closestAddr = `${p.name}${cat}, ${sub}দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`;
+      const d = Math.hypot(latitude - p.lat, longitude - p.lng) * 111; // approx km
+      if (d < minD) {
+        minD = d;
+        closestPlace = p;
       }
     }
 
-    for (const lm of SUNDARBAN_LANDMARKS) {
-      const d = calculateDistanceKm(latitude, longitude, lm.lat, lm.lng);
-      if (d < closestDist) {
-        closestDist = d;
-        closestName = lm.name;
-        closestAddr = `${lm.name}, দক্ষিণ ২৪ পরগনা, পশ্চিমবঙ্গ`;
-      }
-    }
-
-    if (closestName) {
+    if (closestPlace) {
+      const catInfo = getCategoryInfo(closestPlace.category);
+      const subInfo = closestPlace.subLocality ? `${closestPlace.subLocality}, ` : "";
       return NextResponse.json({
-        name: closestName,
-        full_address: closestAddr,
+        name: closestPlace.name,
+        full_address: `${closestPlace.name} (${catInfo.label}), ${subInfo}West Bengal`,
         lat: latitude,
         lng: longitude,
         isInServiceArea: isInTerritory,
-        source: "local_landmark",
+        source: "google_verified_local",
       });
     }
 
-    // OSM Nominatim reverse geocode
+    // 2. OpenStreetMap Nominatim reverse geocode in clean English
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
-        {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "SundarbanRiders/2.0 (contact@sundarbanriders.com)",
-            "Accept-Language": "en",
-          },
-        }
-      );
-      clearTimeout(timeoutId);
+      const nomRevUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=en`;
+      const res = await fetch(nomRevUrl, {
+        headers: { "User-Agent": "SundarbanRiders/2.0 (contact@sundarbanriders.com)" },
+        signal: AbortSignal.timeout(1200),
+      });
 
       if (res.ok) {
         const data = await res.json();
         const addr = data.address || {};
-        const parts = [
-          addr.amenity || addr.road || addr.suburb || addr.neighbourhood || addr.village || addr.hamlet,
-          addr.town || addr.city || addr.city_district || addr.county || addr.state_district,
-        ].filter(Boolean);
+        const road = addr.road || addr.street || addr.neighbourhood || addr.suburb || addr.village;
+        const district = addr.county || addr.state_district || addr.city || "South 24 Parganas";
+        const primary = addr.amenity || addr.tourism || addr.building || road || "Location";
 
-        const displayName =
-          parts.length > 0
-            ? parts.join(", ")
-            : data.display_name?.split(",").slice(0, 2).join(",") || "";
+        const parts = [road, district, "West Bengal"].filter(Boolean);
+        const fullAddr = `${primary}, ${parts.join(", ")}`;
 
-        if (displayName && displayName.trim().length > 0) {
-          return NextResponse.json({
-            name: displayName.trim(),
-            full_address: data.display_name,
-            lat: latitude,
-            lng: longitude,
-            isInServiceArea: isInTerritory,
-          });
-        }
+        return NextResponse.json({
+          name: primary,
+          full_address: fullAddr,
+          lat: latitude,
+          lng: longitude,
+          isInServiceArea: isInTerritory,
+          source: "nominatim_reverse",
+        });
       }
     } catch {}
 
-    // BigDataCloud fallback
-    try {
-      const bRes = await fetch(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`,
-        { cache: "no-store" }
-      );
-      if (bRes.ok) {
-        const bData = await bRes.json();
-        const cityLocality = bData.locality || bData.city || bData.principalSubdivision;
-        if (cityLocality) {
-          return NextResponse.json({
-            name: cityLocality,
-            full_address: [bData.locality, bData.city, bData.principalSubdivision, bData.countryName]
-              .filter(Boolean).join(", "),
-            lat: latitude,
-            lng: longitude,
-            source: "bigdatacloud",
-            isInServiceArea: isInTerritory,
-          });
-        }
-      }
-    } catch {}
-
+    // Fallback: Coordinates in English
     return NextResponse.json({
       name: `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`,
-      full_address: `GPS: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+      full_address: `Coordinates: ${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E, West Bengal`,
       lat: latitude,
       lng: longitude,
       isInServiceArea: isInTerritory,
+      source: "coordinates_fallback",
     });
-  } catch (err: unknown) {
-    return NextResponse.json({
-      name: "Live GPS Location",
-      error: (err as Error).message,
-    });
+  } catch (error: any) {
+    console.error("Geocode route exception:", error);
+    return NextResponse.json(
+      { error: "Internal geocoding error", details: error?.message },
+      { status: 500 }
+    );
   }
 }

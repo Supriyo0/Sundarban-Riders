@@ -180,6 +180,12 @@ export function InteractiveBookingMap({
 
   // Service territory tracking
   const [isDropOutOfService, setIsDropOutOfService] = useState(false);
+  const [riverCrossingAlert, setRiverCrossingAlert] = useState<{
+    requiresFerry: boolean;
+    barrierName: string;
+    notice: string;
+    noticeBn?: string;
+  } | null>(null);
 
   // Coordinates (Only set when valid; never auto-fill default hub coordinates)
   const [pickupCoords, setPickupCoords] = useState<[number, number]>(() => {
@@ -686,8 +692,8 @@ export function InteractiveBookingMap({
 
       const L = await getLeaflet();
 
-      const hasValidP = pCoords[0] !== 0 && Boolean(pText && pText.trim());
-      const hasValidD = dCoords[0] !== 0 && Boolean(dText && dText.trim());
+      const hasValidP = pCoords[0] !== 0 && !isNaN(pCoords[0]);
+      const hasValidD = dCoords[0] !== 0 && !isNaN(dCoords[0]);
 
       // 1. UPDATE OR CREATE PICKUP MARKER
       if (hasValidP) {
@@ -697,17 +703,33 @@ export function InteractiveBookingMap({
             draggable: true,
           }).addTo(map);
 
-          pMarker.on("dragend", async (e: any) => {
+          pMarker.on("drag", (e: any) => {
+            const newPos = e.target.getLatLng();
+            const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
+            const d = dropCoordsRef.current;
+            if (d[0] !== 0) {
+              const directD = calculateDistanceKm(newPosCoords[0], newPosCoords[1], d[0], d[1]);
+              const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
+              setDistanceKm(estDist);
+              const pts = [newPosCoords, d];
+              if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(pts);
+              if (routeLineRef.current) routeLineRef.current.setLatLngs(pts);
+            }
+          });
+
+          pMarker.on("dragend", (e: any) => {
             const newPos = e.target.getLatLng();
             const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
             setPickupCoords(newPosCoords);
             setHasValidPickup(true);
             setLocationError(null);
-            const resolved = await resolveLocationAddress(newPosCoords[0], newPosCoords[1]);
-            setPickupInputValue(resolved);
 
-            syncMapRouteAndPins(newPosCoords, dropCoordsRef.current, resolved, dropInputRef.current, {
+            syncMapRouteAndPins(newPosCoords, dropCoordsRef.current, pickupInputRef.current || "Current Location", dropInputRef.current || "Drop Location", {
               fitBounds: false,
+            });
+
+            resolveLocationAddress(newPosCoords[0], newPosCoords[1]).then((resolved) => {
+              setPickupInputValue(resolved);
             });
           });
 
@@ -728,15 +750,31 @@ export function InteractiveBookingMap({
             draggable: true,
           }).addTo(map);
 
-          dMarker.on("dragend", async (e: any) => {
+          dMarker.on("drag", (e: any) => {
+            const newPos = e.target.getLatLng();
+            const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
+            const p = pickupCoordsRef.current;
+            if (p[0] !== 0) {
+              const directD = calculateDistanceKm(p[0], p[1], newPosCoords[0], newPosCoords[1]);
+              const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
+              setDistanceKm(estDist);
+              const pts = [p, newPosCoords];
+              if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(pts);
+              if (routeLineRef.current) routeLineRef.current.setLatLngs(pts);
+            }
+          });
+
+          dMarker.on("dragend", (e: any) => {
             const newPos = e.target.getLatLng();
             const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
             setDropCoords(newPosCoords);
-            const resolved = await resolveLocationAddress(newPosCoords[0], newPosCoords[1]);
-            setDropInputValue(resolved);
 
-            syncMapRouteAndPins(pickupCoordsRef.current, newPosCoords, pickupInputRef.current, resolved, {
+            syncMapRouteAndPins(pickupCoordsRef.current, newPosCoords, pickupInputRef.current || "Current Location", dropInputRef.current || "Drop Location", {
               fitBounds: false,
+            });
+
+            resolveLocationAddress(newPosCoords[0], newPosCoords[1]).then((resolved) => {
+              setDropInputValue(resolved);
             });
           });
 
@@ -744,152 +782,45 @@ export function InteractiveBookingMap({
         } else {
           dropMarkerRef.current.setLatLng(dCoords);
         }
-      } else if (dropMarkerRef.current && !dText.trim()) {
+      } else if (dropMarkerRef.current && dCoords[0] === 0) {
         dropMarkerRef.current.remove();
         dropMarkerRef.current = null;
       }
 
-      // 3. ROUTE CALCULATION & POLYLINES
+      // 3. INSTANT SYNCHRONOUS ROUTE CALCULATION & POLYLINES (0ms Latency)
       if (hasValidP && hasValidD) {
-        const cacheKey = `${pCoords[0].toFixed(4)},${pCoords[1].toFixed(4)}-${dCoords[0].toFixed(4)},${dCoords[1].toFixed(4)}`;
-        let safeDist = 0;
-        let routeDuration = 5;
-        let routeCoords: [number, number][] = [];
-        let controller: AbortController | null = null;
+        const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+        const baselineDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
+        const baselineDuration = Math.max(3, Math.round(baselineDist * 2.8));
+        const initialFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
 
-        if (routeClientCache.has(cacheKey)) {
-          // Instant cache hit — 0 ms!
-          const cached = routeClientCache.get(cacheKey)!;
-          safeDist = cached.distanceKm;
-          routeDuration = cached.durationMin;
-          routeCoords = cached.coordinates;
-        } else {
-          setIsCalculatingRoute(true);
-          routeAbortControllerRef.current?.abort();
-          controller = new AbortController();
-          routeAbortControllerRef.current = controller;
-          const currentCtrl = controller;
+        setDistanceKm(baselineDist);
+        setRoadDurationMin(baselineDuration);
 
-          // Safety timeout: Never leave modal stuck for more than 5 seconds!
-          const safetyTimer = setTimeout(() => {
-            if (routeAbortControllerRef.current === currentCtrl) {
-              setIsCalculatingRoute(false);
-            }
-          }, 5000);
-
-          try {
-            const res = await fetch(
-              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
-              { signal: currentCtrl.signal }
-            );
-            const data = await res.json();
-
-            if (data?.coordinates?.length) {
-              routeCoords = data.coordinates;
-              safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-              routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
-            } else if (typeof data?.geometry === "string" && data.geometry.length > 0) {
-              routeCoords = decodePolyline(data.geometry);
-              safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-              routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
-            } else {
-              // Direct client-side road query backup across reliable mirrors
-              const mirrors = [
-                `https://router.project-osrm.org/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
-                `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
-                `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
-              ];
-
-              for (const mirrorUrl of mirrors) {
-                try {
-                  const directRes = await fetch(mirrorUrl, { signal: currentCtrl.signal });
-                  if (directRes.ok) {
-                    const directData = await directRes.json();
-                    const route0 = directData?.routes?.[0];
-                    if (route0?.geometry) {
-                      if (Array.isArray(route0.geometry.coordinates)) {
-                        routeCoords = route0.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
-                      } else if (typeof route0.geometry === "string") {
-                        routeCoords = decodePolyline(route0.geometry);
-                      }
-                      if (routeCoords.length > 0) {
-                        safeDist = Math.max(0.8, Math.round((route0.distance / 1000) * 10) / 10);
-                        routeDuration = Math.max(2, Math.round(route0.duration / 60));
-                        break;
-                      }
-                    }
-                  }
-                } catch {}
-              }
-            }
-
-            if (routeCoords.length > 0) {
-              routeClientCache.set(cacheKey, {
-                distanceKm: safeDist,
-                durationMin: routeDuration,
-                coordinates: routeCoords,
-              });
-            }
-          } catch (e: any) {
-            if (e?.name === "AbortError" || currentCtrl.signal.aborted) {
-              return;
-            }
-            console.warn("Route API fetch error:", e);
-          } finally {
-            clearTimeout(safetyTimer);
-            if (routeAbortControllerRef.current === currentCtrl) {
-              setIsCalculatingRoute(false);
-            }
-          }
+        // Immediate curved road coordinates for zero-latency visual feedback
+        const numPts = 16;
+        const curvedPts: [number, number][] = [];
+        const dLat = dCoords[0] - pCoords[0];
+        const dLng = dCoords[1] - pCoords[1];
+        const perpLat = -dLng * 0.08;
+        const perpLng = dLat * 0.08;
+        for (let i = 0; i <= numPts; i++) {
+          const frac = i / numPts;
+          const curve = Math.sin(frac * Math.PI);
+          curvedPts.push([
+            pCoords[0] + dLat * frac + perpLat * curve,
+            pCoords[1] + dLng * frac + perpLng * curve,
+          ]);
         }
+        if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curvedPts);
+        if (routeLineRef.current) routeLineRef.current.setLatLngs(curvedPts);
 
-        if (controller?.signal.aborted) {
-          return;
-        }
-
-        // If coordinates found, plot them along the real road!
-        if (routeCoords.length > 0) {
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(routeCoords);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(routeCoords);
-        } else {
-          // Fallback if network was offline: generate smooth road curvature so route polyline is ALWAYS visible
-          const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-          safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
-          routeDuration = Math.max(3, Math.round(safeDist * 2.8));
-          const numPts = 16;
-          const curvedPts: [number, number][] = [];
-          const dLat = dCoords[0] - pCoords[0];
-          const dLng = dCoords[1] - pCoords[1];
-          const perpLat = -dLng * 0.08;
-          const perpLng = dLat * 0.08;
-          for (let i = 0; i <= numPts; i++) {
-            const frac = i / numPts;
-            const curve = Math.sin(frac * Math.PI);
-            curvedPts.push([
-              pCoords[0] + dLat * frac + perpLat * curve,
-              pCoords[1] + dLng * frac + perpLng * curve,
-            ]);
-          }
-          routeCoords = curvedPts;
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curvedPts);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(curvedPts);
-        }
-
-        if (safeDist === 0) {
-          safeDist = Math.max(1.0, Math.round(calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]) * 1.42 * 10) / 10);
-        }
-
-        setDistanceKm(safeDist);
-        setRoadDurationMin(routeDuration);
-
-        const computedFare = calculateTotoFare(safeDist, passengerCount, pricingConfig);
-
-        // Notify parent
+        // Notify parent immediately with valid route details
         onRouteSelectedRef.current?.({
-          pickup: pText,
-          drop: dText,
-          distanceKm: safeDist,
-          estimatedFare: computedFare.totalFare,
+          pickup: pText || "Current Location",
+          drop: dText || "Drop Location",
+          distanceKm: baselineDist,
+          estimatedFare: initialFare.totalFare,
           rideTier: "standard",
           pickupCoords: pCoords,
           dropCoords: dCoords,
@@ -897,11 +828,10 @@ export function InteractiveBookingMap({
           passengerCount,
         });
 
-        // Uber Padded Camera Animation (leaves room for top search & bottom sheet)
+        // Uber Padded Camera Animation
         if (options?.fitBounds !== false) {
           try {
-            const boundsToFit = routeCoords.length > 0 ? routeCoords : [pCoords, dCoords];
-            map.flyToBounds(boundsToFit, {
+            map.flyToBounds([pCoords, dCoords], {
               paddingTopLeft: [40, 180],
               paddingBottomRight: [40, 260],
               duration: options?.flyDuration ?? 1.0,
@@ -910,11 +840,86 @@ export function InteractiveBookingMap({
             });
           } catch {}
         }
+
+        // Asynchronously refine with real road coordinates from /api/route with 2.5s timeout
+        const cacheKey = `${pCoords[0].toFixed(4)},${pCoords[1].toFixed(4)}-${dCoords[0].toFixed(4)},${dCoords[1].toFixed(4)}`;
+        if (routeClientCache.has(cacheKey)) {
+          const cached = routeClientCache.get(cacheKey)!;
+          if (cached.coordinates?.length) {
+            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(cached.coordinates);
+            if (routeLineRef.current) routeLineRef.current.setLatLngs(cached.coordinates);
+          }
+          setDistanceKm(cached.distanceKm);
+          setRoadDurationMin(cached.durationMin);
+          const computedFare = calculateTotoFare(cached.distanceKm, passengerCount, pricingConfig);
+          onRouteSelectedRef.current?.({
+            pickup: pText || "Current Location",
+            drop: dText || "Drop Location",
+            distanceKm: cached.distanceKm,
+            estimatedFare: computedFare.totalFare,
+            rideTier: "standard",
+            pickupCoords: pCoords,
+            dropCoords: dCoords,
+            paymentMode: "cash",
+            passengerCount,
+          });
+        } else {
+          try {
+            const controller = new AbortController();
+            const safetyTimer = setTimeout(() => controller.abort(), 2500);
+
+            const res = await fetch(
+              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
+              { signal: controller.signal }
+            );
+            clearTimeout(safetyTimer);
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.coordinates?.length) {
+                if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(data.coordinates);
+                if (routeLineRef.current) routeLineRef.current.setLatLngs(data.coordinates);
+              }
+              if (data?.riverCrossing) {
+                setRiverCrossingAlert(data.riverCrossing);
+              } else {
+                setRiverCrossingAlert(null);
+              }
+
+              const finalDist = data.distanceKm || baselineDist;
+              const finalDur = data.durationMin || baselineDuration;
+              setDistanceKm(finalDist);
+              setRoadDurationMin(finalDur);
+
+              const computedFare = calculateTotoFare(finalDist, passengerCount, pricingConfig);
+              onRouteSelectedRef.current?.({
+                pickup: pText || "Current Location",
+                drop: dText || "Drop Location",
+                distanceKm: finalDist,
+                estimatedFare: computedFare.totalFare,
+                rideTier: "standard",
+                pickupCoords: pCoords,
+                dropCoords: dCoords,
+                paymentMode: "cash",
+                passengerCount,
+              });
+
+              if (data?.coordinates?.length) {
+                routeClientCache.set(cacheKey, {
+                  distanceKm: finalDist,
+                  durationMin: finalDur,
+                  coordinates: data.coordinates,
+                });
+              }
+            }
+          } catch {}
+        }
       } else {
         // Clear route
         if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
         if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
         setDistanceKm(0);
+        setRiverCrossingAlert(null);
 
         if (options?.fitBounds !== false) {
           if (hasValidP) {
@@ -1168,59 +1173,48 @@ export function InteractiveBookingMap({
         setPermissionState("granted");
         setLocationError(null);
 
-        // Remove old pickup marker so syncMapRouteAndPins recreates it cleanly at real position
+        // Remove old pickup marker so it doesn't linger
         if (pickupMarkerRef.current) {
           try { pickupMarkerRef.current.remove(); } catch {}
           pickupMarkerRef.current = null;
         }
 
-        // Always display the live user dot with rotating heading cone!
+        // 1. Instantly center map right at user's true GPS position BEFORE lifting loading overlay
+        if (mapInstanceRef.current) {
+          try {
+            mapInstanceRef.current.setView(newPickup, 17, { animate: false });
+          } catch {}
+        }
+
+        // 2. Immediately lift the initial GPS lock overlay (0ms jump!)
+        setIsLocatingInitialLock(false);
+
+        // 3. Update the live GPS user dot with orientation cone
         await updateLiveUserDot(latitude, longitude);
 
-        const detectedName = preResolvedName || (await resolveLocationAddress(latitude, longitude));
-        setPickupInputValue(detectedName);
+        // 4. Initial English fallback title until reverse geocode resolves
+        const initialName = preResolvedName || "Current Location";
+        setPickupInputValue(initialName);
 
         try {
           localStorage.setItem("sr_last_known_lat", latitude.toString());
           localStorage.setItem("sr_last_known_lng", longitude.toString());
-          if (detectedName) localStorage.setItem("sr_last_known_name", detectedName);
+          if (initialName) localStorage.setItem("sr_last_known_name", initialName);
         } catch {}
 
-        // Immediately update parent state with accurate live pickup coordinates
-        onRouteSelectedRef.current?.({
-          pickup: detectedName,
-          drop: dropInputRef.current,
-          pickupCoords: newPickup,
-          dropCoords: dropCoordsRef.current,
-          distanceKm: distanceKm || 0,
-          estimatedFare: fareResult.totalFare || 30,
-          rideTier: "standard",
-          paymentMode: "cash",
-          passengerCount,
-        });
-
-        await syncMapRouteAndPins(newPickup, dropCoordsRef.current, detectedName, dropInputRef.current, {
+        // 5. Sync route immediately with current coordinates
+        await syncMapRouteAndPins(newPickup, dropCoordsRef.current, initialName, dropInputRef.current, {
           fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
           flyDuration: 1.0,
         });
 
-        // Exact positioning: On initial app launch, center map immediately BEFORE lifting loading overlay
-        const wasInitialLock = isLocatingInitialLock;
-        if (mapInstanceRef.current) {
-          try {
-            if (wasInitialLock) {
-              mapInstanceRef.current.setView(newPickup, 17);
-            } else {
-              mapInstanceRef.current.flyTo(newPickup, 17, { duration: 0.8 });
-            }
-          } catch {}
-        }
-        setIsLocatingInitialLock(false);
-
-        const isOutOfService = !isLocationInServiceArea(latitude, longitude);
-        if (isOutOfService) {
-          toast.warning(`📍 অবস্থান সনাক্ত হয়েছে: ${detectedName} (সুন্দরবন মূল এলাকার বাইরে)`);
-        }
+        // 6. Asynchronously resolve precise English landmark address in background without blocking
+        resolveLocationAddress(latitude, longitude).then((addr) => {
+          if (addr && addr !== initialName) {
+            setPickupInputValue(addr);
+            try { localStorage.setItem("sr_last_known_name", addr); } catch {}
+          }
+        });
       };
 
       // 1. Try Native Capacitor Pure Satellite GPS first
@@ -1331,25 +1325,28 @@ export function InteractiveBookingMap({
       setPickupCoords(liveCoords);
       setHasValidPickup(true);
       setLocationError(null);
-      setPickupInputValue("আমার বর্তমান অবস্থান");
+      setPickupInputValue("Current Location");
 
       if (mapInstanceRef.current) {
         try {
-          mapInstanceRef.current.flyTo(liveCoords, 17, { duration: 0.8 });
+          mapInstanceRef.current.setView(liveCoords, 17, { animate: false });
         } catch {}
       }
 
-      syncMapRouteAndPins(liveCoords, dropCoordsRef.current, "আমার বর্তমান অবস্থান", dropInputRef.current, {
+      syncMapRouteAndPins(liveCoords, dropCoordsRef.current, "Current Location", dropInputRef.current, {
         fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
       });
-    } else {
-      setPickupInputValue("অবস্থান খোঁজা হচ্ছে...");
-      setHasValidPickup(false);
-    }
 
-    // 2. Refresh high-accuracy GPS in background
-    fetchCurrentLocation(true);
-  }, [triggerHaptic, fetchCurrentLocation, syncMapRouteAndPins]);
+      // Quick background reverse geocode update
+      resolveLocationAddress(liveCoords[0], liveCoords[1]).then((addr) => {
+        if (addr) setPickupInputValue(addr);
+      });
+    } else {
+      setPickupInputValue("Locating GPS...");
+      setHasValidPickup(false);
+      fetchCurrentLocation(true);
+    }
+  }, [triggerHaptic, fetchCurrentLocation, syncMapRouteAndPins, resolveLocationAddress]);
 
   // Proactively run geolocation once on mount
   useEffect(() => {
@@ -1491,12 +1488,30 @@ export function InteractiveBookingMap({
           (mapContainerRef.current as any)._leaflet_id = null;
         }
 
-        const initialCenter: [number, number] =
-          hasValidPickup && pickupCoords[0] !== 0 ? pickupCoords : DEFAULT_REGION_HUB;
+        let initialCenter: [number, number] = DEFAULT_REGION_HUB;
+        if (hasValidPickup && pickupCoords[0] !== 0) {
+          initialCenter = pickupCoords;
+        } else if (typeof window !== "undefined") {
+          const savedLat = parseFloat(localStorage.getItem("sr_last_known_lat") || "");
+          const savedLng = parseFloat(localStorage.getItem("sr_last_known_lng") || "");
+          if (!isNaN(savedLat) && !isNaN(savedLng) && savedLat !== 0 && savedLng !== 0) {
+            initialCenter = [savedLat, savedLng];
+          }
+        }
+
+        // Strictly West Bengal Geographic Boundary — No dragging to world map or outside state
+        const WEST_BENGAL_BOUNDS: [[number, number], [number, number]] = [
+          [21.2000, 85.8000],
+          [27.4000, 89.9500],
+        ];
 
         const map = L.map(mapContainerRef.current, {
           center: initialCenter,
           zoom: 15,
+          minZoom: 8,
+          maxZoom: 19,
+          maxBounds: WEST_BENGAL_BOUNDS,
+          maxBoundsViscosity: 1.0,
           zoomControl: false,
           attributionControl: false,
         });
@@ -1647,9 +1662,9 @@ export function InteractiveBookingMap({
         const biasLng = pickupCoords[1] || 88.192;
         const res = await fetch(
           `/api/geocode?q=${encodeURIComponent(query)}&lat=${biasLat}&lng=${biasLng}`,
-          { signal: AbortSignal.timeout(5000) }
+          { signal: AbortSignal.timeout(4500) }
         );
-        if (!res.ok) throw new Error('geocode failed');
+        if (!res.ok) throw new Error("geocode failed");
         const data = await res.json();
         if (data?.suggestions && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
           setPlaceSuggestions(data.suggestions);
@@ -1657,11 +1672,11 @@ export function InteractiveBookingMap({
           setPlaceSuggestions([]);
         }
       } catch {
-        setPlaceSuggestions([]);
+        // Keep prior suggestions or empty if none
       } finally {
         setIsSearchingPlaces(false);
       }
-    }, 300);
+    }, 120);
   };
 
   // Select Place Suggestion (Saves to Recent 3 Searches, Removes Address Lock)
@@ -1713,7 +1728,15 @@ export function InteractiveBookingMap({
       setPlaceSuggestions([]);
       setSheetExpanded(true);
 
-      if (!hasValidPickup || pickupCoords[0] === 0 || !pickupInputValue.trim()) {
+      const effectivePickupCoords: [number, number] =
+        pickupCoords[0] !== 0
+          ? pickupCoords
+          : liveUserDotRef.current?.getLatLng()
+          ? [liveUserDotRef.current.getLatLng().lat, liveUserDotRef.current.getLatLng().lng]
+          : [0, 0];
+      const effectivePickupName = pickupInputValue.trim() || "Current Location";
+
+      if (effectivePickupCoords[0] === 0) {
         await syncMapRouteAndPins([0, 0], coords, "", place.name, {
           fitBounds: false,
           flyDuration: 1.2,
@@ -1725,7 +1748,12 @@ export function InteractiveBookingMap({
         }
         setActiveSearchField("pickup");
       } else {
-        await syncMapRouteAndPins(pickupCoords, coords, pickupInputValue, place.name, {
+        if (!pickupInputValue.trim()) {
+          setPickupInputValue(effectivePickupName);
+          setPickupCoords(effectivePickupCoords);
+          setHasValidPickup(true);
+        }
+        await syncMapRouteAndPins(effectivePickupCoords, coords, effectivePickupName, place.name, {
           fitBounds: true,
           flyDuration: 1.2,
         });
@@ -1903,8 +1931,8 @@ export function InteractiveBookingMap({
                     type="text"
                     placeholder={
                       locationError
-                        ? "পিকআপ স্থান লিখুন (GPS মেলেনি)..."
-                        : "পিকআপ অবস্থান লিখুন বা জিপিএস দিন..."
+                        ? "Enter pickup in West Bengal (GPS unavailable)..."
+                        : "Enter pickup location or tap GPS..."
                     }
                     value={pickupInputValue}
                     onChange={(e) => {
@@ -1936,7 +1964,7 @@ export function InteractiveBookingMap({
                       type="button"
                       onClick={handleTargetGpsClick}
                       disabled={isLocating}
-                      title="আমার সঠিক GPS অবস্থান"
+                      title="My accurate GPS location"
                       className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all cursor-pointer backdrop-blur-md border ${
                         hasValidPickup
                           ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 border-emerald-500/30 shadow-[0_2px_8px_rgba(16,185,129,0.25)]"
@@ -1977,7 +2005,7 @@ export function InteractiveBookingMap({
                   </div>
                   <Input
                     type="text"
-                    placeholder="কোথায় যাবেন? (Where to? Search destination...)"
+                    placeholder="Where to? Search destination in West Bengal..."
                     value={dropInputValue}
                     onChange={(e) => {
                       setTopCardExpanded(true);
@@ -2002,7 +2030,7 @@ export function InteractiveBookingMap({
                         triggerHaptic(22);
                         handleSwap();
                       }}
-                      title="পিকআপ ও গন্তব্য অদল-বদল"
+                      title="Swap pickup and destination"
                       className="w-8 h-8 rounded-xl bg-white/70 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition-all active:scale-85 active:rotate-180 cursor-pointer shadow-xs border border-white/80 backdrop-blur-md"
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
@@ -2024,6 +2052,16 @@ export function InteractiveBookingMap({
                     )}
                   </div>
                 </div>
+
+                {/* River Ferry Crossing Notice Banner in Top Card if Active */}
+                {riverCrossingAlert && (
+                  <div className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200">
+                    <span className="text-base shrink-0">⛴️</span>
+                    <span className="flex-1 text-[11px] leading-tight">
+                      {riverCrossingAlert.notice}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Live Auto-Suggest Places & Recent 3 Searches Dropdown */}
@@ -2037,8 +2075,8 @@ export function InteractiveBookingMap({
                     <span className="flex items-center gap-1.5 text-emerald-800">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                       {!hasStartedTyping
-                        ? "পূর্ববর্তী ৩টি অনুসন্ধান (Recent Searches)"
-                        : "সঠিক ঠিকানা সাজেশন (Uber/Rapido)"}
+                        ? "Recent Searches"
+                        : "Verified Place Suggestions"}
                     </span>
                     <button
                       type="button"
@@ -2050,7 +2088,7 @@ export function InteractiveBookingMap({
                       }}
                       className="text-[10px] text-slate-500 hover:text-slate-800 font-bold px-1.5 py-0.5 rounded bg-slate-100 cursor-pointer"
                     >
-                      ✕ বন্ধ
+                      ✕ Close
                     </button>
                   </div>
 
@@ -2084,7 +2122,7 @@ export function InteractiveBookingMap({
                         ))
                       ) : (
                         <div className="p-3 text-center text-xs text-slate-500">
-                          গন্তব্য অনুসন্ধানের জন্য টাইপ করুন অথবা ম্যাপে পিন করুন
+                          Search any destination in West Bengal or tap the map to pin
                         </div>
                       )}
                     </div>
@@ -2096,21 +2134,21 @@ export function InteractiveBookingMap({
                       {isSearchingPlaces && placeSuggestions.length === 0 && (
                         <div className="p-3 text-center text-xs text-emerald-700 font-bold flex items-center justify-center gap-2">
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>ঠিকানা খোঁজা হচ্ছে...</span>
+                          <span>Searching places across West Bengal...</span>
                         </div>
                       )}
                       {!isSearchingPlaces && placeSuggestions.length === 0 && (
                         <div className="p-3 text-center text-xs text-slate-500 font-medium">
-                          কোনো ফলাফল পাওয়া যায়নি। অন্য বানান দিয়ে খুঁজুন বা ম্যাপে পিন করুন।
+                          No places found. Try another spelling or tap the map to place a pin.
                         </div>
                       )}
                       {placeSuggestions.map((place, idx) => {
-                        const isStation = place.name.includes("স্টেশন") || place.name.toLowerCase().includes("station");
-                        const isBus = place.name.includes("বাসস্ট্যান্ড") || place.name.toLowerCase().includes("bus");
-                        const isGhat = place.name.includes("ঘাট") || place.name.includes("ফেরি") || place.name.toLowerCase().includes("ghat");
-                        const isBeach = place.name.includes("সৈকত") || place.name.includes("বিচ") || place.name.toLowerCase().includes("beach");
-                        const isHospital = place.name.includes("হাসপাতাল") || place.name.toLowerCase().includes("hospital");
-                        const isSchool = place.name.includes("স্কুল") || place.name.includes("কলেজ") || place.name.toLowerCase().includes("college");
+                        const isStation = place.name.includes("Station") || place.name.toLowerCase().includes("station");
+                        const isBus = place.name.includes("Bus") || place.name.toLowerCase().includes("bus");
+                        const isGhat = place.name.includes("Ghat") || place.name.toLowerCase().includes("ghat") || place.name.toLowerCase().includes("ferry");
+                        const isBeach = place.name.includes("Beach") || place.name.toLowerCase().includes("beach");
+                        const isHospital = place.name.includes("Hospital") || place.name.toLowerCase().includes("hospital");
+                        const isSchool = place.name.includes("School") || place.name.toLowerCase().includes("college");
                         const badgeEmoji = isStation ? "🚆" : isBus ? "🚌" : isGhat ? "⛴️" : isBeach ? "🏖️" : isHospital ? "🏥" : isSchool ? "🏫" : "📍";
                         const badgeBg = isStation ? "bg-amber-100 text-amber-900 border-amber-200" : isBus ? "bg-blue-100 text-blue-900 border-blue-200" : isGhat ? "bg-cyan-100 text-cyan-900 border-cyan-200" : isBeach ? "bg-teal-100 text-teal-900 border-teal-200" : isHospital ? "bg-rose-100 text-rose-900 border-rose-200" : "bg-emerald-100 text-emerald-900 border-emerald-200";
 
@@ -2151,12 +2189,12 @@ export function InteractiveBookingMap({
                   onMouseDown={(e) => startTopDrag(e.clientY)}
                   onMouseUp={(e) => endTopDrag(e.clientY)}
                   className="w-full pt-2 pb-0.5 flex flex-col items-center justify-center gap-1 cursor-pointer select-none group border-t border-slate-100/90"
-                  title="মানচিত্র বড় করে দেখতে উপরে তুলুন"
+                  title="Swipe up / Tap to minimize"
                 >
                   <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-slate-500 rounded-full transition-colors" />
                   <div className="flex items-center gap-1 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
                     <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                    <span>মানচিত্র দেখতে উপরে তুলুন (Swipe up / Tap to minimize)</span>
+                    <span>Swipe up / Tap to minimize</span>
                   </div>
                 </div>
               )}
@@ -2177,8 +2215,8 @@ export function InteractiveBookingMap({
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
         <span className="text-[11px] font-bold text-slate-800">
           {nearbyDrivers.length > 0
-            ? `🛺 ${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমি)`
-            : "🛺 ৫ কিমিতে কোনো টোটো নেই"}
+            ? `🛺 ${nearbyDrivers.length} Active Totos (5 km)`
+            : "🛺 No active Totos nearby"}
         </span>
       </div>
 
@@ -2194,7 +2232,7 @@ export function InteractiveBookingMap({
             triggerHaptic(12);
             if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
           }}
-          title="জুম ইন"
+          title="Zoom In"
           className="w-10 h-10 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
         >
           <Plus className="w-4 h-4 text-slate-700" />
@@ -2205,7 +2243,7 @@ export function InteractiveBookingMap({
             triggerHaptic(12);
             if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
           }}
-          title="জুম আউট"
+          title="Zoom Out"
           className="w-10 h-10 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
         >
           <Minus className="w-4 h-4 text-slate-700" />
@@ -2503,6 +2541,19 @@ export function InteractiveBookingMap({
                     )}
                   </span>
                 </div>
+
+                {/* River Barrier / Island Ferry Crossing Alert Banner */}
+                {riverCrossingAlert && (
+                  <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-950 dark:text-amber-200 text-xs space-y-1 shadow-sm backdrop-blur-md animate-in fade-in">
+                    <div className="flex items-center gap-2 text-amber-900 dark:text-amber-100 font-black">
+                      <span className="text-base shrink-0">⛴️</span>
+                      <span>Ferry Crossing Required ({riverCrossingAlert.barrierName})</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 font-semibold leading-relaxed">
+                      {riverCrossingAlert.notice}
+                    </p>
+                  </div>
+                )}
 
                 {/* Service Territory Warning */}
                 {isDropOutOfService && (

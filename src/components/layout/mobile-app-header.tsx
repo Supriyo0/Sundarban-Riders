@@ -30,24 +30,28 @@ export function MobileAppHeader({
   return (
     <header className="sticky top-0 z-30 px-3 sm:px-4 py-2 select-none">
       <div
-        className="relative h-13 px-3.5 rounded-2xl flex items-center justify-between transition-all"
+        className="relative h-14 px-3.5 rounded-3xl flex items-center justify-between transition-all"
         style={{
-          background: "linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.55) 100%)",
-          backdropFilter: "blur(32px) saturate(210%)",
-          WebkitBackdropFilter: "blur(32px) saturate(210%)",
-          border: "1px solid rgba(255, 255, 255, 0.85)",
-          boxShadow: "0 16px 36px -8px rgba(0, 0, 0, 0.12), inset 0 1.5px 2px rgba(255, 255, 255, 0.95), inset 0 -1px 1px rgba(255, 255, 255, 0.3)",
+          background: "linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.62) 100%)",
+          backdropFilter: "blur(40px) saturate(210%)",
+          WebkitBackdropFilter: "blur(40px) saturate(210%)",
+          border: "1.5px solid rgba(255, 255, 255, 0.95)",
+          boxShadow: "0 18px 40px -10px rgba(0, 0, 0, 0.12), inset 0 1.5px 2px rgba(255, 255, 255, 1), inset 0 -1px 1px rgba(255, 255, 255, 0.4)",
         }}
       >
         {/* Top subtle iridescent specular glass sheen */}
-        <div className="absolute top-0 inset-x-3 h-3 bg-gradient-to-b from-white/60 to-transparent rounded-t-2xl pointer-events-none" />
+        <div className="absolute top-0 inset-x-4 h-3 bg-gradient-to-b from-white/80 via-white/20 to-transparent rounded-t-3xl pointer-events-none" />
 
         {/* Brand & User info */}
         <div className="flex items-center gap-2.5 min-w-0 flex-1 z-10">
-          <div className="shrink-0 p-1 rounded-xl bg-white/70 shadow-xs border border-white/80">
-            <SundarbanLogo size="sm" variant="icon" />
+          <div className="w-8.5 h-8.5 rounded-full overflow-hidden shrink-0 ring-2 ring-emerald-500/30 shadow-xs flex items-center justify-center bg-white p-0.5 border border-white">
+            <img
+              src="/sundarban-logo.png"
+              alt="Sundarban Riders Logo"
+              className="w-full h-full object-cover rounded-full"
+            />
           </div>
-          <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0 justify-center">
             <div className="flex items-center gap-1.5">
               <span className="font-black text-sm tracking-tight text-slate-900 leading-none">
                 SUNDARBAN

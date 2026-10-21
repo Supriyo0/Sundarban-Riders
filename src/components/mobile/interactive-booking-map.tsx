@@ -1671,15 +1671,35 @@ export function InteractiveBookingMap({
           const clickedCoords: [number, number] = [e.latlng.lat, e.latlng.lng];
           const resolved = await resolveLocationAddress(clickedCoords[0], clickedCoords[1]);
 
-          if (activeSearchField === "pickup" || !hasValidPickup || pickupCoords[0] === 0) {
+          const curSearch = activeSearchFieldRef.current;
+          let currentPickup = pickupCoordsRef.current;
+
+          // Auto-recover pickup if state was 0
+          if (currentPickup[0] === 0 && typeof window !== "undefined") {
+            const latStr = localStorage.getItem("sr_last_known_lat");
+            const lngStr = localStorage.getItem("sr_last_known_lng");
+            if (latStr && lngStr) {
+              const lat = parseFloat(latStr);
+              const lng = parseFloat(lngStr);
+              if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+                currentPickup = [lat, lng];
+                setPickupCoords(currentPickup);
+                setHasValidPickup(true);
+              }
+            }
+          }
+
+          const hasP = currentPickup[0] !== 0 && !isNaN(currentPickup[0]);
+
+          if (curSearch === "pickup" || !hasP) {
             setPickupCoords(clickedCoords);
             setPickupInputValue(resolved);
             setHasValidPickup(true);
             setLocationError(null);
             setActiveSearchField(null);
 
-            await syncMapRouteAndPins(clickedCoords, dropCoords, resolved, dropInputValue, {
-              fitBounds: Boolean(dropInputValue),
+            await syncMapRouteAndPins(clickedCoords, dropCoordsRef.current, resolved, dropInputRef.current, {
+              fitBounds: Boolean(dropInputRef.current),
               flyDuration: 1.0,
             });
           } else {
@@ -1696,7 +1716,7 @@ export function InteractiveBookingMap({
             setActiveSearchField(null);
             setSheetExpanded(true);
 
-            await syncMapRouteAndPins(pickupCoords, clickedCoords, pickupInputValue, resolved, {
+            await syncMapRouteAndPins(currentPickup, clickedCoords, pickupInputRef.current || "Current Location", resolved, {
               fitBounds: true,
               flyDuration: 1.2,
             });

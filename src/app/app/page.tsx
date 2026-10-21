@@ -2182,10 +2182,21 @@ function MobileAppPageContent() {
 
             <div>
               <h2 className="text-2xl font-black tracking-tight text-slate-900">
-                অ্যাপের প্রয়োজনীয় অনুমতি
+                অ্যাপের প্রয়োজনীয় অনুমতি ও সম্মতি
               </h2>
               <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
                 সুন্দরবনের সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত স্মার্ট টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
+              </p>
+            </div>
+
+            {/* Google Play Compliant Prominent Disclosure Card */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 text-slate-900 shadow-xs space-y-2">
+              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>সুস্পষ্ট নোটিশ ও ডেটা সুরক্ষা (Prominent Disclosure)</span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed">
+                <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী সক্রিয় টোটো চালক খুঁজে পাওয়া যায়, (২) আসল সড়কের সঠিক টার্ন-বাই-টার্ন রুট ম্যাপ দেখানো যায়, এবং (৩) দূরত্বের ভিত্তিতে ন্যায্য মিটার ভাড়া গণনা করা যায়। আপনার অবস্থান ডেটা কেবল চলমান ট্রিপের সুরক্ষায় ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
               </p>
             </div>
 
@@ -2195,9 +2206,9 @@ function MobileAppPageContent() {
                   <MapPin className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS)</h4>
+                  <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS Location)</h4>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                    নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা ও আসল সড়কের লাইভ রুট দেখার জন্য।
+                    নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা, সঠিক রোড রুট ও ন্যায্য মিটার ভাড়া পরিমাপের জন্য।
                   </p>
                 </div>
               </div>
@@ -2207,9 +2218,9 @@ function MobileAppPageContent() {
                   <Bell className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন</h4>
+                  <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন (Notifications)</h4>
                   <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                    অ্যাপ ব্যাকগ্রাউন্ডে থাকলেও নতুন রাইড ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক অ্যালার্ট।
+                    নতুন রাইড, চালক পৌঁছানোর অ্যালার্ট ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক নোটিফিকেশন।
                   </p>
                 </div>
               </div>
@@ -2229,10 +2240,10 @@ function MobileAppPageContent() {
 
             <Button
               size="lg"
-              className="w-full h-12 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-sm shadow-md active:scale-95 transition-all mt-4 cursor-pointer"
+              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-95 transition-all mt-4 cursor-pointer"
               onClick={handleGrantPermissions}
             >
-              সব অনুমতি দিন ও এগিয়ে যান →
+              সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →
             </Button>
           </div>
         </div>

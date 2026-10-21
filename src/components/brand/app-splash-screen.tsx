@@ -31,14 +31,12 @@ export function AppSplashScreen({
         if (isNative) {
           try {
             const perm = await Geolocation.checkPermissions();
-            if (perm.location !== "granted") {
-              await Geolocation.requestPermissions();
-            }
-            const pos = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: true,
-              timeout: 9000,
-              maximumAge: 0,
-            });
+            if (perm.location === "granted") {
+              const pos = await Geolocation.getCurrentPosition({
+                enableHighAccuracy: true,
+                timeout: 9000,
+                maximumAge: 0,
+              });
             if (pos?.coords?.latitude && pos?.coords?.longitude) {
               const acc = pos.coords.accuracy || 10;
               // Reject coarse cellular tower guesses (>1500m)

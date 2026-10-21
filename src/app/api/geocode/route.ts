@@ -203,7 +203,7 @@ export async function GET(req: Request) {
         const isCatMatch =
           ((qNorm.includes("hotel") || qNorm.includes("resort") || qNorm.includes("lodge")) && p.category === "hotel") ||
           ((qNorm.includes("school") || qNorm.includes("college") || qNorm.includes("vidya")) && p.category === "school_college") ||
-          ((qNorm.includes("restaurant") || qNorm.includes("food") || qNorm.includes("cafe")) && p.category === "restaurant") ||
+          ((qNorm.includes("restaurant") || qNorm.includes("resturant") || qNorm.includes("food") || qNorm.includes("dhaba") || qNorm.includes("bhojan") || qNorm.includes("cafe")) && p.category === "restaurant") ||
           ((qNorm.includes("hospital") || qNorm.includes("health") || qNorm.includes("swasthya") || qNorm.includes("clinic")) && p.category === "hospital") ||
           ((qNorm.includes("beach") || qNorm.includes("sea")) && p.category === "beach") ||
           ((qNorm.includes("station") || qNorm.includes("rail")) && p.category === "station") ||

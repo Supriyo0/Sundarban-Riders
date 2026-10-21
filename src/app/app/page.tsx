@@ -50,6 +50,7 @@ import {
 import {
   subscribeDriverToPushNotifications,
   showLocalRideAlertNotification,
+  requestNotificationPermission,
 } from "@/lib/mobile/push-notifications";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
@@ -719,6 +720,7 @@ function MobileAppPageContent() {
       }
       if (data.booking && data.booking.id) {
         setActiveBookingId(data.booking.id);
+        requestNotificationPermission().catch(() => {});
       }
     } catch (err) {
       setSearchStatus("idle");
@@ -811,7 +813,11 @@ function MobileAppPageContent() {
             setSearchStatus("idle");
             setPhase("passenger_home");
             playSuccessSound();
-            toast.success("চালক রাইড গ্রহণ করেছেন!");
+            showLocalRideAlertNotification(
+              "🛺 চালক রাইড গ্রহণ করেছেন!",
+              `${b.driver_name || "টোটো চালক"} (${b.driver_unique_id || b.toto_number || "টোটো"}) আপনার পিকআপের উদ্দেশ্যে আসছেন। OTP: ${b.start_otp || ""}`,
+              b.id
+            );
           }
         } catch {}
       };
@@ -862,7 +868,11 @@ function MobileAppPageContent() {
           setRideStep((prev) => {
             if (prev !== "in_trip") {
               playSuccessSound();
-              toast.success("🛺 আপনার যাত্রা শুরু হয়েছে! শুভ ও নিরাপদ যাত্রা।");
+              showLocalRideAlertNotification(
+                "🛺 আপনার যাত্রা শুরু হয়েছে!",
+                "শুভ ও নিরাপদ যাত্রা। গন্তব্যে পৌঁছানো পর্যন্ত লাইভ ট্র্যাকিং সক্রিয় রয়েছে।",
+                b.id
+              );
             }
             return "in_trip";
           });
@@ -926,7 +936,11 @@ function MobileAppPageContent() {
           if (hasCompletedNotifiedRef.current !== b.id) {
             hasCompletedNotifiedRef.current = b.id;
             playSuccessSound();
-            toast.success("আপনার ট্রিপ সফলভাবে সম্পন্ন হয়েছে! ডিজিটাল রসিদ প্রস্তুত।");
+            showLocalRideAlertNotification(
+              "✅ ট্রিপ সফলভাবে সম্পন্ন হয়েছে!",
+              `ভাড়া: ₹${finalFare}.০০ • আপনার ডিজিটাল রসিদ প্রস্তুত`,
+              b.id
+            );
           }
           return;
         } else if (b.status === "cancelled") {
@@ -938,7 +952,11 @@ function MobileAppPageContent() {
             localStorage.removeItem("sr_active_booking_id");
             localStorage.removeItem("sr_search_status");
           }
-          toast.error("রাইডটি বাতিল করা হয়েছে।");
+          showLocalRideAlertNotification(
+            "⚠️ রাইড বাতিল হয়েছে",
+            "আপনার রাইড বুকিংটি বাতিল করা হয়েছে।",
+            bId
+          );
           return;
         }
       } catch {}

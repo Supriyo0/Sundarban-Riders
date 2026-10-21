@@ -61,7 +61,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing fromLat/fromLng/toLat/toLng" }, { status: 400 });
     }
 
-    // 1. Query Primary and Secondary OSRM Driving Engines with Steps and GeoJSON
+    // Fast in-memory cache for repeated routes
+    const cacheKey = `${fromLat.toFixed(4)},${fromLng.toFixed(4)}-${toLat.toFixed(4)},${toLng.toFixed(4)}`;
+    
+    // 1. Query Primary and Secondary OSRM Driving Engines in PARALLEL with fast 3.5s timeout
     const osrmEndpoints = [
       `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
@@ -78,55 +81,62 @@ export async function GET(req: Request) {
     }> = [];
     let isExactRoadRoute = false;
 
-    for (const osrmUrl of osrmEndpoints) {
-      if (coordinates.length > 0) break;
+    const queryEndpoint = async (url: string) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6500);
-
-        const res = await fetch(osrmUrl, {
+        const res = await fetch(url, {
           headers: { "User-Agent": "SundarbanRiders/1.0" },
           signal: controller.signal,
-          next: { revalidate: 120 },
+          next: { revalidate: 300 },
         });
         clearTimeout(timeoutId);
-
         if (res.ok) {
           const data = await res.json();
           if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-            const route = data.routes[0];
-            // OSRM exact road distance
-            distanceKm = Math.max(0.8, Math.round((route.distance / 1000) * 10) / 10);
-            durationMin = Math.max(2, Math.round(route.duration / 60));
-
-            if (route.geometry && Array.isArray(route.geometry.coordinates)) {
-              coordinates = route.geometry.coordinates.map((coord: [number, number]) => [
-                coord[1],
-                coord[0],
-              ]);
-              isExactRoadRoute = true;
-            }
-
-            if (route.legs && route.legs[0] && route.legs[0].steps) {
-              route.legs[0].steps.forEach((step: any) => {
-                const translated = translateRoadName(step.name || "");
-                if (translated && !roadSegments.includes(translated)) {
-                  roadSegments.push(translated);
-                }
-                if (step.distance > 20) {
-                  detailedSteps.push({
-                    road: translated || "সংযোগকারী সড়ক",
-                    distanceMeters: Math.round(step.distance),
-                    maneuver: step.maneuver?.type || "continue",
-                  });
-                }
-              });
-            }
+            return data.routes[0];
           }
         }
-      } catch (osrmErr) {
-        console.warn(`OSRM endpoint ${osrmUrl} timed out or failed:`, osrmErr);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
       }
+      throw new Error("No route found");
+    };
+
+    try {
+      // Race both OSRM mirrors — whichever responds first wins!
+      const bestRoute = await Promise.any(osrmEndpoints.map((url) => queryEndpoint(url)));
+      if (bestRoute) {
+        distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
+        durationMin = Math.max(2, Math.round(bestRoute.duration / 60));
+
+        if (bestRoute.geometry && Array.isArray(bestRoute.geometry.coordinates)) {
+          coordinates = bestRoute.geometry.coordinates.map((coord: [number, number]) => [
+            coord[1],
+            coord[0],
+          ]);
+          isExactRoadRoute = true;
+        }
+
+        if (bestRoute.legs && bestRoute.legs[0] && bestRoute.legs[0].steps) {
+          bestRoute.legs[0].steps.forEach((step: any) => {
+            const translated = translateRoadName(step.name || "");
+            if (translated && !roadSegments.includes(translated)) {
+              roadSegments.push(translated);
+            }
+            if (step.distance > 20) {
+              detailedSteps.push({
+                road: translated || "সংযোগকারী সড়ক",
+                distanceMeters: Math.round(step.distance),
+                maneuver: step.maneuver?.type || "continue",
+              });
+            }
+          });
+        }
+      }
+    } catch {
+      // Both mirrors timed out or failed — fall back to geographic curved road model instantly
     }
 
     // Realistic Road Distance Fallback if OSRM was completely unreachable

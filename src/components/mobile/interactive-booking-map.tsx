@@ -26,7 +26,11 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
+import { App } from "@capacitor/app";
 import "leaflet/dist/leaflet.css";
+
+// In-memory cache for ultra-fast instant route retrieval (0ms cache hits)
+const routeClientCache = new Map<string, { distanceKm: number; durationMin: number; coordinates: [number, number][] }>();
 import {
   DEFAULT_TOTO_PRICING,
   TotoPricingConfig,
@@ -275,6 +279,15 @@ export function InteractiveBookingMap({
   const [gpsDetected, setGpsDetected] = useState(false);
   const [permissionState, setPermissionState] = useState<"prompt" | "granted" | "denied">("prompt");
 
+  // Subtle tactile haptic feedback for liquid interactive feel
+  const triggerHaptic = useCallback((ms = 15) => {
+    if (typeof window !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(ms);
+      } catch {}
+    }
+  }, []);
+
   // Metrics & Drivers
   const [distanceKm, setDistanceKm] = useState(0);
   const [roadDurationMin, setRoadDurationMin] = useState(5);
@@ -282,8 +295,65 @@ export function InteractiveBookingMap({
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
   // True when user is typing a custom pickup — GPS watcher must NOT override it
   const hasManualPickupRef = useRef(false);
-  // Track whether the pickup input is currently focused
   const pickupInputFocusedRef = useRef(false);
+  const routeAbortControllerRef = useRef<AbortController | null>(null);
+  const activeSearchFieldRef = useRef(activeSearchField);
+  activeSearchFieldRef.current = activeSearchField;
+  const sheetExpandedRef = useRef(sheetExpanded);
+  sheetExpandedRef.current = sheetExpanded;
+  const isCalculatingRouteRef = useRef(isCalculatingRoute);
+  isCalculatingRouteRef.current = isCalculatingRoute;
+
+  // Android Native Hardware Back Button & Web Escape Key Support (Never blocks UI)
+  useEffect(() => {
+    let removeListener: (() => void) | undefined;
+    if (Capacitor.isNativePlatform()) {
+      App.addListener("backButton", ({ canGoBack }) => {
+        if (activeSearchFieldRef.current) {
+          setActiveSearchField(null);
+          setHasStartedTyping(false);
+          setPlaceSuggestions([]);
+          return;
+        }
+        if (isCalculatingRouteRef.current) {
+          routeAbortControllerRef.current?.abort();
+          setIsCalculatingRoute(false);
+          return;
+        }
+        if (sheetExpandedRef.current) {
+          setSheetExpanded(false);
+          return;
+        }
+        if (canGoBack) {
+          window.history.back();
+        } else {
+          App.exitApp();
+        }
+      }).then((handle) => {
+        removeListener = () => handle.remove();
+      });
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (activeSearchFieldRef.current) {
+          setActiveSearchField(null);
+          setHasStartedTyping(false);
+          setPlaceSuggestions([]);
+        }
+        if (isCalculatingRouteRef.current) {
+          routeAbortControllerRef.current?.abort();
+          setIsCalculatingRoute(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      removeListener?.();
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   // Periodically fetch active drivers from /api/drivers (Every 4.5 seconds)
   useEffect(() => {
@@ -475,7 +545,6 @@ export function InteractiveBookingMap({
             syncMapRouteAndPins(newPosCoords, dropCoordsRef.current, resolved, dropInputRef.current, {
               fitBounds: false,
             });
-            toast.info(`📍 নতুন পিকআপ: ${resolved}`);
           });
 
           pickupMarkerRef.current = pMarker;
@@ -505,7 +574,6 @@ export function InteractiveBookingMap({
             syncMapRouteAndPins(pickupCoordsRef.current, newPosCoords, pickupInputRef.current, resolved, {
               fitBounds: false,
             });
-            toast.info(`🏁 নতুন গন্তব্য: ${resolved}`);
           });
 
           dropMarkerRef.current = dMarker;
@@ -519,37 +587,48 @@ export function InteractiveBookingMap({
 
       // 3. ROUTE CALCULATION & POLYLINES
       if (hasValidP && hasValidD) {
-        setIsCalculatingRoute(true);
+        const cacheKey = `${pCoords[0].toFixed(4)},${pCoords[1].toFixed(4)}-${dCoords[0].toFixed(4)},${dCoords[1].toFixed(4)}`;
         let safeDist = 0;
         let routeDuration = 5;
         let routeCoords: [number, number][] = [];
 
-        try {
-          const res = await fetch(
-            `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`
-          );
-          const data = await res.json();
+        if (routeClientCache.has(cacheKey)) {
+          // Instant cache hit — 0 ms!
+          const cached = routeClientCache.get(cacheKey)!;
+          safeDist = cached.distanceKm;
+          routeDuration = cached.durationMin;
+          routeCoords = cached.coordinates;
+        } else {
+          setIsCalculatingRoute(true);
+          routeAbortControllerRef.current?.abort();
+          const controller = new AbortController();
+          routeAbortControllerRef.current = controller;
 
-          if (data?.coordinates?.length) {
-            routeCoords = data.coordinates;
-            safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-            routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
-          } else {
-            // Backup retry
-            const retryRes = await fetch(
-              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`
+          try {
+            const res = await fetch(
+              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
+              { signal: controller.signal }
             );
-            const retryData = await retryRes.json();
-            if (retryData?.coordinates?.length) {
-              routeCoords = retryData.coordinates;
-              safeDist = retryData.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-              routeDuration = retryData.durationMin || Math.max(3, Math.round(safeDist * 2.5));
+            const data = await res.json();
+
+            if (data?.coordinates?.length) {
+              routeCoords = data.coordinates;
+              safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+              routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
+
+              routeClientCache.set(cacheKey, {
+                distanceKm: safeDist,
+                durationMin: routeDuration,
+                coordinates: routeCoords,
+              });
             }
+          } catch (e: any) {
+            if (e?.name !== "AbortError") {
+              console.warn("Route API fetch error:", e);
+            }
+          } finally {
+            setIsCalculatingRoute(false);
           }
-        } catch (e) {
-          console.warn("Route API fetch error:", e);
-        } finally {
-          setIsCalculatingRoute(false);
         }
 
         // If coordinates found, plot them
@@ -719,7 +798,7 @@ export function InteractiveBookingMap({
       try {
         const res = await Geolocation.requestPermissions();
         if (res.location === "granted") {
-          toast.success("✅ লোকেশন অনুমতি দেওয়া হয়েছে!");
+          console.log("[Geolocation] permission granted via request");
         }
       } catch (e) {
         console.warn("Permission request error:", e);
@@ -816,50 +895,56 @@ export function InteractiveBookingMap({
         const isOutOfService = !isLocationInServiceArea(latitude, longitude);
         if (isOutOfService) {
           toast.warning(`📍 অবস্থান সনাক্ত হয়েছে: ${detectedName} (সুন্দরবন মূল এলাকার বাইরে)`);
-        } else if (userInitiated) {
-          toast.success(`📍 বর্তমান অবস্থান সনাক্ত হয়েছে: ${detectedName}`);
         }
       };
-
-      if (userInitiated) {
-        toast.info("📍 স্যাটেলাইট জিপিএস থেকে সঠিক অবস্থান নির্ণয় করা হচ্ছে...");
-      }
 
       // 1. Try Native Capacitor Geolocation first if in Android/iOS App
       if (isNative) {
         try {
           const perm = await Geolocation.checkPermissions();
-          if (perm.location !== "granted") {
+          const hasLocationPerm =
+            perm.location === "granted" ||
+            (perm as any).coarseLocation === "granted" ||
+            (perm as any).state === "granted";
+
+          if (!hasLocationPerm) {
             const req = await Geolocation.requestPermissions();
-            if (req.location !== "granted") {
-              handleFail(undefined, true);
+            const reqGranted =
+              req.location === "granted" ||
+              (req as any).coarseLocation === "granted" ||
+              (req as any).state === "granted";
+            if (!reqGranted) {
+              if (userInitiated) handleFail(undefined, true);
               return;
             }
           }
 
-          // Stage 1: Fast fused cached location
+          // Stage 1: Try high accuracy position with 6s timeout
           try {
-            const fastPos = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: false,
-              timeout: 3000,
-              maximumAge: 120000,
+            const position = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: true,
+              timeout: 6000,
+              maximumAge: 5000,
             });
-            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
-              await handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
+
+            if (position?.coords?.latitude && position?.coords?.longitude) {
+              await handleSuccess(position.coords.latitude, position.coords.longitude);
+              return;
             }
           } catch {}
 
-          // Stage 2: Satellite high accuracy position
-          const position = await Geolocation.getCurrentPosition({
-            enableHighAccuracy: true,
-            timeout: 12000,
-            maximumAge: 5000,
-          });
-
-          if (position?.coords?.latitude && position?.coords?.longitude) {
-            await handleSuccess(position.coords.latitude, position.coords.longitude);
-            return;
-          }
+          // Stage 2: Quick fused network/cellular location
+          try {
+            const fastPos = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: false,
+              timeout: 4000,
+              maximumAge: 60000,
+            });
+            if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
+              await handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
+              return;
+            }
+          } catch {}
         } catch (capErr) {
           console.warn("Capacitor Geolocation error, trying standard browser GPS:", capErr);
         }
@@ -867,40 +952,34 @@ export function InteractiveBookingMap({
 
       // 2. Standard Web Browser / WebView High-Accuracy Hardware GPS
       if (typeof window === "undefined" || !navigator.geolocation) {
-        handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান অনুসন্ধান করুন।");
+        if (userInitiated) {
+          handleFail("⚠️ আপনার ডিভাইসে লোকেশন পরিষেবা মেলেনি। অনুগ্রহ করে পিকআপ স্থান অনুসন্ধান করুন।");
+        }
         return;
       }
 
-      // Stage 1: Quick fused position
-      navigator.geolocation.getCurrentPosition(
-        (fastPos) => {
-          handleSuccess(fastPos.coords.latitude, fastPos.coords.longitude);
-        },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
-      );
-
-      // Stage 2: High accuracy satellite request
       navigator.geolocation.getCurrentPosition(
         (pos) => handleSuccess(pos.coords.latitude, pos.coords.longitude),
         (err) => {
-          // If high accuracy satellite GPS times out (e.g. indoors), try cellular/network triangulated GPS
+          // If high accuracy satellite GPS times out indoors, try cellular/network triangulated GPS
           navigator.geolocation.getCurrentPosition(
             (fallbackPos) => handleSuccess(fallbackPos.coords.latitude, fallbackPos.coords.longitude),
             (fallbackErr) => {
-              if (fallbackErr.code === 1 || err.code === 1) {
-                const deniedText = isNative
-                  ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
-                  : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ অনুসন্ধান করুন।";
-                handleFail(deniedText, true);
-              } else {
-                handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
+              if (userInitiated) {
+                if (fallbackErr.code === 1 || err.code === 1) {
+                  const deniedText = isNative
+                    ? "⚠️ অ্যাপে লোকেশন পারমিশন দিন (Settings > Apps > Sundarban Riders > Permissions > Location 'Allow')"
+                    : "⚠️ ব্রাউজারে লোকেশন পারমিশন দিন বা ওপরে পিকআপ অনুসন্ধান করুন।";
+                  handleFail(deniedText, true);
+                } else {
+                  handleFail("⚠️ জিপিএস অবস্থান নির্ণয় করা যায়নি। অনুগ্রহ করে মোবাইলের GPS অন করুন।");
+                }
               }
             },
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+            { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
           );
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 5000 }
       );
     },
     [resolveLocationAddress, syncMapRouteAndPins]
@@ -1143,7 +1222,6 @@ export function InteractiveBookingMap({
               fitBounds: Boolean(dropInputValue),
               flyDuration: 1.0,
             });
-            toast.success(`🟢 পিকআপ নির্বাচিত: ${resolved}`);
           } else {
             const inService = isLocationInServiceArea(clickedCoords[0], clickedCoords[1]);
             setIsDropOutOfService(!inService);
@@ -1162,7 +1240,6 @@ export function InteractiveBookingMap({
               fitBounds: true,
               flyDuration: 1.2,
             });
-            toast.success(`🏁 গন্তব্য নির্বাচিত: ${resolved}`);
           }
         });
 
@@ -1206,7 +1283,6 @@ export function InteractiveBookingMap({
           ? "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
           : "https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}";
       tileLayerRef.current.setUrl(newUrl);
-      toast.info(nextLayer === "streets" ? "🗺️ গুগল স্ট্রিট ভিউ সক্রিয়" : "🛰️ গুগল স্যাটেলাইট ভিউ সক্রিয়");
     }
   };
 
@@ -1299,8 +1375,6 @@ export function InteractiveBookingMap({
           mapInstanceRef.current.flyTo(coords, 18, { duration: 1.2 });
         } catch {}
       }
-
-      toast.success(`🟢 পিকআপ নির্বাচিত: ${place.name}`);
     } else {
       // User is selecting Drop!
       setDropInputValue(place.name);
@@ -1319,14 +1393,12 @@ export function InteractiveBookingMap({
             mapInstanceRef.current.flyTo(coords, 16, { duration: 1.2 });
           } catch {}
         }
-        toast.info("🏁 গন্তব্য নির্ধারিত হয়েছে! এবার ওপরে আপনার পিকআপ স্থান নির্বাচন করুন।");
         setActiveSearchField("pickup");
       } else {
         await syncMapRouteAndPins(pickupCoords, coords, pickupInputValue, place.name, {
           fitBounds: true,
           flyDuration: 1.2,
         });
-        toast.success(`🏁 গন্তব্য নির্বাচিত: ${place.name}`);
       }
     }
   };
@@ -1352,8 +1424,6 @@ export function InteractiveBookingMap({
       fitBounds: true,
       flyDuration: 1.0,
     });
-
-    toast.success("পিকআপ ও গন্তব্য অদল-বদল করা হয়েছে ⇅");
   };
 
   // Safe Confirm Booking Trigger
@@ -1394,60 +1464,60 @@ export function InteractiveBookingMap({
   };
 
   return (
-    <div className="relative w-full h-full min-h-[calc(100dvh-114px)] flex-1 overflow-hidden select-none bg-slate-100">
+    <div className="relative w-full h-full min-h-0 flex-1 overflow-hidden select-none bg-slate-100">
       {/* ------------------------------------------------------------- */}
       {/* 1. EDGE-TO-EDGE FULL-SCREEN LEAFLET MAP CANVAS               */}
       {/* ------------------------------------------------------------- */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
       {/* ------------------------------------------------------------- */}
-      {/* 2. TOP FLOATING UBER SEARCH CARD & QUICK SHORTCUTS            */}
+      {/* 2. TOP FLOATING LIQUID GLASS UBER SEARCH CARD & QUICK SHORTCUTS */}
       {/* ------------------------------------------------------------- */}
       <div className={`absolute top-3 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
-          className={`pointer-events-auto rounded-3xl p-3 shadow-[0_12px_36px_rgba(0,0,0,0.18)] border border-slate-200/90 space-y-2 backdrop-blur-xl transition-all duration-300 ${
+          className={`pointer-events-auto rounded-3xl p-3 sm:p-3.5 backdrop-blur-2xl bg-white/80 dark:bg-slate-900/80 border border-white/80 dark:border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.10),inset_0_1px_1px_rgba(255,255,255,0.9)] space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             topCardExpanded
               ? activeSearchField
                 ? "max-h-[82vh] overflow-y-auto"
                 : "max-h-[70vh] overflow-y-auto"
               : "max-h-24 overflow-hidden"
           }`}
-          style={{
-            background: "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.96) 100%)",
-          }}
         >
           {!topCardExpanded ? (
-            /* Minimized Top Search Bar (Compact Peek Mode) */
+            /* Minimized Top Search Bar (Compact Peek Mode with Liquid Sheen) */
             <div
-              onClick={() => setTopCardExpanded(true)}
+              onClick={() => {
+                triggerHaptic(12);
+                setTopCardExpanded(true);
+              }}
               onTouchStart={(e) => startTopDrag(e.touches[0].clientY)}
               onTouchMove={(e) => moveTopDrag(e.touches[0].clientY)}
               onTouchEnd={(e) => endTopDrag(e.changedTouches[0]?.clientY)}
               onMouseDown={(e) => startTopDrag(e.clientY)}
               onMouseUp={(e) => endTopDrag(e.clientY)}
-              className="flex flex-col gap-1.5 cursor-pointer select-none"
+              className="flex flex-col gap-1.5 cursor-pointer select-none group"
               title="পিকআপ ও গন্তব্য পরিবর্তন করতে ট্যাপ বা নিচে নামান"
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-100" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 ring-4 ring-emerald-500/20 shadow-xs" />
                   <span className="text-xs font-black text-slate-900 truncate">
                     {pickupInputValue ? pickupInputValue.slice(0, 14) : "পিকআপ"}
                   </span>
-                  <span className="text-slate-400 text-xs">➔</span>
-                  <span className="w-2.5 h-2.5 rounded-sm bg-red-500 shrink-0 ring-2 ring-red-100" />
+                  <span className="text-slate-400 text-xs font-bold">➔</span>
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0 ring-4 ring-rose-500/20 shadow-xs" />
                   <span className="text-xs font-black text-slate-900 truncate">
                     {dropInputValue ? dropInputValue.slice(0, 16) : "গন্তব্য খুঁজুন"}
                   </span>
                 </div>
-                <span className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 text-[10.5px] font-black shrink-0 border border-emerald-200">
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-800 text-[10.5px] font-black shrink-0 border border-emerald-500/25 shadow-2xs">
                   পরিবর্তন ⌄
                 </span>
               </div>
               <div className="w-full pt-1 flex flex-col items-center justify-center gap-0.5">
-                <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
-                <span className="text-[10px] font-bold text-emerald-700 animate-bounce">
+                <div className="w-12 h-1.5 bg-slate-300/80 group-hover:bg-emerald-500 rounded-full transition-colors" />
+                <span className="text-[10px] font-bold text-emerald-700 animate-pulse">
                   পিকআপ ও ড্রপ পরিবর্তন করতে নিচে নামান ⌄
                 </span>
               </div>
@@ -1601,9 +1671,12 @@ export function InteractiveBookingMap({
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
                     <button
                       type="button"
-                      onClick={handleSwap}
+                      onClick={() => {
+                        triggerHaptic(22);
+                        handleSwap();
+                      }}
                       title="পিকআপ ও গন্তব্য অদল-বদল"
-                      className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                      className="w-8 h-8 rounded-xl bg-slate-100/80 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition-all active:scale-85 active:rotate-180 cursor-pointer shadow-xs border border-slate-200/60"
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
                     </button>
@@ -1757,8 +1830,12 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 3. FLOATING MAP ON-SCREEN CONTROLS                             */}
       {/* ------------------------------------------------------------- */}
-      {/* Active Driver Radar Indicator (Top Left - Strictly 5 KM) */}
-      <div className="absolute top-44 left-3.5 z-20 pointer-events-auto bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200/80 flex items-center gap-2 animate-in fade-in duration-300">
+      {/* Active Driver Radar Indicator (Docked cleanly below peek bar, fades on card expand) */}
+      <div
+        className={`absolute left-3.5 z-20 pointer-events-auto bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full shadow-md border border-slate-200/80 flex items-center gap-2 transition-all duration-300 ${
+          topCardExpanded ? "opacity-0 pointer-events-none -translate-y-2" : "top-[72px] opacity-100 translate-y-0"
+        }`}
+      >
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
         <span className="text-[11px] font-bold text-slate-800">
           {nearbyDrivers.length > 0
@@ -1767,52 +1844,74 @@ export function InteractiveBookingMap({
         </span>
       </div>
 
-      {/* Map Interactive Zoom Controls (Right Side) */}
-      <div className="absolute bottom-54 right-3.5 z-20 flex flex-col gap-1.5 pointer-events-auto">
+      {/* Map Interactive Zoom Controls (Right Side - Placed safely above bottom sheet) */}
+      <div
+        className={`absolute bottom-62 right-3.5 z-20 flex flex-col gap-1.5 transition-all duration-300 ${
+          sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
+        }`}
+      >
         <button
           type="button"
           onClick={() => {
+            triggerHaptic(12);
             if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
           }}
           title="জুম ইন"
-          className="w-10 h-10 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+          className="w-10 h-10 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
         >
           <Plus className="w-4 h-4 text-slate-700" />
         </button>
         <button
           type="button"
           onClick={() => {
+            triggerHaptic(12);
             if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
           }}
           title="জুম আউট"
-          className="w-10 h-10 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+          className="w-10 h-10 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
         >
           <Minus className="w-4 h-4 text-slate-700" />
         </button>
       </div>
 
-      {/* Route Calculation Floating Circular Loading Badge */}
+      {/* Route Calculation Floating Glassmorphism Circular Loading Badge (Floating clearly above bottom sheet) */}
       {isCalculatingRoute && (
-        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-slate-900/90 text-white backdrop-blur-md px-4 py-2 rounded-full shadow-2xl flex items-center gap-2.5 border border-emerald-400/40 animate-in fade-in zoom-in-95 duration-200">
-          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
-          <span className="text-xs font-bold tracking-wide">রোড রুট ও সঠিক দূরত্ব হিসেব হচ্ছে...</span>
+        <div className="absolute bottom-38 sm:bottom-44 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex items-center gap-3 px-4 py-2 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/80 dark:border-white/20 shadow-[0_8px_32px_0_rgba(16,185,129,0.30)] ring-1 ring-emerald-500/30 animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-5 h-5 flex items-center justify-center shrink-0">
+            <div className="absolute inset-0 rounded-full border-2 border-emerald-500/20 animate-ping" />
+            <div className="w-5 h-5 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-black text-slate-800 dark:text-slate-100 tracking-wide">
+              রোড রুট গণনা হচ্ছে...
+            </span>
+            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+              সঠিক দূরত্ব ও ভাড়ার হিসেব
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Map Layer Switcher: Street vs Satellite (Bottom Right) */}
+      {/* Map Layer Switcher: Street vs Satellite (Bottom Right - Safe Above Sheet) */}
       <button
         type="button"
-        onClick={toggleMapLayer}
+        onClick={() => {
+          triggerHaptic(15);
+          toggleMapLayer();
+        }}
         title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "স্ট্রিট ভিউ"}
-        className="absolute bottom-40 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+        className={`absolute bottom-49 right-3.5 z-20 w-11 h-11 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+          sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
+        }`}
       >
         <Layers className="w-5 h-5 text-slate-700" />
       </button>
 
-      {/* GPS Recenter Target Button (Bottom Right) */}
+      {/* GPS Recenter Target Button (Bottom Right - Clears 120px Sheet with Comfort) */}
       <button
         type="button"
         onClick={() => {
+          triggerHaptic(20);
           isLocatingRef.current = false;
           hasManualPickupRef.current = false;
           pickupInputFocusedRef.current = false;
@@ -1820,10 +1919,12 @@ export function InteractiveBookingMap({
         }}
         disabled={isLocating}
         title="আমার জিপিএস অবস্থান"
-        className={`absolute bottom-26 right-3.5 z-20 pointer-events-auto w-11 h-11 rounded-2xl shadow-lg border flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
+        className={`absolute bottom-36 right-3.5 z-20 w-11 h-11 rounded-2xl shadow-lg border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+          sheetExpanded ? "opacity-20 pointer-events-none" : "opacity-100 pointer-events-auto"
+        } ${
           hasValidPickup
-            ? "bg-white hover:bg-emerald-50 text-emerald-600 border-slate-200"
-            : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-bounce"
+            ? "bg-white/85 hover:bg-emerald-50 text-emerald-600 border-white/80"
+            : "bg-amber-500/90 text-white border-amber-300 animate-bounce"
         }`}
       >
         {isLocating ? (
@@ -1838,7 +1939,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.16)] border border-slate-200/90 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
+          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-3xl shadow-[0_-16px_48px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/80 dark:border-white/15 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none ${
             sheetExpanded
               ? "max-h-[86dvh] pb-28 sm:pb-32 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
@@ -1850,7 +1951,10 @@ export function InteractiveBookingMap({
           <div
             role="button"
             tabIndex={0}
-            onClick={toggleSheet}
+            onClick={() => {
+              triggerHaptic(12);
+              toggleSheet();
+            }}
             onTouchStart={(e) => startDrag(e.touches[0].clientY)}
             onTouchMove={(e) => moveDrag(e.touches[0].clientY)}
             onTouchEnd={(e) => endDrag(e.changedTouches[0]?.clientY)}
@@ -1859,7 +1963,7 @@ export function InteractiveBookingMap({
             className="w-full py-1 cursor-pointer flex flex-col items-center justify-center gap-1 select-none group touch-none"
             title="স্লাইডার উপরে বা নিচে টানুন বা ট্যাপ করুন (Drag or tap to toggle)"
           >
-            <div className="w-12 h-1.5 bg-slate-300 group-hover:bg-emerald-500 rounded-full transition-colors" />
+            <div className="w-12 h-1.5 bg-slate-300/80 group-hover:bg-emerald-500 rounded-full transition-colors" />
             <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors">
               {sheetExpanded ? (
                 <>
@@ -1882,8 +1986,11 @@ export function InteractiveBookingMap({
             !sheetExpanded ? (
               /* Minimized Peek Mode */
               <div
-                onClick={() => setSheetExpanded(true)}
-                className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
+                onClick={() => {
+                  triggerHaptic(12);
+                  setSheetExpanded(true);
+                }}
+                className="flex items-center justify-between p-2.5 rounded-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/15 border border-emerald-500/30 shadow-[0_4px_16px_rgba(16,185,129,0.10),inset_0_1px_1px_rgba(255,255,255,0.8)] cursor-pointer active:scale-[0.99] transition-transform"
                 title="সম্পূর্ণ বুকিং দেখতে ট্যাপ করুন"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -1909,6 +2016,7 @@ export function InteractiveBookingMap({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    triggerHaptic(12);
                     setSheetExpanded(true);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
@@ -1962,8 +2070,8 @@ export function InteractiveBookingMap({
                   </div>
                 )}
 
-                {/* Uber Toto Vehicle Card */}
-                <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/60 to-white border-2 border-emerald-500 shadow-sm flex items-center justify-between">
+                {/* Uber Toto Vehicle Card - Liquid Refraction Polish */}
+                <div className="p-3.5 rounded-2xl backdrop-blur-2xl bg-gradient-to-r from-emerald-500/[0.08] via-white/85 to-teal-500/[0.05] border-2 border-emerald-500/80 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] ring-1 ring-emerald-500/20 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
                       🛺
@@ -2019,8 +2127,8 @@ export function InteractiveBookingMap({
                   </div>
                 )}
 
-                {/* Passenger Selector */}
-                <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                {/* Passenger Selector - Tactile Liquid Pills */}
+                <div className="p-2.5 rounded-2xl bg-white/70 backdrop-blur-xl border border-white/80 shadow-xs space-y-2">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <div className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-600" />
@@ -2043,11 +2151,14 @@ export function InteractiveBookingMap({
                         <button
                           key={item.cnt}
                           type="button"
-                          onClick={() => setPassengerCount(item.cnt)}
-                          className={`py-1.5 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer ${
+                          onClick={() => {
+                            triggerHaptic(15);
+                            setPassengerCount(item.cnt);
+                          }}
+                          className={`py-2 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 ${
                             isSelected
-                              ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/30 scale-[1.02]"
-                              : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200/80"
+                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/40 scale-[1.03]"
+                              : "bg-white/70 backdrop-blur-md text-slate-700 hover:bg-white/90 border border-white/80 shadow-2xs"
                           }`}
                         >
                           <span className="text-xs font-black leading-tight">{item.label}</span>
@@ -2077,13 +2188,16 @@ export function InteractiveBookingMap({
                 <Button
                   size="lg"
                   disabled={isBlocked}
-                  onClick={handleConfirmClick}
+                  onClick={() => {
+                    triggerHaptic(30);
+                    handleConfirmClick();
+                  }}
                   className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
                     isBlocked
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
                       : !hasValidPickup
                       ? "bg-amber-600 hover:bg-amber-700 text-white shadow-amber-600/30 animate-pulse"
-                      : "bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-emerald-600/30"
+                      : "bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:brightness-105 text-white shadow-[0_8px_24px_rgba(16,185,129,0.35),inset_0_1px_1px_rgba(255,255,255,0.4)]"
                   }`}
                 >
                   <span>

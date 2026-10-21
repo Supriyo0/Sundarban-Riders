@@ -32,7 +32,31 @@ export async function registerPushServiceWorker(): Promise<ServiceWorkerRegistra
  * Requests push notification permission from the user/browser/OS
  */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof window === "undefined" || !("Notification" in window)) {
+  if (typeof window === "undefined") {
+    return "denied";
+  }
+
+  // 1. Try Native Capacitor LocalNotifications first
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      const { LocalNotifications } = await import("@capacitor/local-notifications");
+      const perm = await LocalNotifications.checkPermissions();
+      if (perm.display !== "granted") {
+        const req = await LocalNotifications.requestPermissions();
+        if (req.display === "granted") {
+          return "granted";
+        }
+      } else {
+        return "granted";
+      }
+    }
+  } catch (err) {
+    console.warn("[Push] Native LocalNotifications perm error:", err);
+  }
+
+  // 2. Standard Web Push Notification API
+  if (!("Notification" in window)) {
     return "denied";
   }
   try {
@@ -146,7 +170,15 @@ export async function showLocalRideAlertNotification(title: string, body: string
     if (Capacitor.isNativePlatform()) {
       const { LocalNotifications } = await import("@capacitor/local-notifications");
 
-      // Ensure high-priority heads-up channel
+      // Ensure native permission is granted
+      try {
+        const perm = await LocalNotifications.checkPermissions();
+        if (perm.display !== "granted") {
+          await LocalNotifications.requestPermissions();
+        }
+      } catch {}
+
+      // Ensure high-priority heads-up channel for Android Notification Shade
       try {
         await LocalNotifications.createChannel({
           id: "ride_alerts",
@@ -173,6 +205,7 @@ export async function showLocalRideAlertNotification(title: string, body: string
             channelId: "ride_alerts",
             smallIcon: "ic_launcher",
             largeIcon: "ic_launcher",
+            sound: "beep.wav",
             extra: { bookingId, url: "/app" },
             schedule: { at: new Date(Date.now() + 50) },
           },

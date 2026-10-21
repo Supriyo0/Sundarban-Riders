@@ -56,12 +56,12 @@ export function MobileBottomNav({
       <div
         className="max-w-sm mx-auto rounded-3xl grid grid-cols-4 p-1.5 transition-all"
         style={{
-          background: "linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.92) 100%)",
+          background: "linear-gradient(135deg, rgba(255,255,255,0.80) 0%, rgba(248,250,252,0.72) 100%)",
           boxShadow:
-            "0 10px 30px -5px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04), 0 1px 0 rgba(255,255,255,1) inset",
-          border: "1px solid rgba(226,232,240,0.9)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
+            "0 12px 36px -6px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.04), 0 1px 0 rgba(255,255,255,0.9) inset",
+          border: "1px solid rgba(255,255,255,0.85)",
+          backdropFilter: "blur(28px)",
+          WebkitBackdropFilter: "blur(28px)",
         }}
       >
         {tabs.map((tab) => {
@@ -73,7 +73,14 @@ export function MobileBottomNav({
               key={tab.id}
               id={`nav-tab-${tab.id}`}
               type="button"
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => {
+                if (typeof window !== "undefined" && "vibrate" in navigator) {
+                  try {
+                    navigator.vibrate(12);
+                  } catch {}
+                }
+                onTabChange(tab.id);
+              }}
               className={`relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl transition-all duration-200 cursor-pointer active:scale-90 ${
                 isActive
                   ? `bg-gradient-to-b ${tab.activeColor} shadow-xs border border-white/60 font-black`

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Smartphone, Globe, Navigation, ExternalLink } from "lucide-react";
-import { getNearbyHexGrid } from "@/lib/maps/h3-grid";
 
 interface NearbyRidersRadarMapProps {
   pickupCoords: [number, number];
@@ -82,22 +81,6 @@ export function NearbyRidersRadarMap({
         maxZoom: 20,
         attribution: "© Google Maps",
       }).addTo(map);
-
-      // Uber H3 Hexagonal Grid Radar
-      try {
-        const hexCells = getNearbyHexGrid(pickupCoords[0], pickupCoords[1], [], 8, 1);
-        hexCells.forEach((cell) => {
-          L.polygon(cell.boundary, {
-            color: cell.isCenter ? "#059669" : "#10b981",
-            weight: cell.isCenter ? 2 : 1.2,
-            dashArray: cell.isCenter ? undefined : "4, 4",
-            fillColor: cell.isCenter ? "#10b981" : "#34d399",
-            fillOpacity: cell.isCenter ? 0.16 : 0.08,
-          }).addTo(map);
-        });
-      } catch (h3Err) {
-        console.warn("H3 radar grid error:", h3Err);
-      }
 
       // Green Pickup Marker with Radar Wave
       const greenPickupIcon = L.divIcon({

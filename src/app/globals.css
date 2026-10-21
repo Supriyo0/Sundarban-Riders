@@ -381,4 +381,25 @@ html[data-theme="rose"] {
 .custom-draggable-pin:active {
   cursor: grabbing;
 }
+
+/* Uber-grade Live User Location GPS Dot Animation & Smooth Glide */
+@keyframes sr-live-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+.sr-live-user-dot-container {
+  transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
 

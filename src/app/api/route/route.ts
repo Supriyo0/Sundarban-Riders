@@ -61,8 +61,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Missing fromLat/fromLng/toLat/toLng" }, { status: 400 });
     }
 
-    // 1. Query OSRM Driving Engine with Steps and GeoJSON
-    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`;
+    // 1. Query Primary and Secondary OSRM Driving Engines with Steps and GeoJSON
+    const osrmEndpoints = [
+      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+    ];
 
     let coordinates: [number, number][] = [];
     let distanceKm = 0;
@@ -73,64 +76,69 @@ export async function GET(req: Request) {
       distanceMeters: number;
       maneuver: string;
     }> = [];
+    let isExactRoadRoute = false;
 
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+    for (const osrmUrl of osrmEndpoints) {
+      if (coordinates.length > 0) break;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6500);
 
-      const res = await fetch(osrmUrl, {
-        headers: { "User-Agent": "SundarbanRiders/1.0" },
-        signal: controller.signal,
-        next: { revalidate: 60 },
-      });
-      clearTimeout(timeoutId);
+        const res = await fetch(osrmUrl, {
+          headers: { "User-Agent": "SundarbanRiders/1.0" },
+          signal: controller.signal,
+          next: { revalidate: 120 },
+        });
+        clearTimeout(timeoutId);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-          const route = data.routes[0];
-          // OSRM road distance
-          distanceKm = Math.max(0.8, Math.round((route.distance / 1000) * 10) / 10);
-          durationMin = Math.max(2, Math.round(route.duration / 60));
+        if (res.ok) {
+          const data = await res.json();
+          if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            // OSRM exact road distance
+            distanceKm = Math.max(0.8, Math.round((route.distance / 1000) * 10) / 10);
+            durationMin = Math.max(2, Math.round(route.duration / 60));
 
-          if (route.geometry && Array.isArray(route.geometry.coordinates)) {
-            coordinates = route.geometry.coordinates.map((coord: [number, number]) => [
-              coord[1],
-              coord[0],
-            ]);
-          }
+            if (route.geometry && Array.isArray(route.geometry.coordinates)) {
+              coordinates = route.geometry.coordinates.map((coord: [number, number]) => [
+                coord[1],
+                coord[0],
+              ]);
+              isExactRoadRoute = true;
+            }
 
-          if (route.legs && route.legs[0] && route.legs[0].steps) {
-            route.legs[0].steps.forEach((step: any) => {
-              const translated = translateRoadName(step.name || "");
-              if (translated && !roadSegments.includes(translated)) {
-                roadSegments.push(translated);
-              }
-              if (step.distance > 20) {
-                detailedSteps.push({
-                  road: translated || "সংযোগকারী সড়ক",
-                  distanceMeters: Math.round(step.distance),
-                  maneuver: step.maneuver?.type || "continue",
-                });
-              }
-            });
+            if (route.legs && route.legs[0] && route.legs[0].steps) {
+              route.legs[0].steps.forEach((step: any) => {
+                const translated = translateRoadName(step.name || "");
+                if (translated && !roadSegments.includes(translated)) {
+                  roadSegments.push(translated);
+                }
+                if (step.distance > 20) {
+                  detailedSteps.push({
+                    road: translated || "সংযোগকারী সড়ক",
+                    distanceMeters: Math.round(step.distance),
+                    maneuver: step.maneuver?.type || "continue",
+                  });
+                }
+              });
+            }
           }
         }
+      } catch (osrmErr) {
+        console.warn(`OSRM endpoint ${osrmUrl} timed out or failed:`, osrmErr);
       }
-    } catch (osrmErr) {
-      console.warn("OSRM routing API unreachable or timed out:", osrmErr);
     }
 
-    // Realistic Road Distance Fallback if OSRM was empty, timed out, or rate-limited
+    // Realistic Road Distance Fallback if OSRM was completely unreachable
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
-      // Realistic road winding multiplier (1.38x) for rural South 24 Parganas roads
-      const roadWindingFactor = 1.38;
+      // Realistic road winding multiplier (1.42x) for rural South 24 Parganas roads
+      const roadWindingFactor = 1.42;
       distanceKm = Math.max(1.0, Math.round(directDist * roadWindingFactor * 10) / 10);
       durationMin = Math.max(3, Math.round(distanceKm * 2.8));
 
-      // Generate 12 curved road points with gentle geographic curvature instead of a straight stick
-      const numPoints = 12;
+      // Generate 16 curved road points with gentle geographic curvature
+      const numPoints = 16;
       const dLat = toLat - fromLat;
       const dLng = toLng - fromLng;
       // Perpendicular vector for natural road curve
@@ -139,7 +147,6 @@ export async function GET(req: Request) {
 
       for (let i = 0; i <= numPoints; i++) {
         const fraction = i / numPoints;
-        // Sinusoidal arc creates a realistic road bend
         const curveOffset = Math.sin(fraction * Math.PI);
         const lat = fromLat + dLat * fraction + pLat * curveOffset;
         const lng = fromLng + dLng * fraction + pLng * curveOffset;
@@ -172,6 +179,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       success: true,
+      isExactRoadRoute,
       distanceKm,
       durationMin,
       coordinates,

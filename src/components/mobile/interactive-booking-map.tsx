@@ -27,7 +27,6 @@ import { toast } from "sonner";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
-import { getNearbyHexGrid } from "@/lib/maps/h3-grid";
 import {
   DEFAULT_TOTO_PRICING,
   TotoPricingConfig,
@@ -111,6 +110,8 @@ export function InteractiveBookingMap({
   const routeLineBorderRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const driverMarkersRef = useRef<{ id: string; marker: any }[]>([]);
+  // Separate live-user-location pulsing dot marker (doesn't interfere with pickup pin)
+  const liveUserDotRef = useRef<any>(null);
   const onRouteSelectedRef = useRef(onRouteSelected);
   onRouteSelectedRef.current = onRouteSelected;
 
@@ -181,8 +182,6 @@ export function InteractiveBookingMap({
     return [];
   });
   const [hasStartedTyping, setHasStartedTyping] = useState<boolean>(false);
-  const hexGridLayerRef = useRef<any>(null);
-  const [showHexGrid, setShowHexGrid] = useState(true);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
@@ -281,9 +280,12 @@ export function InteractiveBookingMap({
   const [roadDurationMin, setRoadDurationMin] = useState(5);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
+  // True when user is typing a custom pickup — GPS watcher must NOT override it
   const hasManualPickupRef = useRef(false);
+  // Track whether the pickup input is currently focused
+  const pickupInputFocusedRef = useRef(false);
 
-  // Periodically fetch active drivers from /api/drivers (Every 3.5 seconds)
+  // Periodically fetch active drivers from /api/drivers (Every 4.5 seconds)
   useEffect(() => {
     let timer: NodeJS.Timeout;
     const loadDrivers = async () => {
@@ -304,13 +306,25 @@ export function InteractiveBookingMap({
                 lng !== 0
               );
             });
-            setRealDrivers(valid);
+            setRealDrivers((prev) => {
+              if (prev.length !== valid.length) return valid;
+              const hasChanged = valid.some((d: any, i: number) => {
+                const p = prev[i];
+                return (
+                  !p ||
+                  p.id !== d.id ||
+                  Math.abs(Number(p.latitude) - Number(d.latitude)) > 0.0001 ||
+                  Math.abs(Number(p.longitude) - Number(d.longitude)) > 0.0001
+                );
+              });
+              return hasChanged ? valid : prev;
+            });
           }
         }
       } catch {}
     };
     loadDrivers();
-    timer = setInterval(loadDrivers, 3500);
+    timer = setInterval(loadDrivers, 4500);
     return () => clearInterval(timer);
   }, []);
 
@@ -506,9 +520,9 @@ export function InteractiveBookingMap({
       // 3. ROUTE CALCULATION & POLYLINES
       if (hasValidP && hasValidD) {
         setIsCalculatingRoute(true);
-        let safeDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-        if (safeDist === 0) safeDist = 1.0;
-        let routeDuration = Math.max(3, Math.round(safeDist * 2.2));
+        let safeDist = 0;
+        let routeDuration = 5;
+        let routeCoords: [number, number][] = [];
 
         try {
           const res = await fetch(
@@ -517,41 +531,50 @@ export function InteractiveBookingMap({
           const data = await res.json();
 
           if (data?.coordinates?.length) {
-            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(data.coordinates);
-            if (routeLineRef.current) routeLineRef.current.setLatLngs(data.coordinates);
-            if (data.distanceKm) safeDist = data.distanceKm;
-            if (data.durationMin) routeDuration = data.durationMin;
+            routeCoords = data.coordinates;
+            safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+            routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
           } else {
-            const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-            safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
-            routeDuration = Math.max(3, Math.round(safeDist * 2.8));
-            const curved: [number, number][] = [];
-            const dLat = dCoords[0] - pCoords[0];
-            const dLng = dCoords[1] - pCoords[1];
-            for (let i = 0; i <= 10; i++) {
-              const frac = i / 10;
-              const curve = Math.sin(frac * Math.PI) * 0.08;
-              curved.push([pCoords[0] + dLat * frac - dLng * curve, pCoords[1] + dLng * frac + dLat * curve]);
+            // Backup retry
+            const retryRes = await fetch(
+              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`
+            );
+            const retryData = await retryRes.json();
+            if (retryData?.coordinates?.length) {
+              routeCoords = retryData.coordinates;
+              safeDist = retryData.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+              routeDuration = retryData.durationMin || Math.max(3, Math.round(safeDist * 2.5));
             }
-            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curved);
-            if (routeLineRef.current) routeLineRef.current.setLatLngs(curved);
           }
-        } catch {
+        } catch (e) {
+          console.warn("Route API fetch error:", e);
+        } finally {
+          setIsCalculatingRoute(false);
+        }
+
+        // If coordinates found, plot them
+        if (routeCoords.length > 0) {
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(routeCoords);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(routeCoords);
+        } else {
+          // Fallback if network was offline
           const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-          safeDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
+          safeDist = Math.max(1.0, Math.round(directDist * 1.42 * 10) / 10);
           routeDuration = Math.max(3, Math.round(safeDist * 2.8));
           const curved: [number, number][] = [];
           const dLat = dCoords[0] - pCoords[0];
           const dLng = dCoords[1] - pCoords[1];
-          for (let i = 0; i <= 10; i++) {
-            const frac = i / 10;
+          for (let i = 0; i <= 14; i++) {
+            const frac = i / 14;
             const curve = Math.sin(frac * Math.PI) * 0.08;
             curved.push([pCoords[0] + dLat * frac - dLng * curve, pCoords[1] + dLng * frac + dLat * curve]);
           }
           if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curved);
           if (routeLineRef.current) routeLineRef.current.setLatLngs(curved);
-        } finally {
-          setIsCalculatingRoute(false);
+        }
+
+        if (safeDist === 0) {
+          safeDist = Math.max(1.0, Math.round(calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]) * 1.42 * 10) / 10);
         }
 
         setDistanceKm(safeDist);
@@ -781,10 +804,12 @@ export function InteractiveBookingMap({
           flyDuration: 1.2,
         });
 
-        // Exact zoom-in like Uber when pickup is detected
-        if (mapInstanceRef.current && (!dropCoordsRef.current || dropCoordsRef.current[0] === 0)) {
+        // Exact zoom-in like Uber when pickup is detected or target button clicked
+        if (mapInstanceRef.current) {
           try {
-            mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.2 });
+            if (userInitiated || (!dropCoordsRef.current || dropCoordsRef.current[0] === 0)) {
+              mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.0 });
+            }
           } catch {}
         }
 
@@ -889,11 +914,59 @@ export function InteractiveBookingMap({
     }
   }, [fetchCurrentLocation]);
 
-  // Continuous Live GPS Watcher on Mount (Auto-locks as soon as satellite lock arrives)
+  // Continuous Live GPS Watcher on Mount
+  // Rules:
+  //   - Only updates pickup text/coords when user is NOT actively typing in the pickup field
+  //   - Always updates the live-user-dot marker smoothly (separate from pickup pin)
+  //   - Never causes map flyTo if user has already set a manual pickup
   useEffect(() => {
     let watchId: number | null = null;
     let capWatchId: string | null = null;
     let isCancelled = false;
+
+    const updateLiveUserDot = async (latitude: number, longitude: number) => {
+      // Update or create the pulsing live-user-dot on the map
+      if (!mapInstanceRef.current) return;
+      const L = await getLeaflet();
+      if (isCancelled || !mapInstanceRef.current) return;
+
+      if (liveUserDotRef.current) {
+        // Smooth positional update — no flickering, no re-render
+        liveUserDotRef.current.setLatLng([latitude, longitude]);
+      } else {
+        const liveIcon = L.divIcon({
+          className: "sr-live-user-dot-container",
+          html: `<div style="
+            position: relative;
+            width: 18px; height: 18px;
+            transform: translate(-50%, -50%);
+          ">
+            <div style="
+              position: absolute; inset: -8px;
+              border: 2px solid rgba(16,185,129,0.5);
+              border-radius: 50%;
+              animation: sr-live-pulse 1.8s ease-out infinite;
+            "></div>
+            <div style="
+              width: 18px; height: 18px;
+              background: #10b981;
+              border: 3px solid white;
+              border-radius: 50%;
+              box-shadow: 0 3px 10px rgba(16,185,129,0.6);
+            "></div>
+          </div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        });
+        try {
+          liveUserDotRef.current = L.marker([latitude, longitude], {
+            icon: liveIcon,
+            zIndexOffset: 500,
+            interactive: false,
+          }).addTo(mapInstanceRef.current);
+        } catch {}
+      }
+    };
 
     const startWatching = async () => {
       const isNative = Capacitor.isNativePlatform();
@@ -901,11 +974,18 @@ export function InteractiveBookingMap({
       if (isNative) {
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 5000 },
+            { enableHighAccuracy: true, maximumAge: 3000 },
             async (position, err) => {
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
-              if (latitude && longitude && (!hasManualPickupRef.current || pickupCoordsRef.current[0] === 0)) {
+              if (!latitude || !longitude) return;
+
+              // Always update the live dot
+              await updateLiveUserDot(latitude, longitude);
+
+              // Only update pickup text+coords if user is NOT actively typing and no manual override
+              const isTyping = pickupInputFocusedRef.current || hasManualPickupRef.current;
+              if (!isTyping || pickupCoordsRef.current[0] === 0) {
                 const resolved = await resolveLocationAddress(latitude, longitude);
                 if (!isCancelled) {
                   setPickupCoords([latitude, longitude]);
@@ -918,14 +998,15 @@ export function InteractiveBookingMap({
                     localStorage.setItem("sr_last_known_lng", longitude.toString());
                     if (resolved) localStorage.setItem("sr_last_known_name", resolved);
                   } catch {}
-                  if (mapInstanceRef.current) {
+                  // Only pan if user has NOT manually set pickup
+                  if (mapInstanceRef.current && !hasManualPickupRef.current) {
                     mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
                   }
                 }
               }
             }
           );
-          return; // CRITICAL: Stop here on native! Do not also start Web watcher!
+          return;
         } catch {}
       }
 
@@ -934,7 +1015,14 @@ export function InteractiveBookingMap({
           async (pos) => {
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude } = pos.coords;
-            if (latitude && longitude && (!hasManualPickupRef.current || pickupCoordsRef.current[0] === 0)) {
+            if (!latitude || !longitude) return;
+
+            // Always update the live dot
+            await updateLiveUserDot(latitude, longitude);
+
+            // Only update pickup text+coords if user is NOT actively typing and no manual override
+            const isTyping = pickupInputFocusedRef.current || hasManualPickupRef.current;
+            if (!isTyping || pickupCoordsRef.current[0] === 0) {
               const resolved = await resolveLocationAddress(latitude, longitude);
               if (!isCancelled) {
                 setPickupCoords([latitude, longitude]);
@@ -947,14 +1035,14 @@ export function InteractiveBookingMap({
                   localStorage.setItem("sr_last_known_lng", longitude.toString());
                   if (resolved) localStorage.setItem("sr_last_known_name", resolved);
                 } catch {}
-                if (mapInstanceRef.current) {
+                if (mapInstanceRef.current && !hasManualPickupRef.current) {
                   mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
                 }
               }
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 5000 }
+          { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
         );
       }
     };
@@ -969,8 +1057,13 @@ export function InteractiveBookingMap({
       if (capWatchId) {
         Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
+      // Remove live dot on cleanup
+      if (liveUserDotRef.current) {
+        try { liveUserDotRef.current.remove(); } catch {}
+        liveUserDotRef.current = null;
+      }
     };
-  }, [hasValidPickup, resolveLocationAddress]);
+  }, [resolveLocationAddress]);
 
   // -------------------------------------------------------------
   // INITIALIZE LEAFLET MAP
@@ -1102,69 +1195,6 @@ export function InteractiveBookingMap({
     };
   }, []);
 
-  // ── Uber Open-Source H3 Hexagonal Grid Radar Overlay ──
-  useEffect(() => {
-    if (!mapInstanceRef.current || !pickupCoords || pickupCoords[0] === 0 || pickupCoords[1] === 0) return;
-
-    let isMounted = true;
-    async function syncH3Grid() {
-      try {
-        const L = await getLeaflet();
-        if (!isMounted || !mapInstanceRef.current) return;
-
-        if (hexGridLayerRef.current) {
-          try {
-            hexGridLayerRef.current.remove();
-          } catch {}
-          hexGridLayerRef.current = null;
-        }
-
-        if (!showHexGrid) return;
-
-        const hexCells = getNearbyHexGrid(pickupCoords[0], pickupCoords[1], nearbyDrivers, 8, 1);
-        const group = L.layerGroup();
-
-        hexCells.forEach((cell) => {
-          const poly = L.polygon(cell.boundary, {
-            color: cell.isCenter ? "#059669" : "#10b981",
-            weight: cell.isCenter ? 2 : 1.2,
-            dashArray: cell.isCenter ? undefined : "4, 4",
-            fillColor: cell.isCenter ? "#10b981" : "#34d399",
-            fillOpacity: cell.isCenter ? 0.14 : 0.06,
-          });
-
-          poly.bindTooltip(
-            cell.isCenter
-              ? "⬡ Uber H3 পিকআপ সেল"
-              : cell.driverCount > 0
-              ? `⬡ H3 জোন: ${cell.driverCount}টি টোটো`
-              : "⬡ H3 রাইডার জোন",
-            { direction: "center", className: "text-[9.5px] font-bold" }
-          );
-
-          group.addLayer(poly);
-        });
-
-        group.addTo(mapInstanceRef.current);
-        hexGridLayerRef.current = group;
-      } catch (e) {
-        console.warn("H3 Grid draw warning:", e);
-      }
-    }
-
-    syncH3Grid();
-
-    return () => {
-      isMounted = false;
-      if (hexGridLayerRef.current) {
-        try {
-          hexGridLayerRef.current.remove();
-        } catch {}
-        hexGridLayerRef.current = null;
-      }
-    };
-  }, [pickupCoords, showHexGrid, nearbyDrivers]);
-
   // Toggle Map Style (Streets vs Satellite)
   const toggleMapLayer = () => {
     const nextLayer = mapLayer === "streets" ? "satellite" : "streets";
@@ -1182,8 +1212,18 @@ export function InteractiveBookingMap({
 
   // Place Search & Autocomplete
   const handleQueryPlaces = (query: string, field: "pickup" | "drop", userIsTyping = true) => {
-    if (field === "pickup") setPickupInputValue(query);
-    else setDropInputValue(query);
+    if (field === "pickup") {
+      setPickupInputValue(query);
+      // Lock the GPS watcher from overriding pickup while the user is typing
+      if (userIsTyping && query.trim().length > 0) {
+        hasManualPickupRef.current = true;
+      } else if (!query.trim()) {
+        // User cleared the field — allow GPS to take over again
+        hasManualPickupRef.current = false;
+      }
+    } else {
+      setDropInputValue(query);
+    }
 
     setActiveSearchField(field);
 
@@ -1238,6 +1278,9 @@ export function InteractiveBookingMap({
     setIsDropOutOfService(false);
 
     if (activeSearchField === "pickup") {
+      // User selected a suggestion: clear manual lock so GPS can resume later
+      hasManualPickupRef.current = false;
+      pickupInputFocusedRef.current = false;
       setPickupInputValue(place.name);
       setPickupCoords(coords);
       setHasValidPickup(true);
@@ -1471,6 +1514,14 @@ export function InteractiveBookingMap({
                       setActiveSearchField("pickup");
                       setHasStartedTyping(false);
                       setPlaceSuggestions([]);
+                      // Mark pickup input as focused so GPS watcher doesn't override
+                      pickupInputFocusedRef.current = true;
+                    }}
+                    onBlur={() => {
+                      // Only release focus lock if nothing was typed (i.e., user didn't modify)
+                      setTimeout(() => {
+                        pickupInputFocusedRef.current = false;
+                      }, 300);
                     }}
                     className={`h-10 pl-9 pr-18 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500 transition-all ${
                       !hasValidPickup && !pickupInputValue.trim()
@@ -1481,7 +1532,12 @@ export function InteractiveBookingMap({
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
                     <button
                       type="button"
-                      onClick={() => fetchCurrentLocation(true)}
+                      onClick={() => {
+                        // GPS button tapped: release manual lock so GPS takes over
+                        hasManualPickupRef.current = false;
+                        pickupInputFocusedRef.current = false;
+                        fetchCurrentLocation(true);
+                      }}
                       disabled={isLocating}
                       title="আমার সঠিক GPS অবস্থান"
                       className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
@@ -1500,6 +1556,9 @@ export function InteractiveBookingMap({
                       <button
                         type="button"
                         onClick={() => {
+                          // Clear pickup: release manual lock so GPS can fill it again
+                          hasManualPickupRef.current = false;
+                          pickupInputFocusedRef.current = false;
                           setPickupInputValue("");
                           setHasValidPickup(false);
                           setHasStartedTyping(false);
@@ -1732,22 +1791,13 @@ export function InteractiveBookingMap({
         </button>
       </div>
 
-      {/* Uber H3 Hexagonal Grid Toggle Button */}
-      <button
-        type="button"
-        onClick={() => {
-          setShowHexGrid((prev) => !prev);
-          toast.info(!showHexGrid ? "⬡ Uber H3 হেক্সাগন রাডার সক্রিয়" : "⬡ হেক্সাগন রাডার নিষ্ক্রিয়");
-        }}
-        title={showHexGrid ? "হেক্সাগন গ্রিড লুকান" : "Uber H3 হেক্সাগন গ্রিড দেখান"}
-        className={`absolute bottom-54 left-3.5 z-20 pointer-events-auto h-9 px-3 rounded-2xl shadow-lg border flex items-center gap-1.5 font-black text-xs transition-transform active:scale-90 cursor-pointer ${
-          showHexGrid
-            ? "bg-gradient-to-r from-emerald-600 to-teal-700 text-white border-emerald-400 shadow-emerald-600/30 ring-2 ring-emerald-400/20"
-            : "bg-white/95 text-slate-700 border-slate-200"
-        }`}
-      >
-        <span>⬡ H3 Grid</span>
-      </button>
+      {/* Route Calculation Floating Circular Loading Badge */}
+      {isCalculatingRoute && (
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none bg-slate-900/90 text-white backdrop-blur-md px-4 py-2 rounded-full shadow-2xl flex items-center gap-2.5 border border-emerald-400/40 animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <span className="text-xs font-bold tracking-wide">রোড রুট ও সঠিক দূরত্ব হিসেব হচ্ছে...</span>
+        </div>
+      )}
 
       {/* Map Layer Switcher: Street vs Satellite (Bottom Right) */}
       <button
@@ -1762,7 +1812,12 @@ export function InteractiveBookingMap({
       {/* GPS Recenter Target Button (Bottom Right) */}
       <button
         type="button"
-        onClick={() => fetchCurrentLocation(true)}
+        onClick={() => {
+          isLocatingRef.current = false;
+          hasManualPickupRef.current = false;
+          pickupInputFocusedRef.current = false;
+          fetchCurrentLocation(true);
+        }}
         disabled={isLocating}
         title="আমার জিপিএস অবস্থান"
         className={`absolute bottom-26 right-3.5 z-20 pointer-events-auto w-11 h-11 rounded-2xl shadow-lg border flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
@@ -1881,11 +1936,16 @@ export function InteractiveBookingMap({
                     <span className="truncate text-slate-900">{dropInputValue.slice(0, 16)}</span>
                   </div>
                   <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
-                    {isCalculatingRoute
-                      ? "রুট গণনা..."
-                      : distanceKm > 0
-                      ? `${distanceKm} কিমি • ~${roadDurationMin} মি`
-                      : "রোড রুট"}
+                    {isCalculatingRoute ? (
+                      <span className="flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        রুট গণনা হচ্ছে...
+                      </span>
+                    ) : distanceKm > 0 ? (
+                      `${distanceKm} কিমি • ~${roadDurationMin} মি`
+                    ) : (
+                      "রোড রুট"
+                    )}
                   </span>
                 </div>
 

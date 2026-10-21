@@ -402,4 +402,91 @@ html[data-theme="rose"] {
   transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
+
+/* ============================================================
+ * APPLE VISIONOS & IOS LIQUID GLASS SYSTEM
+ * True liquid refractive physics, specular edges, and spring touch
+ * ============================================================ */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.68) !important;
+  backdrop-filter: blur(32px) saturate(210%) contrast(102%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(210%) contrast(102%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.82) !important;
+  box-shadow: 
+    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.04),
+    0 16px 40px -10px rgba(0, 0, 0, 0.16) !important;
+  position: relative;
+}
+
+.dark .liquid-glass {
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.20) !important;
+  box-shadow: 
+    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.3),
+    0 20px 48px -10px rgba(0, 0, 0, 0.45) !important;
+}
+
+.liquid-glass-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.62) 100%) !important;
+  backdrop-filter: blur(36px) saturate(220%) contrast(104%) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(220%) contrast(104%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.04),
+    0 20px 48px -12px rgba(16, 185, 129, 0.12),
+    0 8px 24px -4px rgba(0, 0, 0, 0.08) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.dark .liquid-glass-card {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.75) 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  box-shadow: 
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.42),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4),
+    0 24px 56px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.liquid-sheen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.12) 60%, transparent 100%);
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 1;
+}
+
+.liquid-glass-pill {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(28px) saturate(205%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(205%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.90) !important;
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.95),
+    0 6px 20px -3px rgba(0, 0, 0, 0.10) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .liquid-glass-pill {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.20) !important;
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.35),
+    0 6px 20px -3px rgba(0, 0, 0, 0.4) !important;
+}
+
+.liquid-touch {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease !important;
+}
+.liquid-touch:active {
+  transform: scale(0.96) !important;
+}
 

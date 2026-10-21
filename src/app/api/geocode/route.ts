@@ -140,9 +140,13 @@ export async function GET(req: Request) {
       const biasLng = parseFloat(lng || "88.192");
       const cacheKey = `fwd_en_${cleanQ.toLowerCase()}_${biasLat.toFixed(2)}_${biasLng.toFixed(2)}`;
 
-      // Fast in-memory cache hit
+      // Fast in-memory cache hit (only for non-empty suggestions)
       const cached = geocodeCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+      if (
+        cached &&
+        Date.now() - cached.timestamp < 5 * 60 * 1000 &&
+        cached.data?.suggestions?.length > 0
+      ) {
         return NextResponse.json(cached.data);
       }
 
@@ -396,11 +400,13 @@ export async function GET(req: Request) {
         googleCompletions,
       };
 
-      // Cache for 5 minutes
-      geocodeCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
-      if (geocodeCache.size > 500) {
-        const oldestKey = geocodeCache.keys().next().value;
-        if (oldestKey) geocodeCache.delete(oldestKey);
+      // Only cache valid non-empty responses for 5 minutes
+      if (finalSuggestions.length > 0) {
+        geocodeCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
+        if (geocodeCache.size > 500) {
+          const oldestKey = geocodeCache.keys().next().value;
+          if (oldestKey) geocodeCache.delete(oldestKey);
+        }
       }
 
       return NextResponse.json(responsePayload);

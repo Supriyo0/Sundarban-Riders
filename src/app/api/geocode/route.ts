@@ -221,6 +221,11 @@ export async function GET(req: Request) {
         }
       }
 
+      // Adaptive timeout: If local verified database already has rich matches, keep live query snappy (1.5s).
+      // If local matches are few or zero, give live OpenStreetMap up to 5.5s to search any shop/village/landmark in West Bengal!
+      const hasSufficientLocal = suggestions.length >= 4;
+      const liveTimeoutMs = hasSufficientLocal ? 1800 : 5500;
+
       // ── STEP B: Parallel Live Search across ALL of West Bengal (OpenStreetMap & Google Suggest) ──
       // Guarantees that ANY location, shop, village, road, or address in West Bengal is found
       const osmTasks: Promise<void>[] = [];
@@ -236,7 +241,7 @@ export async function GET(req: Request) {
               )}`,
               {
                 headers: { "User-Agent": "Mozilla/5.0" },
-                signal: AbortSignal.timeout(1500),
+                signal: AbortSignal.timeout(1800),
               }
             );
             if (gRes.ok) {
@@ -256,7 +261,7 @@ export async function GET(req: Request) {
             )}&lat=${biasLat}&lon=${biasLng}&lang=en&limit=15&bbox=85.8,21.2,89.95,27.4`;
             const pRes = await fetch(photonUrl, {
               headers: { "User-Agent": "SundarbanRiders/2.0" },
-              signal: AbortSignal.timeout(2000),
+              signal: AbortSignal.timeout(liveTimeoutMs),
             });
             if (pRes.ok) {
               const pData = await pRes.json();
@@ -330,7 +335,7 @@ export async function GET(req: Request) {
               )}&countrycodes=in&viewbox=85.8,21.2,89.95,27.4&bounded=0&limit=8&addressdetails=1&accept-language=en`;
               const nRes = await fetch(nomUrl, {
                 headers: { "User-Agent": "SundarbanRiders/2.0 (dispatch@sundarbanriders.com)" },
-                signal: AbortSignal.timeout(1900),
+                signal: AbortSignal.timeout(liveTimeoutMs),
               });
               if (nRes.ok) {
                 const nData = await nRes.json();
@@ -377,7 +382,7 @@ export async function GET(req: Request) {
         })()
       );
 
-      // Wait up to 2.0s in parallel so responses remain snappy while checking all sources
+      // Wait in parallel up to liveTimeoutMs
       await Promise.allSettled(osmTasks);
 
       // Sort by score (exact / close matches on top, then proximity)

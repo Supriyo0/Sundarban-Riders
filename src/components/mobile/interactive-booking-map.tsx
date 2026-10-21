@@ -1662,7 +1662,7 @@ export function InteractiveBookingMap({
         const biasLng = pickupCoords[1] || 88.192;
         const res = await fetch(
           `/api/geocode?q=${encodeURIComponent(query)}&lat=${biasLat}&lng=${biasLng}`,
-          { signal: AbortSignal.timeout(4500) }
+          { signal: AbortSignal.timeout(7500) }
         );
         if (!res.ok) throw new Error("geocode failed");
         const data = await res.json();

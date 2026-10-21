@@ -97,6 +97,40 @@ interface InteractiveBookingMapProps {
   isBlocked?: boolean;
 }
 
+// Standard Google Encoded Polyline Decoder (Decodes OSRM compressed geometry into real road coordinates)
+function decodePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
 export function InteractiveBookingMap({
   initialPickup = "",
   initialDrop = "",
@@ -127,8 +161,17 @@ export function InteractiveBookingMap({
     initialPickupCoords[0] !== 0
   );
   const [hasValidPickup, setHasValidPickup] = useState(isInitialValid);
-  const [isLocatingInitialLock, setIsLocatingInitialLock] = useState(!isInitialValid);
+  // Show high-precision location loading orb on open until GPS locks in perfectly
+  const [isLocatingInitialLock, setIsLocatingInitialLock] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Safety unlock timeout so user is never locked out if device GPS is completely disabled
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setIsLocatingInitialLock(false);
+    }, 6500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Real-time Compass Heading (Phone's Head Direction)
   const [deviceHeading, setDeviceHeading] = useState<number>(0);
@@ -744,33 +787,47 @@ export function InteractiveBookingMap({
               routeCoords = data.coordinates;
               safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
               routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
+            } else if (typeof data?.geometry === "string" && data.geometry.length > 0) {
+              routeCoords = decodePolyline(data.geometry);
+              safeDist = data.distanceKm || calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
+              routeDuration = data.durationMin || Math.max(3, Math.round(safeDist * 2.5));
+            } else {
+              // Direct client-side road query backup across reliable mirrors
+              const mirrors = [
+                `https://router.project-osrm.org/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
+                `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
+                `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
+              ];
 
+              for (const mirrorUrl of mirrors) {
+                try {
+                  const directRes = await fetch(mirrorUrl, { signal: currentCtrl.signal });
+                  if (directRes.ok) {
+                    const directData = await directRes.json();
+                    const route0 = directData?.routes?.[0];
+                    if (route0?.geometry) {
+                      if (Array.isArray(route0.geometry.coordinates)) {
+                        routeCoords = route0.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
+                      } else if (typeof route0.geometry === "string") {
+                        routeCoords = decodePolyline(route0.geometry);
+                      }
+                      if (routeCoords.length > 0) {
+                        safeDist = Math.max(0.8, Math.round((route0.distance / 1000) * 10) / 10);
+                        routeDuration = Math.max(2, Math.round(route0.duration / 60));
+                        break;
+                      }
+                    }
+                  }
+                } catch {}
+              }
+            }
+
+            if (routeCoords.length > 0) {
               routeClientCache.set(cacheKey, {
                 distanceKm: safeDist,
                 durationMin: routeDuration,
                 coordinates: routeCoords,
               });
-            } else {
-              // Direct client-side road query backup (bypasses server rate-limits)
-              try {
-                const directRes = await fetch(
-                  `https://routing.openstreetmap.de/routed-car/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=full&geometries=geojson&radiuses=2500;2500`,
-                  { signal: currentCtrl.signal }
-                );
-                if (directRes.ok) {
-                  const directData = await directRes.json();
-                  if (directData?.routes?.[0]?.geometry?.coordinates?.length) {
-                    routeCoords = directData.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]]);
-                    safeDist = Math.max(0.8, Math.round((directData.routes[0].distance / 1000) * 10) / 10);
-                    routeDuration = Math.max(2, Math.round(directData.routes[0].duration / 60));
-                    routeClientCache.set(cacheKey, {
-                      distanceKm: safeDist,
-                      durationMin: routeDuration,
-                      coordinates: routeCoords,
-                    });
-                  }
-                }
-              } catch {}
             }
           } catch (e: any) {
             if (e?.name === "AbortError" || currentCtrl.signal.aborted) {
@@ -789,25 +846,18 @@ export function InteractiveBookingMap({
           return;
         }
 
-        // If coordinates found, plot them
+        // If coordinates found, plot them along the real road!
         if (routeCoords.length > 0) {
           if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(routeCoords);
           if (routeLineRef.current) routeLineRef.current.setLatLngs(routeCoords);
         } else {
-          // Fallback if network was offline
+          // Fallback if network was offline (clean direct segment without artificial distortion into fields)
           const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
-          safeDist = Math.max(1.0, Math.round(directDist * 1.42 * 10) / 10);
+          safeDist = Math.max(1.0, Math.round(directDist * 1.35 * 10) / 10);
           routeDuration = Math.max(3, Math.round(safeDist * 2.8));
-          const curved: [number, number][] = [];
-          const dLat = dCoords[0] - pCoords[0];
-          const dLng = dCoords[1] - pCoords[1];
-          for (let i = 0; i <= 14; i++) {
-            const frac = i / 14;
-            const curve = Math.sin(frac * Math.PI) * 0.08;
-            curved.push([pCoords[0] + dLat * frac - dLng * curve, pCoords[1] + dLng * frac + dLat * curve]);
-          }
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(curved);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs(curved);
+          const directSegment: [number, number][] = [pCoords, dCoords];
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs(directSegment);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs(directSegment);
         }
 
         if (safeDist === 0) {
@@ -949,6 +999,93 @@ export function InteractiveBookingMap({
     });
   }, [nearbyDrivers]);
 
+  // Continuous User Location Dot & Heading Beam updater (Google/Apple Maps Vector Quality)
+  const updateLiveUserDot = useCallback(async (latitude: number, longitude: number) => {
+    if (!mapInstanceRef.current || isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) return;
+    const L = await getLeaflet();
+    if (!mapInstanceRef.current) return;
+
+    const currentHeading = deviceHeadingRef.current || 0;
+
+    if (liveUserDotRef.current) {
+      liveUserDotRef.current.setLatLng([latitude, longitude]);
+    } else {
+      const liveIcon = L.divIcon({
+        className: "sr-live-user-dot-container",
+        html: `<div style="position: relative; width: 64px; height: 64px; transform: translate(-50%, -50%); pointer-events: none;">
+          <!-- Rotating Direction Beam & Arrow (Phone's Head Direction) -->
+          <div id="sr-live-user-heading-cone" style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 64px;
+            height: 64px;
+            transform: translate3d(-50%, -50%, 0) rotate(${currentHeading}deg);
+            pointer-events: none;
+            will-change: transform;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          ">
+            <svg width="64" height="64" viewBox="0 0 64 64" style="position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible;">
+              <defs>
+                <radialGradient id="sr-cone-beam-grad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#10b981" stop-opacity="0.55" />
+                  <stop offset="70%" stop-color="#10b981" stop-opacity="0.18" />
+                  <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+              <!-- 55-degree radiant vision beam radiating from center (32, 32) upwards -->
+              <path d="M 32 32 L 17 3 A 33 33 0 0 1 47 3 Z" fill="url(#sr-cone-beam-grad)" />
+              <!-- High-precision navigation pointer chevron pointing forward -->
+              <path d="M 32 3 L 36.5 13 L 32 10.5 L 27.5 13 Z" fill="#047857" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
+            </svg>
+          </div>
+
+          <!-- Pulsing Radar Wave -->
+          <div style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 34px;
+            height: 34px;
+            border: 2px solid rgba(16,185,129,0.5);
+            border-radius: 50%;
+            animation: sr-live-pulse 1.8s ease-out infinite;
+            pointer-events: none;
+          "></div>
+
+          <!-- Central User Position Dot (Google / Apple Maps Style) -->
+          <div style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: #10b981;
+            border: 3.5px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.7);
+            z-index: 5;
+          ">
+            <div style="width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #34d399, #059669);"></div>
+          </div>
+        </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+      try {
+        liveUserDotRef.current = L.marker([latitude, longitude], {
+          icon: liveIcon,
+          zIndexOffset: 500,
+          interactive: false,
+        }).addTo(mapInstanceRef.current);
+      } catch {}
+    }
+  }, []);
+
   // Permission Request & Refresh Handler for Native & Web
   const handleRequestPermissionAndLocate = useCallback(async () => {
     const isNative = Capacitor.isNativePlatform();
@@ -1016,6 +1153,9 @@ export function InteractiveBookingMap({
         setPermissionState("granted");
         setLocationError(null);
 
+        // Always display the live user dot with rotating heading cone!
+        await updateLiveUserDot(latitude, longitude);
+
         const detectedName = preResolvedName || (await resolveLocationAddress(latitude, longitude));
         setPickupInputValue(detectedName);
 
@@ -1046,9 +1186,7 @@ export function InteractiveBookingMap({
         // Exact zoom-in like Uber when pickup is detected or target button clicked
         if (mapInstanceRef.current) {
           try {
-            if (userInitiated || (!dropCoordsRef.current || dropCoordsRef.current[0] === 0)) {
-              mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.0 });
-            }
+            mapInstanceRef.current.flyTo(newPickup, 17, { duration: 1.2 });
           } catch {}
         }
 
@@ -1162,94 +1300,6 @@ export function InteractiveBookingMap({
     let watchId: number | null = null;
     let capWatchId: string | null = null;
     let isCancelled = false;
-
-    const updateLiveUserDot = async (latitude: number, longitude: number) => {
-      // Update or create the pulsing live-user-dot on the map
-      if (!mapInstanceRef.current) return;
-      const L = await getLeaflet();
-      if (isCancelled || !mapInstanceRef.current) return;
-
-      const currentHeading = deviceHeadingRef.current || 0;
-
-      if (liveUserDotRef.current) {
-        // Smooth positional update — no flickering, no re-render
-        liveUserDotRef.current.setLatLng([latitude, longitude]);
-      } else {
-        const liveIcon = L.divIcon({
-          className: "sr-live-user-dot-container",
-          html: `<div style="position: relative; width: 64px; height: 64px; transform: translate(-50%, -50%); pointer-events: none;">
-            <!-- Rotating Direction Beam & Arrow (Phone's Head Direction) -->
-            <div id="sr-live-user-heading-cone" style="
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              width: 64px;
-              height: 64px;
-              transform: translate3d(-50%, -50%, 0) rotate(${currentHeading}deg);
-              pointer-events: none;
-              will-change: transform;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <svg width="64" height="64" viewBox="0 0 64 64" style="position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible;">
-                <defs>
-                  <radialGradient id="sr-cone-beam-grad" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="#10b981" stop-opacity="0.55" />
-                    <stop offset="70%" stop-color="#10b981" stop-opacity="0.18" />
-                    <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
-                  </radialGradient>
-                </defs>
-                <!-- 55-degree radiant vision beam radiating from center (32, 32) upwards -->
-                <path d="M 32 32 L 17 3 A 33 33 0 0 1 47 3 Z" fill="url(#sr-cone-beam-grad)" />
-                <!-- High-precision navigation pointer chevron pointing forward -->
-                <path d="M 32 3 L 36.5 13 L 32 10.5 L 27.5 13 Z" fill="#047857" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round" />
-              </svg>
-            </div>
-
-            <!-- Pulsing Radar Wave -->
-            <div style="
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              width: 34px;
-              height: 34px;
-              border: 2px solid rgba(16,185,129,0.5);
-              border-radius: 50%;
-              animation: sr-live-pulse 1.8s ease-out infinite;
-              pointer-events: none;
-            "></div>
-
-            <!-- Central User Position Dot (Google / Apple Maps Style) -->
-            <div style="
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform: translate(-50%, -50%);
-              width: 20px;
-              height: 20px;
-              background: #10b981;
-              border: 3.5px solid #ffffff;
-              border-radius: 50%;
-              box-shadow: 0 4px 14px rgba(16, 185, 129, 0.7);
-              z-index: 5;
-            ">
-              <div style="width: 100%; height: 100%; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #34d399, #059669);"></div>
-            </div>
-          </div>`,
-          iconSize: [0, 0],
-          iconAnchor: [0, 0],
-        });
-        try {
-          liveUserDotRef.current = L.marker([latitude, longitude], {
-            icon: liveIcon,
-            zIndexOffset: 500,
-            interactive: false,
-          }).addTo(mapInstanceRef.current);
-        } catch {}
-      }
-    };
 
     const startWatching = async () => {
       const isNative = Capacitor.isNativePlatform();
@@ -1380,6 +1430,7 @@ export function InteractiveBookingMap({
           center: initialCenter,
           zoom: 15,
           zoomControl: false,
+          attributionControl: false,
         });
 
         // Google Maps Clean Street Tile Layer (Multi-subdomain high concurrency)
@@ -1389,7 +1440,6 @@ export function InteractiveBookingMap({
           maxZoom: 20,
           keepBuffer: 8,
           updateWhenIdle: false,
-          attribution: "© Google Maps",
         }).addTo(map);
         tileLayerRef.current = tiles;
 
@@ -1459,6 +1509,9 @@ export function InteractiveBookingMap({
           if (!isMounted) return;
           try {
             map.invalidateSize();
+            if (pickupCoordsRef.current[0] !== 0) {
+              updateLiveUserDot(pickupCoordsRef.current[0], pickupCoordsRef.current[1]);
+            }
             syncMapRouteAndPins(pickupCoords, dropCoords, pickupInputValue, dropInputValue, {
               fitBounds: Boolean(dropInputValue),
               flyDuration: 0.8,
@@ -1683,7 +1736,7 @@ export function InteractiveBookingMap({
       <div className={`absolute top-16 sm:top-18 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
-          className={`pointer-events-auto rounded-3xl p-3 sm:p-3.5 backdrop-blur-2xl bg-white/80 dark:bg-slate-900/80 border border-white/80 dark:border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.10),inset_0_1px_1px_rgba(255,255,255,0.9)] space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 backdrop-blur-3xl bg-white/75 dark:bg-slate-900/75 border border-white/90 dark:border-white/20 shadow-[0_16px_40px_rgba(0,0,0,0.12),inset_0_1.5px_2px_rgba(255,255,255,0.95)] space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
             topCardExpanded
               ? activeSearchField
                 ? "max-h-[82vh] overflow-y-auto"
@@ -1691,6 +1744,8 @@ export function InteractiveBookingMap({
               : "max-h-24 overflow-hidden"
           }`}
         >
+          {/* Top liquid specular glass reflection sheen */}
+          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/60 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
           {!topCardExpanded ? (
             /* Minimized Top Search Bar (Compact Peek Mode with Liquid Sheen) */
             <div
@@ -1800,10 +1855,10 @@ export function InteractiveBookingMap({
                         pickupInputFocusedRef.current = false;
                       }, 300);
                     }}
-                    className={`h-10 pl-9 pr-18 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-emerald-500 transition-all ${
+                    className={`h-10 pl-9 pr-18 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md text-slate-900 dark:text-white rounded-2xl text-xs font-bold shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] border transition-all ${
                       !hasValidPickup && !pickupInputValue.trim()
-                        ? "border-amber-400 bg-amber-50/40 placeholder:text-amber-700"
-                        : "border-slate-200/80"
+                        ? "border-amber-400 bg-amber-50/50 placeholder:text-amber-700"
+                        : "border-white/80 dark:border-white/15 focus:border-emerald-500 focus:bg-white/85"
                     }`}
                   />
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
@@ -1817,10 +1872,10 @@ export function InteractiveBookingMap({
                       }}
                       disabled={isLocating}
                       title="আমার সঠিক GPS অবস্থান"
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all cursor-pointer backdrop-blur-md border ${
                         hasValidPickup
-                          ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 hover:bg-amber-200 text-amber-800"
+                          ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 border-emerald-500/30 shadow-[0_2px_8px_rgba(16,185,129,0.25)]"
+                          : "bg-amber-100/80 hover:bg-amber-200 text-amber-800 border-amber-300"
                       }`}
                     >
                       {isLocating ? (
@@ -1869,10 +1924,10 @@ export function InteractiveBookingMap({
                       setHasStartedTyping(false);
                       setPlaceSuggestions([]);
                     }}
-                    className={`h-10 pl-9 pr-14 bg-slate-50/90 text-slate-900 rounded-2xl text-xs font-bold shadow-2xs focus:border-red-400 transition-all ${
+                    className={`h-10 pl-9 pr-14 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md text-slate-900 dark:text-white rounded-2xl text-xs font-bold shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] border transition-all ${
                       isDropOutOfService
                         ? "border-rose-400 bg-rose-50/50 text-rose-900"
-                        : "border-slate-200/80"
+                        : "border-white/80 dark:border-white/15 focus:border-red-400 focus:bg-white/85"
                     }`}
                   />
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
@@ -1883,7 +1938,7 @@ export function InteractiveBookingMap({
                         handleSwap();
                       }}
                       title="পিকআপ ও গন্তব্য অদল-বদল"
-                      className="w-8 h-8 rounded-xl bg-slate-100/80 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition-all active:scale-85 active:rotate-180 cursor-pointer shadow-xs border border-slate-200/60"
+                      className="w-8 h-8 rounded-xl bg-white/70 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition-all active:scale-85 active:rotate-180 cursor-pointer shadow-xs border border-white/80 backdrop-blur-md"
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
                     </button>
@@ -2150,7 +2205,7 @@ export function InteractiveBookingMap({
       )}
 
       {/* 🚀 INITIAL LOCATION LOCKING FULL SCREEN MODAL (100% Liquid Glass Orb) */}
-      {isLocatingInitialLock && !hasValidPickup && (
+      {isLocatingInitialLock && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-300"
           style={{
@@ -2255,7 +2310,7 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div className="absolute bottom-16 sm:bottom-18 left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-3xl shadow-[0_-16px_48px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.95)] border border-white/80 dark:border-white/15 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none ${
+          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/75 dark:bg-slate-900/75 backdrop-blur-3xl shadow-[0_-16px_48px_rgba(0,0,0,0.14),inset_0_1.5px_2px_rgba(255,255,255,0.95)] border border-white/90 dark:border-white/20 p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
             sheetExpanded
               ? "max-h-[86dvh] pb-28 sm:pb-32 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
@@ -2263,6 +2318,8 @@ export function InteractiveBookingMap({
               : "max-h-[110px] overflow-hidden"
           }`}
         >
+          {/* Top specular reflection sheen */}
+          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/60 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
           {/* Interactive Drag / Tap Handle */}
           <div
             role="button"
@@ -2306,14 +2363,14 @@ export function InteractiveBookingMap({
                   triggerHaptic(12);
                   setSheetExpanded(true);
                 }}
-                className="flex items-center justify-between p-2.5 rounded-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/15 border border-emerald-500/30 shadow-[0_4px_16px_rgba(16,185,129,0.10),inset_0_1px_1px_rgba(255,255,255,0.8)] cursor-pointer active:scale-[0.99] transition-transform"
+                className="flex items-center justify-between p-2.5 rounded-2xl backdrop-blur-xl bg-gradient-to-r from-emerald-500/15 via-white/65 to-teal-500/15 border border-white/90 dark:border-white/20 shadow-[0_4px_16px_rgba(16,185,129,0.12),inset_0_1.5px_2px_rgba(255,255,255,0.9)] cursor-pointer active:scale-[0.99] transition-transform"
                 title="সম্পূর্ণ বুকিং দেখতে ট্যাপ করুন"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-xl shrink-0 shadow-[0_4px_14px_rgba(16,185,129,0.45)] border border-emerald-300/40">
                     🛺
                   </div>
-                    <div className="min-w-0">
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-black text-xs text-slate-900">স্মার্ট টোটো</span>
                       <span className="text-xs font-black text-emerald-700 font-mono">
@@ -2337,7 +2394,7 @@ export function InteractiveBookingMap({
                     triggerHaptic(12);
                     setSheetExpanded(true);
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs shadow-[0_4px_14px_rgba(16,185,129,0.35)] shrink-0 flex items-center gap-1 active:scale-95 transition-all cursor-pointer border border-emerald-400/40"
                 >
                   <span>বুকিং ⌃</span>
                 </button>

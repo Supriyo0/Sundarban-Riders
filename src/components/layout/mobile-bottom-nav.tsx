@@ -56,12 +56,12 @@ export function MobileBottomNav({
       <div
         className="max-w-sm mx-auto rounded-3xl grid grid-cols-4 p-1.5 transition-all"
         style={{
-          background: "linear-gradient(135deg, rgba(255,255,255,0.80) 0%, rgba(248,250,252,0.72) 100%)",
+          background: "rgba(255, 255, 255, 0.72)",
           boxShadow:
-            "0 12px 36px -6px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.04), 0 1px 0 rgba(255,255,255,0.9) inset",
-          border: "1px solid rgba(255,255,255,0.85)",
-          backdropFilter: "blur(28px)",
-          WebkitBackdropFilter: "blur(28px)",
+            "0 16px 40px rgba(0,0,0,0.12), inset 0 1.5px 2px rgba(255,255,255,0.95)",
+          border: "1px solid rgba(255, 255, 255, 0.90)",
+          backdropFilter: "blur(32px) saturate(200%)",
+          WebkitBackdropFilter: "blur(32px) saturate(200%)",
         }}
       >
         {tabs.map((tab) => {

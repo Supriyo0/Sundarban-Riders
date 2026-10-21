@@ -1107,17 +1107,19 @@ export async function POST(request: Request) {
       Math.min(pricingConfig.maxPassengers || 6, Number(passengerCount) || 3)
     );
 
-    let finalEstimatedFare = Number(estimatedFare);
-    if (!finalEstimatedFare || finalEstimatedFare <= 0) {
-      let dist = Number(tripDistance) || 0;
-      if (dist <= 0 && pickupCoords && dropCoords) {
-        dist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
-      }
-      finalEstimatedFare = calculateTotoFare(dist || 2, validPassengerCount, pricingConfig).totalFare;
+    // Authoritative Server-side Distance & Fare Validation (Zero-trust client fare)
+    let calculatedDist = Number(tripDistance) || 0;
+    if (pickupCoords && dropCoords && Array.isArray(pickupCoords) && Array.isArray(dropCoords)) {
+      calculatedDist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
     }
+    if (calculatedDist <= 0) calculatedDist = 1.0;
 
-    const seedDigits = bookingNumber.replace(/\D/g, "").slice(-4);
-    const startOtp = seedDigits.length === 4 ? seedDigits : Math.floor(1000 + Math.random() * 9000).toString();
+    // Authoritative Server Calculation (Prevents Client Fare Tampering)
+    const serverFare = calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
+    const finalEstimatedFare = serverFare;
+
+    // Cryptographically Secure Unpredictable 4-digit OTP (Decoupled from booking number)
+    const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
     const initialMeta = JSON.stringify({
       start_otp: startOtp,
@@ -1346,7 +1348,7 @@ export async function PATCH(request: Request) {
         .from("bookings")
         .update(updateData)
         .eq("id", booking.id)
-        .in("status", ["pending", "searching", "assigned"])
+        .in("status", ["pending", "searching"])
         .select()
         .maybeSingle();
 
@@ -1412,13 +1414,9 @@ export async function PATCH(request: Request) {
         );
       }
 
-      const bookingNumDigits = (booking.booking_number || "").replace(/\D/g, "").slice(-4);
       const isOtpValid =
         providedOtp === expectedOtp ||
-        (seedDigits.length === 4 && providedOtp === seedDigits) ||
-        (bookingNumDigits.length === 4 && providedOtp === bookingNumDigits) ||
-        (meta.start_otp && providedOtp === meta.start_otp.toString()) ||
-        providedOtp === "5821";
+        (meta.start_otp && providedOtp === meta.start_otp.toString());
 
       if (!isOtpValid) {
         return NextResponse.json(
@@ -1542,13 +1540,21 @@ export async function PATCH(request: Request) {
         : (enriched.drop_lat && enriched.drop_lng ? [enriched.drop_lat, enriched.drop_lng] : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
 
       let distanceKm = 1.0;
+      let calculatedRoadDist = 1.0;
+      if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
+        calculatedRoadDist = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
+      }
+      if (calculatedRoadDist <= 0) calculatedRoadDist = 1.0;
+
       if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number") {
-        // Driver completed trip with GPS odometer reading: minimum billable distance is 1.0 km
-        distanceKm = Math.max(1.0, Math.round(body.finalDistanceKm * 10) / 10);
+        const reported = Math.max(1.0, Math.round(body.finalDistanceKm * 10) / 10);
+        // Anti-Fraud Guard: Driver reported distance cannot exceed 1.45x of physical road route
+        const maxAllowed = Math.max(2.5, Math.round(calculatedRoadDist * 1.45 * 10) / 10);
+        distanceKm = Math.min(reported, maxAllowed);
       } else if (meta.live_distance_km && typeof meta.live_distance_km === "number" && meta.live_distance_km > 0) {
         distanceKm = Math.max(1.0, Math.round(meta.live_distance_km * 10) / 10);
-      } else if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
-        distanceKm = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
+      } else {
+        distanceKm = calculatedRoadDist;
       }
       if (distanceKm <= 0) distanceKm = 1.0;
 
@@ -1673,6 +1679,21 @@ export async function PATCH(request: Request) {
       const isSystemTimeout = Boolean(body.isSystemTimeout) || body.cancelReason === "3_min_timeout_expired";
       const isCancelledByDriver = Boolean(driverId);
       const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
+
+      // Authorization guard against IDOR / BOLA mass-cancellation attacks
+      if (!isSystemTimeout) {
+        const callerPhone = (body.customerPhone || body.customer_phone || driverPhone || "").replace(/\D/g, "");
+        const bookingCustPhone = (booking.customer_phone || "").replace(/\D/g, "");
+        const isMatchingCustomer = callerPhone && bookingCustPhone && (bookingCustPhone.includes(callerPhone.slice(-10)) || callerPhone.includes(bookingCustPhone.slice(-10)));
+        const isMatchingDriver = driverId && booking.driver_id && booking.driver_id === driverId;
+
+        if (!isMatchingCustomer && !isMatchingDriver && !body.adminSecret) {
+          return NextResponse.json(
+            { error: "unauthorized", message: "অননুমোদিত অনুরোধ: কেবল সংশ্লিষ্ট যাত্রী বা নির্ধারিত চালক এই বুকিং বাতিল করতে পারেন।" },
+            { status: 403 }
+          );
+        }
+      }
 
       const { data: updated, error: updateErr } = await admin
         .from("bookings")

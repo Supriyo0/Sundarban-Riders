@@ -51,6 +51,40 @@ function translateRoadName(name: string): string {
 
 const serverRouteCache = new Map<string, any>();
 
+// Standard Google Encoded Polyline Decoder (Decodes OSRM compressed geometry into real road coordinates)
+function decodePolyline(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = result & 1 ? ~(result >> 1) : result >> 1;
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = result & 1 ? ~(result >> 1) : result >> 1;
+    lng += dlng;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -73,8 +107,8 @@ export async function GET(req: Request) {
     const osrmEndpoints = [
       `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
       `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-      `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-      `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+      `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
     ];
 
     let coordinates: [number, number][] = [];
@@ -118,11 +152,15 @@ export async function GET(req: Request) {
         distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
         durationMin = Math.max(2, Math.round(bestRoute.duration / 60));
 
+        // Support BOTH GeoJSON coordinate arrays and OSRM encoded polyline strings!
         if (bestRoute.geometry && Array.isArray(bestRoute.geometry.coordinates)) {
           coordinates = bestRoute.geometry.coordinates.map((coord: [number, number]) => [
             coord[1],
             coord[0],
           ]);
+          isExactRoadRoute = true;
+        } else if (typeof bestRoute.geometry === "string" && bestRoute.geometry.length > 0) {
+          coordinates = decodePolyline(bestRoute.geometry);
           isExactRoadRoute = true;
         }
 
@@ -143,7 +181,7 @@ export async function GET(req: Request) {
         }
       }
     } catch {
-      // Both mirrors timed out or failed — fall back to geographic curved road model instantly
+      // Both mirrors timed out or failed
     }
 
     // Realistic Road Distance Fallback if OSRM was completely unreachable

@@ -930,24 +930,6 @@ export function InteractiveBookingMap({
           }
         };
 
-        const generateFallbackCoords = (): [number, number][] => {
-          const numPoints = 16;
-          const dLat = dCoords[0] - pCoords[0];
-          const dLng = dCoords[1] - pCoords[1];
-          const pLat = -dLng * 0.08;
-          const pLng = dLat * 0.08;
-          const fallback: [number, number][] = [];
-          for (let i = 0; i <= numPoints; i++) {
-            const fraction = i / numPoints;
-            const curveOffset = Math.sin(fraction * Math.PI);
-            fallback.push([
-              pCoords[0] + dLat * fraction + pLat * curveOffset,
-              pCoords[1] + dLng * fraction + pLng * curveOffset,
-            ]);
-          }
-          return fallback;
-        };
-
         // Fetch exact road route from Mapbox/OSRM via /api/route
         const cacheKey = `${pCoords[0].toFixed(4)},${pCoords[1].toFixed(4)}-${dCoords[0].toFixed(4)},${dCoords[1].toFixed(4)}`;
         if (routeClientCache.has(cacheKey)) {
@@ -974,7 +956,7 @@ export function InteractiveBookingMap({
           try {
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
-            const safetyTimer = setTimeout(() => controller.abort(), 7000);
+            const safetyTimer = setTimeout(() => controller.abort(), 8000);
 
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
@@ -984,12 +966,19 @@ export function InteractiveBookingMap({
 
             if (res.ok) {
               const data = await res.json();
-              const validCoords =
-                data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 0
-                  ? data.coordinates
-                  : generateFallbackCoords();
-
-              applyRouteGeometry(validCoords);
+              if (
+                data?.coordinates &&
+                Array.isArray(data.coordinates) &&
+                data.coordinates.length > 1 &&
+                data.isExactRoadRoute
+              ) {
+                applyRouteGeometry(data.coordinates);
+                routeClientCache.set(cacheKey, {
+                  distanceKm: data.distanceKm,
+                  durationMin: data.durationMin,
+                  coordinates: data.coordinates,
+                });
+              }
 
               if (data?.riverCrossing) {
                 setRiverCrossingAlert(data.riverCrossing);
@@ -1014,18 +1003,12 @@ export function InteractiveBookingMap({
                 paymentMode: "cash",
                 passengerCount,
               });
-
-              routeClientCache.set(cacheKey, {
-                distanceKm: finalDist,
-                durationMin: finalDur,
-                coordinates: validCoords,
-              });
-            } else {
-              applyRouteGeometry(generateFallbackCoords());
             }
-          } catch {
-            // Immediately draw realistic curved road geometry so user is never left without a route
-            applyRouteGeometry(generateFallbackCoords());
+          } catch (err: any) {
+            if (err?.name === "AbortError") {
+              // Newer pin drag / route calculation is in flight — do not overwrite
+              return;
+            }
           } finally {
             setIsCalculatingRoute(false);
           }

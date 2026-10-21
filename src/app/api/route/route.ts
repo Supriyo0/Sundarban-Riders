@@ -120,11 +120,22 @@ export async function GET(req: Request) {
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
-        const mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=2500;2500&access_token=${mapboxToken}`;
-        const mbRes = await fetch(mbUrl, {
+        // Try with 3000m road-snapping first
+        let mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=3000;3000&access_token=${mapboxToken}`;
+        let mbRes = await fetch(mbUrl, {
           headers: { "User-Agent": "SundarbanRiders/2.0" },
-          signal: AbortSignal.timeout(3500),
+          signal: AbortSignal.timeout(6000),
         });
+
+        // If road snapping failed, retry without radiuses
+        if (!mbRes.ok) {
+          mbUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
+          mbRes = await fetch(mbUrl, {
+            headers: { "User-Agent": "SundarbanRiders/2.0" },
+            signal: AbortSignal.timeout(5000),
+          });
+        }
+
         if (mbRes.ok) {
           const mbData = await mbRes.json();
           const route = mbData?.routes?.[0];
@@ -163,43 +174,33 @@ export async function GET(req: Request) {
     // 2. SECONDARY FALLBACK: Query OSRM Driving Mirrors if Mapbox returned nothing
     if (coordinates.length === 0) {
       const osrmEndpoints = [
-        `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-        `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
-        `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson&radiuses=2500;2500&continue_straight=false`,
+        `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+        `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+        `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       ];
 
       const queryEndpoint = async (url: string) => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4500);
         try {
           const res = await fetch(url, {
-            headers: { "User-Agent": "SundarbanRiders/1.0" },
-            signal: controller.signal,
-            next: { revalidate: 300 },
+            headers: { "User-Agent": "SundarbanRiders/2.0" },
+            signal: AbortSignal.timeout(6000),
           });
-          clearTimeout(timeoutId);
           if (res.ok) {
             const data = await res.json();
             if (data.code === "Ok" && data.routes && data.routes.length > 0) {
               return data.routes[0];
             }
           }
-        } catch (err) {
-          clearTimeout(timeoutId);
-          throw err;
-        }
+        } catch {}
         throw new Error("No route found");
       };
 
       try {
-        // Race OSRM mirrors — whichever responds first with full geometry wins!
         const bestRoute = await Promise.any(osrmEndpoints.map((url) => queryEndpoint(url)));
         if (bestRoute) {
           distanceKm = Math.max(0.8, Math.round((bestRoute.distance / 1000) * 10) / 10);
           durationMin = Math.max(2, Math.round(bestRoute.duration / 60));
 
-          // Support BOTH GeoJSON coordinate arrays and OSRM encoded polyline strings!
           if (bestRoute.geometry && Array.isArray(bestRoute.geometry.coordinates)) {
             coordinates = bestRoute.geometry.coordinates.map((coord: [number, number]) => [
               coord[1],
@@ -211,7 +212,7 @@ export async function GET(req: Request) {
             isExactRoadRoute = true;
           }
 
-          if (bestRoute.legs && bestRoute.legs[0] && bestRoute.legs[0].steps) {
+          if (bestRoute.legs?.[0]?.steps) {
             bestRoute.legs[0].steps.forEach((step: any) => {
               const translated = translateRoadName(step.name || "");
               if (translated && !roadSegments.includes(translated)) {
@@ -227,58 +228,18 @@ export async function GET(req: Request) {
             });
           }
         }
-      } catch {
-        // Both mirrors timed out or failed
-      }
-    }
-
-    // Google Directions API fallback if configured and OSRM returned nothing
-    const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (coordinates.length === 0 && googleKey) {
-      try {
-        const gUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&mode=driving&key=${googleKey}`;
-        const gRes = await fetch(gUrl, { signal: AbortSignal.timeout(3500) });
-        if (gRes.ok) {
-          const gData = await gRes.json();
-          if (gData.status === "OK" && gData.routes?.[0]) {
-            const gRoute = gData.routes[0];
-            const gLeg = gRoute.legs?.[0];
-            if (gLeg) {
-              distanceKm = Math.max(0.8, Math.round(((gLeg.distance?.value || 1000) / 1000) * 10) / 10);
-              durationMin = Math.max(2, Math.round((gLeg.duration?.value || 300) / 60));
-              if (gRoute.overview_polyline?.points) {
-                coordinates = decodePolyline(gRoute.overview_polyline.points);
-                isExactRoadRoute = true;
-              }
-            }
-          }
-        }
       } catch {}
     }
 
-    // Realistic Road Distance Fallback if OSRM and Google were completely unreachable
+    // 3. Fallback distance calculation WITHOUT drawing synthetic straight lines across land
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
-      // Realistic road winding multiplier (1.42x) for rural South 24 Parganas roads
       const roadWindingFactor = 1.42;
       distanceKm = Math.max(1.0, Math.round(directDist * roadWindingFactor * 10) / 10);
       durationMin = Math.max(3, Math.round(distanceKm * 2.8));
-
-      // Generate 16 curved road points with gentle geographic curvature
-      const numPoints = 16;
-      const dLat = toLat - fromLat;
-      const dLng = toLng - fromLng;
-      // Perpendicular vector for natural road curve
-      const pLat = -dLng * 0.08;
-      const pLng = dLat * 0.08;
-
-      for (let i = 0; i <= numPoints; i++) {
-        const fraction = i / numPoints;
-        const curveOffset = Math.sin(fraction * Math.PI);
-        const lat = fromLat + dLat * fraction + pLat * curveOffset;
-        const lng = fromLng + dLng * fraction + pLng * curveOffset;
-        coordinates.push([Math.round(lat * 100000) / 100000, Math.round(lng * 100000) / 100000]);
-      }
+      // Do NOT generate artificial straight lines cutting across fields
+      coordinates = [];
+      isExactRoadRoute = false;
     }
 
     // Anchor-based Road Identification (ensures even unnamed rural roads have rich Bengali names)

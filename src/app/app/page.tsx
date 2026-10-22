@@ -936,7 +936,7 @@ function MobileAppPageContent() {
     }
 
     return () => clearInterval(pollInterval);
-  }, [searchStatus, activeBookingId, passengerBooking, session?.phone, pickupCoords, dropCoords, tripFare]);
+  }, [searchStatus, activeBookingId, Boolean(passengerBooking), session?.phone]);
 
   // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
   useEffect(() => {

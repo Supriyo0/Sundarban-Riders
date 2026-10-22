@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import { NextResponse } from "next/server";
 import { calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
 import { checkRiverBarrierCrossings } from "@/lib/pricing/service-area";
@@ -195,6 +198,7 @@ export async function GET(req: Request) {
         `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
         `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
         `https://routing.openstreetmap.de/routed-bike/route/v1/bicycle/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+        `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       ];
 
       const queryEndpoint = async (url: string) => {

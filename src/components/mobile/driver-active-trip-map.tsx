@@ -378,24 +378,15 @@ export function DriverActiveTripMap({
         if (cancelled) return;
         const data = await res.json();
         if (cancelled) return;
-        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2) {
           setRouteCoords(data.coordinates);
           setRouteLoaded(true);
           lastFetchedOriginRef.current = origin;
-        } else {
-          // If road route not yet resolved, use direct connecting line
-          if (routeCoords.length <= 1) {
-            setRouteCoords([origin, to]);
-            setRouteLoaded(true);
-          }
         }
         if (data?.distanceKm) setRouteDistance(data.distanceKm);
         if (data?.durationMin) setRouteDuration(data.durationMin);
       } catch {
-        if (!cancelled && routeCoords.length <= 1) {
-          setRouteCoords([snapOrigin, to]);
-          setRouteLoaded(true);
-        }
+        // Silently preserve existing route on transient network glitch without drawing straight line
       }
     };
 

@@ -181,7 +181,7 @@ export function DriverRadarPanel({
   const lastBackendSyncTimeRef = useRef<number>(0);
   const lastBackendSyncedCoordsRef = useRef<[number, number]>([0, 0]);
   const knownPendingRideIdsRef = useRef<Set<string>>(new Set());
-  const hasInitialPannedRef = useRef<boolean>(Boolean(driverCoords[0] !== 0));
+  const hasLiveGpsLockRef = useRef<boolean>(false);
 
   // Robust Toto Marker creation / update helper on map (smooth, zero camera shake)
   const ensureDriverMarker = useCallback(async (coords: [number, number], pan = false) => {
@@ -292,10 +292,10 @@ export function DriverRadarPanel({
         localStorage.setItem("sr_last_known_lng", longitude.toString());
       } catch {}
 
-      // On first GPS lock or user recenter action, immediately center map to driver's true location
-      if (!hasInitialPannedRef.current && mapInstanceRef.current) {
-        hasInitialPannedRef.current = true;
-        mapInstanceRef.current.setView(newCoords, 16, { animate: false });
+      // On first fresh LIVE GPS lock or user recenter action, immediately center map to driver's true location
+      if ((!hasLiveGpsLockRef.current || isUserAction) && mapInstanceRef.current) {
+        hasLiveGpsLockRef.current = true;
+        mapInstanceRef.current.setView(newCoords, 16, { animate: isUserAction });
       }
 
       // Move marker smoothly
@@ -1167,12 +1167,12 @@ export function DriverRadarPanel({
       )}
 
       {/* 3. FLOATING MAP ON-SCREEN CONTROLS */}
-      {/* Floating Active Rides Indicator Pill */}
+      {/* Floating Active Rides Indicator Pill (Positioned safely below top navbar) */}
       {pendingBookings.length > 0 && (
         <button
           type="button"
           onClick={() => setSheetExpanded(true)}
-          className={`absolute ${locationError ? "top-16" : "top-3"} left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all`}
+          className={`absolute ${locationError ? "top-28" : "top-20"} left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all`}
         >
           <span className="w-2.5 h-2.5 rounded-full bg-amber-300 animate-ping" />
           <span>🛺 {pendingBookings.length}টি নতুন রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>

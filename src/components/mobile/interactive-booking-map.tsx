@@ -980,9 +980,6 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // Immediately connect pickup and drop pins with route line in 0ms so the user never sees a missing/blank line
-          applyRouteGeometry([pCoords, dCoords]);
-
           try {
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
@@ -999,8 +996,7 @@ export function InteractiveBookingMap({
               if (
                 data?.coordinates &&
                 Array.isArray(data.coordinates) &&
-                data.coordinates.length > 0 &&
-                data.isExactRoadRoute
+                data.coordinates.length > 2
               ) {
                 applyRouteGeometry(data.coordinates);
                 routeClientCache.set(cacheKey, {
@@ -1935,9 +1931,15 @@ export function InteractiveBookingMap({
           setHasValidPickup(true);
         }
         await syncMapRouteAndPins(effectivePickupCoords, coords, effectivePickupName, place.name, {
-          fitBounds: true,
-          flyDuration: 1.2,
+          fitBounds: false,
+          flyDuration: 1.0,
         });
+        // Immediately zoom in close to the destination location so user can fine-tune / drag the drop pin
+        if (mapInstanceRef.current) {
+          try {
+            mapInstanceRef.current.flyTo(coords, 17, { duration: 1.0 });
+          } catch {}
+        }
       }
     }
   };

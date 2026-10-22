@@ -46,7 +46,7 @@ export function AppSplashScreen({
               });
               if (pos?.coords?.latitude && pos?.coords?.longitude) {
                 const acc = pos.coords.accuracy || 10;
-                if (acc <= 1500) {
+                if (acc <= 100) {
                   detectedLocation = [pos.coords.latitude, pos.coords.longitude];
                   try {
                     localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
@@ -71,7 +71,7 @@ export function AppSplashScreen({
                 (pos) => {
                   if (isCancelled) return;
                   const acc = pos.coords.accuracy || 10;
-                  if (acc <= 1500) {
+                  if (acc <= 100) {
                     detectedLocation = [pos.coords.latitude, pos.coords.longitude];
                     try {
                       localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());

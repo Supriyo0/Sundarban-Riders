@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 let lastStaleCleanupTime = 0;
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
@@ -1622,13 +1625,27 @@ export async function PATCH(request: Request) {
       const initialEstDist = Number(booking.estimated_distance_km) || Number(meta.estimated_distance_km) || Number(meta.initial_distance_km) || distanceKm;
       const initialEstFare = Number(booking.estimated_fare) || Number(meta.estimated_fare) || Number(meta.initial_fare) || calculatedFare;
 
-      // Anti-Inflation Guard: Respect upfront quoted estimated fare unless customer traveled substantially farther
+      // Exact Odometer-Based Dynamic Fare Calculation:
+      // 1. If driver didn't move after pickup (distanceKm < 0.2 km), charge official minimum base fare:
+      //    calculateTotoFare(0, ...) -> Slab 1 (0-10 km) booking charge ₹10 + 1 km min ride charge ₹12 = ₹22 base
+      // 2. If ride finished early / mid-way (distanceKm < initialEstDist * 0.85), dynamically recalculate fare
+      //    for actual distance travelled using official fare chart (calculateTotoFare).
+      // 3. If ride reached intended destination area normally (distanceKm >= initialEstDist * 0.85 && distanceKm <= initialEstDist * 1.25),
+      //    charge initialEstFare (upfront agreed fare).
+      // 4. If customer travelled further (distanceKm > initialEstDist * 1.25), bill actual distance from chart.
       let finalFareToCharge = calculatedFare;
-      if (initialEstFare > 0) {
-        if (initialEstDist <= 0 || distanceKm <= initialEstDist * 1.35) {
+      if (distanceKm < 0.2) {
+        finalFareToCharge = fareResult.totalFare;
+      } else if (initialEstDist > 0 && initialEstFare > 0) {
+        if (distanceKm < initialEstDist * 0.85) {
+          // Mid-trip drop / early termination: strictly bill for actual distance travelled
+          finalFareToCharge = calculatedFare;
+        } else if (distanceKm <= initialEstDist * 1.25) {
+          // Normal destination completion: respect upfront quote
           finalFareToCharge = initialEstFare;
         } else {
-          finalFareToCharge = Math.min(calculatedFare, Math.round(initialEstFare * (distanceKm / initialEstDist)));
+          // Extended trip: bill actual distance from chart
+          finalFareToCharge = calculatedFare;
         }
       }
 
@@ -1645,6 +1662,7 @@ export async function PATCH(request: Request) {
       const cleanHistoryMeta = {
         actual_distance_km: distanceKm,
         calculated_fare: finalFareToCharge,
+        final_fare: finalFareToCharge,
         estimated_distance_km: initialEstDist,
         estimated_fare: initialEstFare,
         fare_breakdown: fareResult,
@@ -1704,7 +1722,9 @@ export async function PATCH(request: Request) {
           pickup: enrichedUpdated.pickup_location,
           drop: enrichedUpdated.drop_location,
           distanceKm: distanceKm,
-          fare: calculatedFare,
+          actual_distance_km: distanceKm,
+          fare: finalFareToCharge,
+          final_fare: finalFareToCharge,
           fareBreakdown: fareResult,
           durationMinutes: durationMinutes,
           passengerName: enrichedUpdated.customer_name,

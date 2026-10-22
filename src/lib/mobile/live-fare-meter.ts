@@ -40,6 +40,8 @@ export class LiveFareMeter {
     }
   }
 
+  private lastAccumPoint: { lat: number; lng: number; ts: number } | null = null;
+
   public setPricingConfig(config: TotoPricingConfig): void {
     this.pricingConfig = config;
   }
@@ -50,29 +52,42 @@ export class LiveFareMeter {
 
   /**
    * Appends a real GPS coordinate reading to the cumulative trip path.
-   * Discards jitter (< 5 meters) and teleport anomalies (> 500 meters per second).
+   * Uses reference-based accumulation (>= 7 meters) to accurately track
+   * slow vehicle speeds (5-20 km/h) while filtering stationary jitter.
    */
   public addGpsReading(lat: number, lng: number): LiveMeterReading {
+    if (!lat || !lng || isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+      return this.getReading();
+    }
+
     const now = Date.now();
 
-    if (this.gpsPath.length > 0) {
-      const prev = this.gpsPath[this.gpsPath.length - 1];
-      const segKm = calculateHaversineKm(prev.lat, prev.lng, lat, lng);
-      const timeDiffHrs = (now - prev.ts) / 3600000;
+    if (!this.lastAccumPoint) {
+      this.lastAccumPoint = { lat, lng, ts: now };
+      this.gpsPath.push({ lat, lng, ts: now });
+      return this.getReading();
+    }
 
-      // Filter: ignore if movement is < 15 meters (GPS station jitter while waiting or stationary)
-      // And ignore drift where speed is below 2.5 km/h or unrealistic jumps (> 120 km/h)
-      if (segKm >= 0.015 && segKm <= 0.6) {
-        if (timeDiffHrs > 0) {
-          const speedKmh = segKm / timeDiffHrs;
-          if (speedKmh >= 2.5 && speedKmh <= 120) {
-            this.totalKm += segKm;
-          }
-        }
+    const d = calculateHaversineKm(this.lastAccumPoint.lat, this.lastAccumPoint.lng, lat, lng);
+    const dtHrs = (now - this.lastAccumPoint.ts) / 3600000;
+
+    // Movement threshold: 7 meters (0.007 km)
+    if (d >= 0.007) {
+      const speedKmh = dtHrs > 0 ? d / dtHrs : 0;
+      // Filter out impossible jumps (> 90 km/h)
+      if (speedKmh <= 90) {
+        this.totalKm += d;
+        this.lastAccumPoint = { lat, lng, ts: now };
+      } else {
+        // Teleport anomaly: advance reference without accumulating fake distance
+        this.lastAccumPoint = { lat, lng, ts: now };
       }
     }
 
     this.gpsPath.push({ lat, lng, ts: now });
+    if (this.gpsPath.length > 500) {
+      this.gpsPath = this.gpsPath.slice(-250);
+    }
     return this.getReading();
   }
 
@@ -88,7 +103,7 @@ export class LiveFareMeter {
 
     // Calculate dynamic fare strictly using pricing configuration
     const fareResult = calculateTotoFare(
-      km > 0 ? km : 1.0,
+      km,
       this.passengerCount,
       this.pricingConfig,
       new Date(this.startTime)
@@ -124,6 +139,7 @@ export class LiveFareMeter {
   public reset(): void {
     this.gpsPath = [];
     this.totalKm = 0;
+    this.lastAccumPoint = null;
     this.startTime = Date.now();
   }
 }

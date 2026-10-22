@@ -181,6 +181,7 @@ export function DriverRadarPanel({
   const lastBackendSyncTimeRef = useRef<number>(0);
   const lastBackendSyncedCoordsRef = useRef<[number, number]>([0, 0]);
   const knownPendingRideIdsRef = useRef<Set<string>>(new Set());
+  const hasInitialPannedRef = useRef<boolean>(Boolean(driverCoords[0] !== 0));
 
   // Robust Toto Marker creation / update helper on map (smooth, zero camera shake)
   const ensureDriverMarker = useCallback(async (coords: [number, number], pan = false) => {
@@ -291,7 +292,13 @@ export function DriverRadarPanel({
         localStorage.setItem("sr_last_known_lng", longitude.toString());
       } catch {}
 
-      // Move marker smoothly WITHOUT shaking the map camera
+      // On first GPS lock or user recenter action, immediately center map to driver's true location
+      if (!hasInitialPannedRef.current && mapInstanceRef.current) {
+        hasInitialPannedRef.current = true;
+        mapInstanceRef.current.setView(newCoords, 16, { animate: false });
+      }
+
+      // Move marker smoothly
       ensureDriverMarker(newCoords, isUserAction);
 
       // Throttled sync to backend (stops database & admin panel flood)
@@ -299,6 +306,13 @@ export function DriverRadarPanel({
     },
     [ensureDriverMarker, throttledSyncDriverPosition]
   );
+
+  // Sync initialCoords prop if passed from parent
+  useEffect(() => {
+    if (initialCoords && initialCoords[0] && initialCoords[0] !== 0 && initialCoords[1] && initialCoords[1] !== 0) {
+      handleIncomingCoords(initialCoords[0], initialCoords[1], false);
+    }
+  }, [initialCoords, handleIncomingCoords]);
 
   // Entities around driver
   const [otherDrivers, setOtherDrivers] = useState<any[]>([]);
@@ -408,11 +422,23 @@ export function DriverRadarPanel({
             }
           }
 
-          // Single clean check with maximumAge: 0 for fresh satellite GPS
+          // Stage 1: Quick fused / cached fix (low latency)
+          try {
+            const quickPos = await Geolocation.getCurrentPosition({
+              enableHighAccuracy: false,
+              timeout: 3000,
+              maximumAge: 15000,
+            });
+            if (quickPos?.coords?.latitude && quickPos?.coords?.longitude) {
+              handleIncomingCoords(quickPos.coords.latitude, quickPos.coords.longitude, userInitiated);
+            }
+          } catch {}
+
+          // Stage 2: Satellite high accuracy
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0,
+            timeout: 8000,
+            maximumAge: 3000,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
@@ -434,6 +460,18 @@ export function DriverRadarPanel({
         return;
       }
 
+      // Stage 1: Fast fused position (returns in ~50ms on mobile browsers)
+      navigator.geolocation.getCurrentPosition(
+        (fastPos) => {
+          if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
+            handleIncomingCoords(fastPos.coords.latitude, fastPos.coords.longitude, userInitiated);
+          }
+        },
+        () => {},
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 15000 }
+      );
+
+      // Stage 2: Precision GPS
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           handleIncomingCoords(pos.coords.latitude, pos.coords.longitude, userInitiated);
@@ -450,7 +488,7 @@ export function DriverRadarPanel({
             handleFail("🛰️ দুর্বল GPS সিগন্যাল। ফোনের লোকেশন অন রাখুন।", false);
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
       );
     },
     [handleIncomingCoords]

@@ -412,7 +412,16 @@ function MobileAppPageContent() {
   const [showSosModal, setShowSosModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [rideStep, setRideStep] = useState<"assigned" | "arriving" | "in_trip" | "arrived">("assigned");
-  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "unaccepted" | "accepted">("idle");
+  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "unaccepted" | "accepted">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_search_status");
+        const bId = localStorage.getItem("sr_active_booking_id");
+        if (saved === "searching" && bId) return "searching";
+      } catch {}
+    }
+    return "idle";
+  });
   const [searchCountdown, setSearchCountdown] = useState(180); // 3 minutes search duration
   const [passengerBooking, setPassengerBooking] = useState<any | null>(() => {
     if (typeof window !== "undefined") {
@@ -846,12 +855,15 @@ function MobileAppPageContent() {
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
 
-    if (searchStatus === "searching" && (activeBookingId || session?.phone)) {
+    const targetBookingId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
+
+    if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
       const checkBookingAcceptance = async () => {
         try {
+          const currentId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
           let b: any = null;
-          if (activeBookingId) {
-            const res = await fetch(`/api/bookings?id=${encodeURIComponent(activeBookingId)}&_t=${Date.now()}`, {
+          if (currentId) {
+            const res = await fetch(`/api/bookings?id=${encodeURIComponent(currentId)}&_t=${Date.now()}`, {
               cache: "no-store",
               headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
             });
@@ -897,7 +909,7 @@ function MobileAppPageContent() {
 
             setPassengerBooking(acceptedPassengerBooking);
             setActiveBookingId(b.id);
-            setRideStep("assigned");
+            setRideStep(b.status === "in_progress" ? "in_trip" : "assigned");
 
             // Stop search countdown immediately!
             setSearchStatus("idle");
@@ -919,12 +931,12 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      // Poll every 500ms — faster than the 1-second countdown tick to prevent false cancels
-      pollInterval = setInterval(checkBookingAcceptance, 500);
+      // Poll every 600ms for instant reactivity
+      pollInterval = setInterval(checkBookingAcceptance, 600);
     }
 
     return () => clearInterval(pollInterval);
-  }, [searchStatus, activeBookingId, session?.phone, pickupCoords, dropCoords, tripFare]);
+  }, [searchStatus, activeBookingId, passengerBooking, session?.phone, pickupCoords, dropCoords, tripFare]);
 
   // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
   useEffect(() => {
@@ -944,6 +956,32 @@ function MobileAppPageContent() {
         const b = data.booking;
         if (!b || !isMounted) {
           return;
+        }
+
+        // Hydrate passengerBooking if it wasn't populated yet
+        if (!passengerBooking && (b.status === "assigned" || b.status === "in_progress" || b.status === "accepted")) {
+          const acceptedBooking = {
+            id: b.id,
+            bookingNumber: b.booking_number,
+            driverName: b.driver_name || "টোটো চালক",
+            driverPhone: b.driver_phone || "",
+            totoNumber: b.driver_unique_id || b.toto_number || "",
+            uniqueId: b.driver_unique_id || b.toto_number || "",
+            startOtp: b.start_otp,
+            pickup: b.pickup_location,
+            drop: b.drop_location,
+            pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
+            dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+            fare: Number(b.estimated_fare || tripFare),
+          };
+          setPassengerBooking(acceptedBooking);
+          setSearchStatus("idle");
+          setSearchCountdown(0);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedBooking));
+            localStorage.setItem("sr_active_booking_id", b.id);
+            localStorage.removeItem("sr_search_status");
+          }
         }
 
         // Keep locations and coordinates synchronized
@@ -1603,11 +1641,11 @@ function MobileAppPageContent() {
 
             const pLat = Number(item.pickup_lat || item.start_coords?.[0]);
             const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
-            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
+            const hasRealDriverGps = coords && coords[0] !== 0;
+            if (hasRealDriverGps && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
               const dKm = calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng);
-              if (dKm > 35.0) {
-                // Out of range: mark so it does not block evaluating subsequent pending bookings
-                alertedBookingIdsRef.current.add(item.id);
+              if (dKm > 60.0) {
+                // Out of range: skip without blacklisting so when driver moves it can be alerted
                 return false;
               }
             }
@@ -1660,9 +1698,9 @@ function MobileAppPageContent() {
         }
       };
 
-      // Check immediately and then every 1.5 seconds for instant real-time alerts
+      // Check immediately and then every 1000ms for instant real-time alerts
       checkPendingBookings();
-      pollInterval = setInterval(checkPendingBookings, incomingRide ? 1000 : 1500);
+      pollInterval = setInterval(checkPendingBookings, 1000);
     }
 
     return () => clearInterval(pollInterval);

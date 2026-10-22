@@ -622,11 +622,11 @@ export function DriverActiveTripMap({
               <p className="text-xs sm:text-sm font-extrabold text-white truncate mt-0.5">
                 {status === "heading_pickup" ? pickup : drop}
               </p>
-              <span className="text-[10px] font-semibold text-slate-300 block truncate mt-0.5">
-                {status === "on_trip"
-                  ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${meterReading.totalKm.toFixed(2)} কিমি • 💰 ₹${meterReading.liveFare}`
-                  : `${routeDistance} কিমি • ~${routeDuration} মিনিট`}
-              </span>
+              {status === "on_trip" && (
+                <span className="text-[10px] font-semibold text-slate-300 block truncate mt-0.5">
+                  ⏱️ {formatDuration(elapsedSeconds)} • 📏 {meterReading.totalKm.toFixed(2)} কিমি • 💰 ₹{meterReading.liveFare}
+                </span>
+              )}
             </div>
           </div>
 

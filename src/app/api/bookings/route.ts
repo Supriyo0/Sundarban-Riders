@@ -83,7 +83,7 @@ async function notifyOnlineDriversViaWhatsApp(
       return true;
     });
 
-    for (const d of nearbyDrivers) {
+    const sendPromises = nearbyDrivers.slice(0, 15).map(async (d) => {
       let recipientPhone = (d.phone || "").replace(/[^0-9]/g, "");
       if (recipientPhone.length === 10) {
         recipientPhone = `91${recipientPhone}`;
@@ -121,7 +121,7 @@ async function notifyOnlineDriversViaWhatsApp(
         estimated_fare: booking.estimated_fare || 35,
       });
 
-      await sendInteractiveButtons({
+      return sendInteractiveButtons({
         phoneNumberId,
         accessToken,
         to: recipientPhone,
@@ -131,7 +131,9 @@ async function notifyOnlineDriversViaWhatsApp(
           { id: `driver_decline_${booking.id}`, title: "❌ প্রত্যাখ্যান" },
         ],
       }).catch((e) => console.warn("[dispatch] Failed WhatsApp send to driver:", d.phone, e));
-    }
+    });
+
+    await Promise.allSettled(sendPromises);
   } catch (err) {
     console.error("[dispatch] Error in notifyOnlineDriversViaWhatsApp:", err);
   }
@@ -211,20 +213,21 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
 
     if (allDrivers && allDrivers.length > 0) {
       const myCleanPhone = (driver.phone || "").replace(/\D/g, "").slice(-10);
-      for (const od of allDrivers) {
-        if (!od.phone) continue;
+      const otherDriverPromises = allDrivers.slice(0, 15).map(async (od) => {
+        if (!od.phone) return;
         const otherClean = od.phone.replace(/\D/g, "").slice(-10);
-        if (driver.id && od.id === driver.id) continue;
-        if (myCleanPhone && otherClean === myCleanPhone) continue;
+        if (driver.id && od.id === driver.id) return;
+        if (myCleanPhone && otherClean === myCleanPhone) return;
 
         const dPhone = formatWhatsAppPhone(od.phone);
-        await sendTextMessage({
+        return sendTextMessage({
           phoneNumberId,
           accessToken,
           to: dPhone,
           text: "ℹ️ বুকিং আপডেট: #" + booking.booking_number + " রাইডটি চালক " + (driver.name || "অন্য একজন চালক") + " গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।",
         }).catch((e) => console.warn("[notifyRideAccepted] Driver WhatsApp send error:", e));
-      }
+      });
+      await Promise.allSettled(otherDriverPromises);
     }
   } catch (err) {
     console.error("[dispatch] Error in notifyRideAccepted:", err);

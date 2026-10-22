@@ -32,11 +32,19 @@ export class LiveFareMeter {
   private pricingConfig: TotoPricingConfig = DEFAULT_TOTO_PRICING;
   private passengerCount: number = 3;
 
-  constructor(passengerCount: number = 3, config: TotoPricingConfig = DEFAULT_TOTO_PRICING, startTime?: Date | string) {
+  constructor(
+    passengerCount: number = 3,
+    config: TotoPricingConfig = DEFAULT_TOTO_PRICING,
+    startTime?: Date | string,
+    initialKm: number = 0
+  ) {
     this.passengerCount = Math.max(3, passengerCount);
     this.pricingConfig = config;
     if (startTime) {
       this.startTime = new Date(startTime).getTime();
+    }
+    if (initialKm && !isNaN(initialKm) && initialKm > 0) {
+      this.totalKm = Math.round(initialKm * 100) / 100;
     }
   }
 

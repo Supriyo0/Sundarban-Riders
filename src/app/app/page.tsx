@@ -114,6 +114,8 @@ interface MobileSession {
   role: "rider" | "passenger";
   driverId?: string;
   driverName?: string;
+  driverPhone?: string;
+  name?: string;
   totoNumber?: string;
   uniqueId?: string;
   isApproved?: boolean;
@@ -514,6 +516,7 @@ function MobileAppPageContent() {
 
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [isGrantingPermissions, setIsGrantingPermissions] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [selectedHistoryTrip, setSelectedHistoryTrip] = useState<any | null>(null);
 
@@ -1801,11 +1804,20 @@ function MobileAppPageContent() {
 
   // Proactively fetch customer & driver real-time GPS location on app load
   useEffect(() => {
-    // Fast Two-Stage GPS fetch with Native Capacitor first
+    // Fast Two-Stage GPS fetch with Native Capacitor first & accuracy protection
     const isNative = Capacitor.isNativePlatform();
+    let bestAccuracy = Infinity;
 
-    const applyLocationFix = (lat: number, lng: number) => {
+    const applyLocationFix = (lat: number, lng: number, accuracy?: number) => {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+      // Filter coarse cell-tower / IP location (> 300m) if better satellite fix already locked
+      if (accuracy !== undefined && accuracy > 300 && bestAccuracy <= 100) {
+        return;
+      }
+      if (accuracy !== undefined && accuracy < bestAccuracy) {
+        bestAccuracy = accuracy;
+      }
+
       setPickupCoords([lat, lng]);
       setDriverLiveCoords([lat, lng]);
       try {
@@ -1826,46 +1838,135 @@ function MobileAppPageContent() {
     };
 
     if (isNative) {
-      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 })
+      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 })
         .then((pos) => {
-          if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude);
+          if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
         })
         .catch(() => {});
     }
 
     if (typeof window !== "undefined" && navigator.geolocation) {
-      // Stage 1: Fast fused / cached position (returns immediately)
+      // Stage 1: Fast fused / cached position (returns quickly)
       navigator.geolocation.getCurrentPosition(
-        (fastPos) => applyLocationFix(fastPos.coords.latitude, fastPos.coords.longitude),
+        (fastPos) => {
+          if (fastPos?.coords) {
+            applyLocationFix(fastPos.coords.latitude, fastPos.coords.longitude, fastPos.coords.accuracy);
+          }
+        },
         () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 120000 }
+        { enableHighAccuracy: false, timeout: 3000, maximumAge: 10000 }
       );
 
       // Stage 2: Satellite high accuracy
       navigator.geolocation.getCurrentPosition(
-        (pos) => applyLocationFix(pos.coords.latitude, pos.coords.longitude),
+        (pos) => {
+          if (pos?.coords) {
+            applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+          }
+        },
         () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
       );
     }
   }, []);
 
-  // Handle Permissions (Native Capacitor single-tap authorization)
+  // Safe phase transition after permission or dismissal
+  const proceedToNextPhase = useCallback(() => {
+    if (role === "rider") {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as MobileSession;
+          if (parsed.role === "rider" && parsed.driverId) {
+            setSession(parsed);
+            if (hasUserAcceptedDisclaimer("rider", parsed.phone)) {
+              setPhase(parsed.isApproved === false ? "kyc_pending" : "rider_home");
+              return;
+            } else {
+              setPhase("disclaimer");
+              return;
+            }
+          }
+        } catch {}
+      }
+      setPhoneInput("");
+      setOtpInput("");
+      setOtpSent(false);
+      setPhase("otp_login");
+    } else {
+      const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+      let hasValidPassenger = false;
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as MobileSession;
+          if (parsed.role === "passenger" && parsed.phone) {
+            setSession(parsed);
+            hasValidPassenger = true;
+          }
+        } catch {}
+      }
+      if (hasValidPassenger) {
+        setPhase("passenger_home");
+      } else {
+        setPhoneInput("");
+        setOtpInput("");
+        setOtpSent(false);
+        setPhase("otp_login");
+      }
+    }
+  }, [role]);
+
+  // Handle Permissions (Native Capacitor single-tap authorization & Web Geolocation)
   const handleGrantPermissions = async () => {
-    localStorage.setItem("sr_permissions_granted", "true");
+    if (isGrantingPermissions) return;
+    setIsGrantingPermissions(true);
+    try {
+      localStorage.setItem("sr_permissions_granted", "true");
+    } catch {}
     setPermissionsGranted(true);
 
     const isNative = Capacitor.isNativePlatform();
-    if (isNative) {
-      try {
-        const perm = await Geolocation.requestPermissions();
-        if (perm.location === "granted") {
-          const pos = await Geolocation.getCurrentPosition({
-            enableHighAccuracy: true,
-            timeout: 8000,
-            maximumAge: 10000,
-          });
-          if (pos?.coords) {
+    // Safety race: never block navigation for more than 2.5 seconds regardless of hardware latency
+    const safetyTimeout = new Promise((resolve) => setTimeout(resolve, 2500));
+
+    try {
+      if (isNative) {
+        const nativeReq = async () => {
+          try {
+            const perm = await Geolocation.requestPermissions();
+            if (perm.location === "granted") {
+              const pos = await Geolocation.getCurrentPosition({
+                enableHighAccuracy: true,
+                timeout: 3000,
+                maximumAge: 10000,
+              });
+              if (pos?.coords) {
+                const { latitude, longitude } = pos.coords;
+                setPickupCoords([latitude, longitude]);
+                setDriverLiveCoords([latitude, longitude]);
+                try {
+                  localStorage.setItem("sr_last_known_lat", latitude.toString());
+                  localStorage.setItem("sr_last_known_lng", longitude.toString());
+                } catch {}
+                fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+                  .then((r) => r.json())
+                  .then((d) => {
+                    if (d?.name) {
+                      setPickupText(d.name);
+                      try { localStorage.setItem("sr_last_known_name", d.name); } catch {}
+                    }
+                  })
+                  .catch(() => {});
+              }
+            }
+          } catch (err) {
+            console.warn("Native GPS permission error:", err);
+          }
+        };
+        await Promise.race([nativeReq(), safetyTimeout]);
+      } else if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
             const { latitude, longitude } = pos.coords;
             setPickupCoords([latitude, longitude]);
             setDriverLiveCoords([latitude, longitude]);
@@ -1876,74 +1977,24 @@ function MobileAppPageContent() {
             fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
               .then((r) => r.json())
               .then((d) => {
-                if (d && d.name) {
+                if (d?.name) {
                   setPickupText(d.name);
-                  try {
-                    localStorage.setItem("sr_last_known_name", d.name);
-                  } catch {}
+                  try { localStorage.setItem("sr_last_known_name", d.name); } catch {}
                 }
               })
               .catch(() => {});
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn("Native GPS permission error:", err);
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 3000, maximumAge: 10000 }
+        );
       }
-    }
-
-    // Explicitly prompt browser geolocation on user gesture
-    if (typeof navigator !== "undefined" && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setPickupCoords([latitude, longitude]);
-          setDriverLiveCoords([latitude, longitude]);
-          try {
-            localStorage.setItem("sr_last_known_lat", latitude.toString());
-            localStorage.setItem("sr_last_known_lng", longitude.toString());
-          } catch {}
-          fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-            .then((r) => r.json())
-            .then((d) => {
-              if (d && d.name) {
-                setPickupText(d.name);
-                try {
-                  localStorage.setItem("sr_last_known_name", d.name);
-                } catch {}
-              }
-            })
-            .catch(() => {});
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-      );
-    }
-
-    playSuccessSound();
-    toast.success("সকল অনুমতি সফলভাবে প্রদান করা হয়েছে!");
-    if (role === "rider") {
-      setPhase("otp_login");
-    } else {
-      const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
-      let hasPhone = false;
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved) as MobileSession;
-          if (parsed.role === "passenger" && parsed.phone) {
-            setSession(parsed);
-            hasPhone = true;
-          }
-        } catch {}
-      }
-      if (hasPhone) {
-        setPhase("passenger_home");
-      } else {
-        setPhoneInput("");
-        setOtpInput("");
-        setOtpSent(false);
-        setPhase("otp_login");
-      }
+    } catch (e) {
+      console.warn("Permissions grant error:", e);
+    } finally {
+      playSuccessSound();
+      toast.success("সকল অনুমতি সফলভাবে প্রদান করা হয়েছে!");
+      setIsGrantingPermissions(false);
+      proceedToNextPhase();
     }
   };
 
@@ -2482,21 +2533,30 @@ function MobileAppPageContent() {
             <div className="space-y-2 pt-2">
               <Button
                 size="lg"
-                className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-95 transition-all cursor-pointer"
+                disabled={isGrantingPermissions}
+                className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 disabled:opacity-80 text-white font-black text-sm shadow-md active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
                 onClick={handleGrantPermissions}
               >
-                সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →
+                {isGrantingPermissions ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>অনুমতি যাচাই হচ্ছে...</span>
+                  </>
+                ) : (
+                  <span>সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →</span>
+                )}
               </Button>
 
               <Button
                 variant="ghost"
+                disabled={isGrantingPermissions}
                 className="w-full h-10 rounded-xl text-slate-500 hover:text-slate-700 text-xs font-semibold cursor-pointer"
                 onClick={() => {
                   try {
                     localStorage.setItem("sr_permissions_granted", "declined");
                   } catch {}
                   setPermissionsGranted(false);
-                  setPhase("otp_login");
+                  proceedToNextPhase();
                 }}
               >
                 এখন নয় (Not Now)
@@ -3324,16 +3384,21 @@ function MobileAppPageContent() {
                 toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
 
                 try {
+                  const effectivePhone = session?.phone || session?.driverPhone || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").phone : "") || "";
+                  const effectiveName = session?.driverName || session?.name || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverName : "") || "সুন্দরবন চালক";
+                  const effectiveDriverId = session?.driverId || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverId : "") || "";
+                  const effectiveToto = session?.totoNumber || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").totoNumber : "") || "WB-96-T-8421";
+
                   const res = await fetch("/api/bookings", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                       action: "accept",
                       bookingId: b.id || b.booking_number,
-                      driverId: session?.driverId || "",
-                      driverName: session?.driverName || "সুন্দরবন চালক",
-                      driverPhone: session?.phone || "9593177885",
-                      totoNumber: session?.totoNumber || "WB-96-T-8421",
+                      driverId: effectiveDriverId,
+                      driverName: effectiveName,
+                      driverPhone: effectivePhone,
+                      totoNumber: effectiveToto,
                     }),
                   });
                   const data = await res.json();
@@ -3583,16 +3648,21 @@ function MobileAppPageContent() {
 
                     // 2. Sync to server in the background
                     try {
+                      const effectivePhone = session?.phone || session?.driverPhone || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").phone : "") || "";
+                      const effectiveName = session?.driverName || session?.name || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverName : "") || "সুন্দরবন চালক";
+                      const effectiveDriverId = session?.driverId || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverId : "") || "";
+                      const effectiveToto = session?.totoNumber || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").totoNumber : "") || "WB-96-T-8421";
+
                       const res = await fetch("/api/bookings", {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           action: "accept",
                           bookingId: rideToAccept.id || rideToAccept.bookingNumber,
-                          driverId: session?.driverId || "",
-                          driverName: session?.driverName || "সুন্দরবন চালক",
-                          driverPhone: session?.phone || "9593177885",
-                          totoNumber: session?.totoNumber || "WB-96-T-8421",
+                          driverId: effectiveDriverId,
+                          driverName: effectiveName,
+                          driverPhone: effectivePhone,
+                          totoNumber: effectiveToto,
                         }),
                       });
                       const data = await res.json();

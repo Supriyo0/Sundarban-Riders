@@ -307,16 +307,26 @@ export function DriverActiveTripMap({
 
   const navUrl = getNavUrl(targetCoords);
 
-  // Live Fare Meter — feed GPS into meter when on_trip
+  // Live Fare Meter — feed GPS into meter when on_trip with persistence against reload/sleep
   useEffect(() => {
     if (status === "on_trip") {
       if (!meterRef.current) {
-        meterRef.current = new LiveFareMeter(passengerCount, pricingConfig, tripStartTime);
+        let initialKm = 0;
+        if (bookingId && typeof window !== "undefined") {
+          try {
+            const saved = localStorage.getItem(`sr_odometer_${bookingId}`);
+            if (saved) {
+              const parsed = parseFloat(saved);
+              if (!isNaN(parsed) && parsed > 0) initialKm = parsed;
+            }
+          } catch {}
+        }
+        meterRef.current = new LiveFareMeter(passengerCount, pricingConfig, tripStartTime, initialKm);
       }
     } else {
       meterRef.current = null;
     }
-  }, [status, passengerCount, pricingConfig, tripStartTime]);
+  }, [status, passengerCount, pricingConfig, tripStartTime, bookingId]);
 
   useEffect(() => {
     if (status === "on_trip" && meterRef.current && activeDriverCoords?.[0]) {
@@ -325,6 +335,12 @@ export function DriverActiveTripMap({
       onOdometerUpdate?.(reading);
 
       if (bookingId && reading.totalKm > 0) {
+        try {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`sr_odometer_${bookingId}`, reading.totalKm.toString());
+          }
+        } catch {}
+
         const now = Date.now();
         const kmDiff = Math.abs(reading.totalKm - lastSyncRef.current.km);
         if (now - lastSyncRef.current.ts >= 3500 || kmDiff >= 0.02) {

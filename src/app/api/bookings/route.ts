@@ -1036,6 +1036,7 @@ export async function GET(request: Request) {
 
     const enriched = (data || []).map(enrichBookingCoords);
     const now = Date.now();
+    const hasRealDriverGps = Boolean(dLat !== null && !isNaN(dLat) && dLat !== 0 && dLng !== null && !isNaN(dLng) && dLng !== 0);
     const valid = enriched.filter((b) => {
       if (b.status !== "pending") return false;
       if (b.driver_id) return false;
@@ -1045,14 +1046,12 @@ export async function GET(request: Request) {
       // Extract pickup coordinates
       const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
       const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-      if (!pLat || !pLng || isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) {
-        return false; // Cannot dispatch ride with unverified coordinates
-      }
 
-      // Calculate distance from driver to passenger pickup
-      const distKm = calculateDistanceKm(effectiveDLat, effectiveDLng, pLat, pLng);
-      // Enforce reasonable dispatch radius (up to 8.0 km)
-      if (distKm > 8.0) return false;
+      // If driver has real GPS and passenger has valid coordinates, apply regional 60km dispatch radius
+      if (hasRealDriverGps && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
+        const distKm = calculateDistanceKm(effectiveDLat, effectiveDLng, pLat, pLng);
+        if (distKm > 60.0) return false;
+      }
 
       return true;
     });
@@ -1319,12 +1318,15 @@ export async function PATCH(request: Request) {
         }
       }
 
-      // Safe fallback: Query any driver in drivers table so foreign key constraint NEVER fails
+      // Strict driver identity check: Never assign to random driver or test driver
       if (!validDriverId) {
-        const { data: anyDriver } = await admin.from("drivers").select("id").limit(1).maybeSingle();
-        if (anyDriver?.id) {
-          validDriverId = anyDriver.id;
-        }
+        return NextResponse.json(
+          {
+            error: "driver_unauthorized",
+            message: "চালক সনাক্ত করা যায়নি। অনুগ্রহ করে লগইন করে পুনরায় চেষ্টা করুন।",
+          },
+          { status: 401 }
+        );
       }
 
       // 1. IDEMPOTENT RE-ACCEPT CHECK:

@@ -412,12 +412,12 @@ export function InteractiveBookingMap({
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
 
-  // Safety auto-unlock: guarantees user is never stuck on loading screen
+  // Safety auto-unlock: guarantees user is never stuck on loading screen if network fails
   useEffect(() => {
     if (!isCalculatingRoute) return;
     const timer = setTimeout(() => {
       setIsCalculatingRoute(false);
-    }, 3500);
+    }, 9500);
     return () => clearTimeout(timer);
   }, [isCalculatingRoute]);
   // True when user is typing a custom pickup — GPS watcher must NOT override it
@@ -777,13 +777,6 @@ export function InteractiveBookingMap({
 
           pMarker.on("drag", (e: any) => {
             const newPos = e.target.getLatLng();
-            const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
-            const d = dropCoordsRef.current;
-            if (d[0] !== 0) {
-              const directD = calculateDistanceKm(newPosCoords[0], newPosCoords[1], d[0], d[1]);
-              const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
-              setDistanceKm(estDist);
-            }
             // Keep green/black line physically attached to pickup pin during drag
             if (routeLineRef.current && routeLineBorderRef.current) {
               const currentLatLngs = routeLineRef.current.getLatLngs();
@@ -832,13 +825,6 @@ export function InteractiveBookingMap({
 
           dMarker.on("drag", (e: any) => {
             const newPos = e.target.getLatLng();
-            const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
-            const p = pickupCoordsRef.current;
-            if (p[0] !== 0) {
-              const directD = calculateDistanceKm(p[0], p[1], newPosCoords[0], newPosCoords[1]);
-              const estDist = Math.max(1.0, Math.round(directD * 1.35 * 10) / 10);
-              setDistanceKm(estDist);
-            }
             // Keep green/black line physically attached to red drop pin during drag
             if (routeLineRef.current && routeLineBorderRef.current) {
               const currentLatLngs = routeLineRef.current.getLatLngs();
@@ -880,10 +866,8 @@ export function InteractiveBookingMap({
         const directDist = calculateDistanceKm(pCoords[0], pCoords[1], dCoords[0], dCoords[1]);
         const baselineDist = Math.max(1.0, Math.round(directDist * 1.38 * 10) / 10);
         const baselineDuration = Math.max(3, Math.round(baselineDist * 2.8));
-        const initialFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
 
-        setDistanceKm(baselineDist);
-        setRoadDurationMin(baselineDuration);
+        // Keep calculating route active so UI shows clean loading spinner until true road distance resolves
         setIsCalculatingRoute(true);
 
         // Uber Padded Camera Animation
@@ -1035,8 +1019,22 @@ export function InteractiveBookingMap({
               // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
-            // Keep straight connecting route line visible even if road api fails
+            // Fallback connecting route line if road api fails
             applyRouteGeometry([pCoords, dCoords]);
+            setDistanceKm(baselineDist);
+            setRoadDurationMin(baselineDuration);
+            const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
+            onRouteSelectedRef.current?.({
+              pickup: pText || "Current Location",
+              drop: dText || "Drop Location",
+              distanceKm: baselineDist,
+              estimatedFare: fallbackFare.totalFare,
+              rideTier: "standard",
+              pickupCoords: pCoords,
+              dropCoords: dCoords,
+              paymentMode: "cash",
+              passengerCount,
+            });
           } finally {
             setIsCalculatingRoute(false);
           }

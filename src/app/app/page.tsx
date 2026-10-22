@@ -493,6 +493,8 @@ function MobileAppPageContent() {
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const alertedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
+  const lastAlertedTimeRef = useRef<Map<string, number>>(new Map());
+  const lastOnlineToggleTimeRef = useRef<number>(0);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(() => {
     if (typeof window !== "undefined") {
       const latStr = localStorage.getItem("sr_last_known_lat");
@@ -743,6 +745,38 @@ function MobileAppPageContent() {
     }
   }, [dropText, pickupText, pickupCoords, dropCoords, tripFare, tripDistance, passengerCount, selectedTier, session, isCustomerBlocked, customerStrikes]);
 
+  // Instant 0ms Cancellation for Active Booking Search
+  const handleInstantCancelSearch = useCallback(() => {
+    const bId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
+
+    // 1. Instant 0ms UI Dismissal
+    setSearchStatus("idle");
+    setSearchCountdown(0);
+    setActiveBookingId(null);
+    setShowCancelModal(false);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("sr_active_booking_id");
+        localStorage.removeItem("sr_search_status");
+        localStorage.removeItem("sr_passenger_booking");
+      } catch {}
+    }
+    toast.info("রাইড রিকোয়েস্ট বাতিল করা হয়েছে");
+
+    // 2. Fire cancellation PATCH in background
+    if (bId) {
+      fetch("/api/bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "cancel",
+          bookingId: bId,
+          cancelReason: "যাত্রী খোঁজার সময় রিকোয়েস্ট বাতিল করেছেন",
+        }),
+      }).catch(() => {});
+    }
+  }, [activeBookingId]);
+
   // Memoized route handler to eliminate parent re-render loops
   const handleRouteSelected = useCallback((route: any) => {
     if (route.pickup) setPickupText(route.pickup);
@@ -773,13 +807,26 @@ function MobileAppPageContent() {
       return;
     }
     if (searchStatus === "searching") {
-      if (searchCountdown > 0) {
+      if (searchCountdown > 1) {
         timer = setTimeout(() => {
           setSearchCountdown((prev) => prev - 1);
         }, 1000);
       } else {
-        // Countdown reached 0: verify whether driver just accepted before cancelling
+        // Countdown reached 0 (time is up):
+        // Immediately dismiss the searching popup! No hanging at 00:00!
         const expiredBookingId = activeBookingId;
+        setSearchStatus("idle");
+        setSearchCountdown(0);
+        setActiveBookingId(null);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("sr_active_booking_id");
+          localStorage.removeItem("sr_search_status");
+        }
+        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রিকোয়েস্টটি বাতিল করা হয়েছে।", {
+          duration: 5000,
+        });
+
+        // Background check: verify whether driver just accepted before final system timeout
         if (expiredBookingId) {
           fetch(`/api/bookings?id=${expiredBookingId}&_t=${Date.now()}`, {
             cache: "no-store",
@@ -789,7 +836,7 @@ function MobileAppPageContent() {
             .then((resData) => {
               const b = resData?.booking;
               if (b && (b.status === "assigned" || b.status === "in_progress" || b.status === "accepted")) {
-                // Driver accepted! Do NOT cancel — transition to ride tracking
+                // Driver accepted right at buzzer! Transition to ride tracking
                 const acceptedBooking = {
                   id: b.id,
                   bookingNumber: b.booking_number,
@@ -807,19 +854,17 @@ function MobileAppPageContent() {
                 setPassengerBooking(acceptedBooking);
                 setActiveBookingId(b.id);
                 setRideStep("assigned");
-                setSearchStatus("idle");
-                setSearchCountdown(0);
                 if (typeof window !== "undefined") {
                   localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedBooking));
                   localStorage.setItem("sr_active_booking_id", b.id);
-                  localStorage.removeItem("sr_search_status");
                 }
                 setPhase("passenger_home");
                 playSuccessSound();
+                toast.success("একজন চালক আপনার রাইড গ্রহণ করেছেন!");
                 return;
               }
 
-              // Genuinely expired without any accept — cancel
+              // Genuinely expired without any accept — cancel on server
               fetch("/api/bookings", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -830,21 +875,8 @@ function MobileAppPageContent() {
                   isSystemTimeout: true,
                 }),
               }).catch(() => {});
-
-              setSearchStatus("unaccepted");
-              setActiveBookingId(null);
-              if (typeof window !== "undefined") {
-                localStorage.removeItem("sr_active_booking_id");
-                localStorage.removeItem("sr_search_status");
-              }
-              toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
             })
-            .catch(() => {
-              setSearchStatus("unaccepted");
-              setActiveBookingId(null);
-            });
-        } else {
-          setSearchStatus("unaccepted");
+            .catch(() => {});
         }
       }
     }
@@ -1492,10 +1524,8 @@ function MobileAppPageContent() {
           if (prev <= 1) {
             clearInterval(interval);
             clearInterval(soundInterval);
-            if (incomingRide?.id) {
-              alertedBookingIdsRef.current.add(incomingRide.id);
-              // Do NOT permanently decline! Keep available in bottom slider drawer so driver can still accept
-            }
+            // 30 seconds finished: stop loud alarm and dismiss modal so it doesn't block screen,
+            // but do NOT permanently blacklist the ride so driver can still see and accept it!
             setIncomingRide(null);
             toast.info("রাইড অনুরোধটি নিচের স্লাইডারে উপলব্ধ রয়েছে। আপনি চাইলে গ্রহণ করতে পারেন।");
             return 30;
@@ -1562,8 +1592,10 @@ function MobileAppPageContent() {
         const data = await res.json();
         const d = data.driver || (data.drivers && data.drivers[0]);
         if (d && typeof d.is_active === "boolean") {
-          // Driver online toggle is determined by is_active; driver is never falsely forced offline
-          setIsOnline(Boolean(d.is_active));
+          // Do not override if driver manually toggled online/offline within last 12 seconds
+          if (Date.now() - lastOnlineToggleTimeRef.current > 12000) {
+            setIsOnline(Boolean(d.is_active));
+          }
         }
       } catch {}
     };
@@ -1634,10 +1666,13 @@ function MobileAppPageContent() {
             : data.booking
             ? [data.booking]
             : [];
+          const nowMs = Date.now();
           const b = pendingList.find((item: any) => {
             if (!item || item.status !== "pending" || item.driver_id) return false;
             if (declinedBookingIdsRef.current.has(item.id)) return false;
-            if (alertedBookingIdsRef.current.has(item.id)) return false;
+            // Cooldown of 20 seconds before re-alerting modal so we don't spam continuously
+            const lastAlerted = lastAlertedTimeRef.current.get(item.id) || 0;
+            if (nowMs - lastAlerted < 20000) return false;
 
             const pLat = Number(item.pickup_lat || item.start_coords?.[0]);
             const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
@@ -1653,7 +1688,7 @@ function MobileAppPageContent() {
           });
 
           if (b) {
-            alertedBookingIdsRef.current.add(b.id);
+            lastAlertedTimeRef.current.set(b.id, nowMs);
 
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
@@ -1701,6 +1736,21 @@ function MobileAppPageContent() {
       // Check immediately and then every 1000ms for instant real-time alerts
       checkPendingBookings();
       pollInterval = setInterval(checkPendingBookings, 1000);
+
+      // Instantly trigger check when driver returns to tab or turns screen on
+      const handleTabFocus = () => {
+        if (typeof document !== "undefined" && document.visibilityState === "visible") {
+          checkPendingBookings();
+        }
+      };
+      window.addEventListener("focus", handleTabFocus);
+      document.addEventListener("visibilitychange", handleTabFocus);
+
+      return () => {
+        clearInterval(pollInterval);
+        window.removeEventListener("focus", handleTabFocus);
+        document.removeEventListener("visibilitychange", handleTabFocus);
+      };
     }
 
     return () => clearInterval(pollInterval);
@@ -3135,6 +3185,7 @@ function MobileAppPageContent() {
   // -------------------------------------------------------------
   if (phase === "rider_home") {
     const handleToggleOnline = async (nextOnline: boolean) => {
+      lastOnlineToggleTimeRef.current = Date.now();
       setIsOnline(nextOnline);
       if (!isSoundMuted) playSuccessSound();
       toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
@@ -4303,14 +4354,14 @@ function MobileAppPageContent() {
                     </div>
                   </div>
 
-                  {/* Cancel Button */}
+                  {/* Instant Cancel Button */}
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full h-11 rounded-2xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer"
-                    onClick={() => setShowCancelModal(true)}
+                    className="w-full h-11 rounded-2xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer active:scale-95 transition-transform"
+                    onClick={handleInstantCancelSearch}
                   >
-                    ❌ রিকোয়েস্ট বাতিল করুন
+                    ❌ রাইড রিকোয়েস্ট বাতিল করুন
                   </Button>
                 </div>
               ) : (
@@ -4518,39 +4569,16 @@ function MobileAppPageContent() {
                 <button
                   key={idx}
                   type="button"
-                  onClick={async () => {
+                  onClick={() => {
                     const bId = activeBookingId || passengerBooking?.id;
-                    let newCancels = customerStrikes + 1;
-                    let isBlocked = newCancels >= 3;
+                    const estimatedCancels = customerStrikes + 1;
+                    const willBlock = estimatedCancels >= 3;
 
-                    if (bId) {
-                      try {
-                        const apiUrl = "/api/bookings";
-                        const res = await fetch(apiUrl, {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "cancel",
-                            bookingId: bId,
-                            cancelReason: reason,
-                          }),
-                        });
-                        const resData = await res.json();
-                        if (resData.cancellation_count !== undefined) {
-                          newCancels = resData.cancellation_count;
-                        }
-                        if (resData.is_blocked !== undefined) {
-                          isBlocked = Boolean(resData.is_blocked || newCancels >= 3);
-                        }
-                      } catch {}
-                    }
-
-                    setCustomerStrikes(newCancels);
-                    setIsCustomerBlocked(isBlocked);
+                    // 1. OPTIMISTIC 0ms INSTANT UI DISMISSAL: Close modal and reset state immediately
+                    setShowCancelModal(false);
                     setSearchStatus("idle");
                     setPassengerBooking(null);
                     setActiveBookingId(null);
-                    setShowCancelModal(false);
                     setPhase("passenger_home");
 
                     if (typeof window !== "undefined") {
@@ -4562,16 +4590,39 @@ function MobileAppPageContent() {
                       } catch {}
                     }
 
-                    if (isBlocked) {
+                    if (willBlock) {
                       toast.error(
-                        `🚫 সতর্কবার্তা: ৩ বার বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে! (বাতিল: ${newCancels}/3)`,
+                        `🚫 সতর্কবার্তা: ৩ বার বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে! (বাতিল: ${estimatedCancels}/3)`,
                         { duration: 6000 }
                       );
                     } else {
                       toast.warning(
-                        `⚠️ রাইড বাতিল করা হয়েছে (${reason})। বর্তমান স্ট্রাইক: ${newCancels}/3 (৩ বার বাতিল হলে অ্যাকাউন্ট স্থগিত হবে)।`,
+                        `⚠️ রাইড বাতিল করা হয়েছে (${reason})। বর্তমান স্ট্রাইক: ${estimatedCancels}/3 (৩ বার বাতিল হলে অ্যাকাউন্ট স্থগিত হবে)।`,
                         { duration: 5000 }
                       );
+                    }
+
+                    // 2. Perform server cancellation in background
+                    if (bId) {
+                      fetch("/api/bookings", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "cancel",
+                          bookingId: bId,
+                          cancelReason: reason,
+                        }),
+                      })
+                        .then((res) => res.json())
+                        .then((resData) => {
+                          if (resData?.cancellation_count !== undefined) {
+                            setCustomerStrikes(resData.cancellation_count);
+                          }
+                          if (resData?.is_blocked !== undefined) {
+                            setIsCustomerBlocked(Boolean(resData.is_blocked));
+                          }
+                        })
+                        .catch(() => {});
                     }
                   }}
                   className="w-full p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50 text-left text-xs font-semibold text-slate-800 transition-colors"

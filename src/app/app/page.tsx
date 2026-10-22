@@ -1706,8 +1706,8 @@ function MobileAppPageContent() {
             const hasRealDriverGps = coords && coords[0] !== 0;
             if (hasRealDriverGps && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
               const dKm = calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng);
-              if (dKm > 60.0) {
-                // Out of range: skip without blacklisting so when driver moves it can be alerted
+              if (dKm > 5.0) {
+                // Out of 5.0 km range: strictly skip
                 return false;
               }
             }

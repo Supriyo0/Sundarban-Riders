@@ -680,7 +680,7 @@ export function DriverRadarPanel({
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
               const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
-              if (dKm > 60.0) return false;
+              if (dKm > 5.0) return false;
             }
           }
           return true;

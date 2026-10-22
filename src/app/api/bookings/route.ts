@@ -80,7 +80,7 @@ async function notifyOnlineDriversViaWhatsApp(
       }
       if (pLat && pLng && dLat && dLng) {
         const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-        return dKm <= 35.0;
+        return dKm <= 5.0; // Strictly within 5.0 km radius
       }
       // If driver is online/active, still notify even if exact GPS is resolving
       return true;
@@ -731,10 +731,33 @@ export async function GET(request: Request) {
         .eq("status", "pending")
         .gte("created_at", fiveMinutesAgo)
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
-      const enriched = (data || []).map(enrichBookingCoords);
+      let enriched = (data || []).map(enrichBookingCoords);
+
+      const dLatStr = searchParams.get("driver_lat") || searchParams.get("lat");
+      const dLngStr = searchParams.get("driver_lng") || searchParams.get("lng");
+      const dLat = dLatStr ? parseFloat(dLatStr) : null;
+      const dLng = dLngStr ? parseFloat(dLngStr) : null;
+
+      if (dLat !== null && !isNaN(dLat) && dLat !== 0 && dLng !== null && !isNaN(dLng) && dLng !== 0) {
+        enriched = enriched
+          .map((b) => {
+            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+            const distKm = (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0)
+              ? calculateDistanceKm(dLat, dLng, pLat, pLng)
+              : 0.05;
+            return {
+              ...b,
+              driver_distance_km: distKm,
+            };
+          })
+          .filter((b) => b.driver_distance_km <= 5.0)
+          .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
+      }
+
       return NextResponse.json({
         bookings: enriched,
         booking: enriched[0] || null,
@@ -1050,7 +1073,7 @@ export async function GET(request: Request) {
       // If driver has real GPS and passenger has valid coordinates, apply regional 60km dispatch radius
       if (hasRealDriverGps && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
         const distKm = calculateDistanceKm(effectiveDLat, effectiveDLng, pLat, pLng);
-        if (distKm > 60.0) return false;
+        if (distKm > 5.0) return false; // Strictly within 5.0 km radius
       }
 
       return true;

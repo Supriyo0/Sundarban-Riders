@@ -2114,6 +2114,12 @@ function MobileAppPageContent() {
         <OnboardingCarousel
           onSelectRole={(selectedRole) => {
             setRole(selectedRole);
+            const hasPermissions = typeof window !== "undefined" && localStorage.getItem("sr_permissions_granted") === "true";
+            if (!hasPermissions) {
+              setPhase("permissions");
+              return;
+            }
+
             if (selectedRole === "rider") {
               const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
               if (saved) {
@@ -2238,13 +2244,29 @@ function MobileAppPageContent() {
               </div>
             </div>
 
-            <Button
-              size="lg"
-              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-95 transition-all mt-4 cursor-pointer"
-              onClick={handleGrantPermissions}
-            >
-              সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →
-            </Button>
+            <div className="space-y-2 pt-2">
+              <Button
+                size="lg"
+                className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md active:scale-95 transition-all cursor-pointer"
+                onClick={handleGrantPermissions}
+              >
+                সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →
+              </Button>
+
+              <Button
+                variant="ghost"
+                className="w-full h-10 rounded-xl text-slate-500 hover:text-slate-700 text-xs font-semibold cursor-pointer"
+                onClick={() => {
+                  try {
+                    localStorage.setItem("sr_permissions_granted", "declined");
+                  } catch {}
+                  setPermissionsGranted(false);
+                  setPhase("otp_login");
+                }}
+              >
+                এখন নয় (Not Now)
+              </Button>
+            </div>
           </div>
         </div>
       </MobileAppShell>

@@ -24,9 +24,16 @@ export function AppSplashScreen({
     let detectedLocation: [number, number] | null = null;
     const startTime = Date.now();
 
-    // 1. Proactively acquire pure hardware satellite GPS during splash screen
+    // 1. Proactively acquire pure hardware satellite GPS during splash screen ONLY if permissions were already granted
     const acquirePureGps = async () => {
       try {
+        if (typeof window === "undefined") return;
+        const hasGranted = localStorage.getItem("sr_permissions_granted") === "true";
+        if (!hasGranted) {
+          // Do not prompt the user before they have seen and accepted the Prominent Disclosure
+          return;
+        }
+
         const isNative = Capacitor.isNativePlatform();
         if (isNative) {
           try {
@@ -37,47 +44,49 @@ export function AppSplashScreen({
                 timeout: 9000,
                 maximumAge: 0,
               });
-                if (pos?.coords?.latitude && pos?.coords?.longitude) {
+              if (pos?.coords?.latitude && pos?.coords?.longitude) {
+                const acc = pos.coords.accuracy || 10;
+                if (acc <= 1500) {
+                  detectedLocation = [pos.coords.latitude, pos.coords.longitude];
+                  try {
+                    localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
+                    localStorage.setItem("sr_last_known_lng", pos.coords.longitude.toString());
+                  } catch {}
+                  if (!isCancelled) {
+                    setLocationFound(true);
+                    setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
+                    setProgress(92);
+                  }
+                  return;
+                }
+              }
+            }
+          } catch {}
+        } else if (navigator.geolocation && (navigator as any).permissions?.query) {
+          // Web fallback: only if browser permission is already 'granted', never trigger prompt
+          try {
+            const p = await (navigator as any).permissions.query({ name: "geolocation" });
+            if (p.state === "granted") {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  if (isCancelled) return;
                   const acc = pos.coords.accuracy || 10;
-                  // Reject coarse cellular tower guesses (>1500m)
                   if (acc <= 1500) {
                     detectedLocation = [pos.coords.latitude, pos.coords.longitude];
                     try {
                       localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
                       localStorage.setItem("sr_last_known_lng", pos.coords.longitude.toString());
                     } catch {}
-                    if (!isCancelled) {
-                      setLocationFound(true);
-                      setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
-                      setProgress(92);
-                    }
-                    return;
+                    setLocationFound(true);
+                    setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
+                    setProgress(92);
                   }
-                }
-              }
-            } catch {}
-          }
-
-        // Web fallback high-accuracy GPS
-        if (typeof window !== "undefined" && navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (isCancelled) return;
-              const acc = pos.coords.accuracy || 10;
-              if (acc <= 1500) {
-                detectedLocation = [pos.coords.latitude, pos.coords.longitude];
-                try {
-                  localStorage.setItem("sr_last_known_lat", pos.coords.latitude.toString());
-                  localStorage.setItem("sr_last_known_lng", pos.coords.longitude.toString());
-                } catch {}
-                setLocationFound(true);
-                setStatusMessage("✓ আপনার সঠিক লাইভ অবস্থান লক হয়েছে!");
-                setProgress(92);
-              }
-            },
-            () => {},
-            { enableHighAccuracy: true, timeout: 9000, maximumAge: 0 }
-          );
+                },
+                () => {},
+                { enableHighAccuracy: true, timeout: 9000, maximumAge: 0 }
+              );
+            }
+          } catch {}
         }
       } catch {}
     };

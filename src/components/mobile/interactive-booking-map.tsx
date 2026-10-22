@@ -1359,14 +1359,19 @@ export function InteractiveBookingMap({
             (perm as any).state === "granted";
 
           if (!hasLocationPerm) {
+            if (!userInitiated) {
+              setIsLocatingInitialLock(false);
+              isLocatingRef.current = false;
+              setIsLocating(false);
+              return;
+            }
             const req = await Geolocation.requestPermissions();
             const reqGranted =
               req.location === "granted" ||
               (req as any).coarseLocation === "granted" ||
               (req as any).state === "granted";
             if (!reqGranted) {
-              if (userInitiated) handleFail(undefined, true);
-              else setIsLocatingInitialLock(false);
+              handleFail(undefined, true);
               return;
             }
           }
@@ -1394,6 +1399,19 @@ export function InteractiveBookingMap({
       if (typeof window === "undefined" || !navigator.geolocation) {
         handleFail("⚠️ Geolocation service is not supported on this browser.");
         return;
+      }
+
+      // If passive/auto-check on web, only query if browser permission is already granted
+      if (!userInitiated && (navigator as any).permissions?.query) {
+        try {
+          const permStatus = await (navigator as any).permissions.query({ name: "geolocation" });
+          if (permStatus.state !== "granted") {
+            setIsLocatingInitialLock(false);
+            isLocatingRef.current = false;
+            setIsLocating(false);
+            return;
+          }
+        } catch {}
       }
 
       navigator.geolocation.getCurrentPosition(

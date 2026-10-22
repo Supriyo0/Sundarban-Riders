@@ -91,10 +91,7 @@ const NearbyRidersRadarMap = dynamic(
   { ssr: false }
 );
 
-const LiveRideTrackingMap = dynamic(
-  () => import("@/components/mobile/live-ride-tracking-map").then((mod) => mod.LiveRideTrackingMap),
-  { ssr: false }
-);
+import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
 
 import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
@@ -588,48 +585,56 @@ function MobileAppPageContent() {
       toast.error("অনুগ্রহ করে ৪ ডিজিটের সঠিক ওটিপি দিন");
       return;
     }
-    setIsVerifyingStartOtp(true);
-    try {
-      const res = await fetch("/api/bookings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "start",
-          bookingId: activeRide.id,
-          driverId: session?.driverId,
-          otp: cleanOtp,
-          startCoords: driverLiveCoords || (activeRide.pickupCoords || null),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.message || data.error || "ভুল ওটিপি! অনুগ্রহ করে যাত্রীর থেকে সঠিক ওটিপি জেনে লিখুন।");
-        setIsVerifyingStartOtp(false);
-        return;
-      }
-      const tripStartTime = data.booking?.trip_start_time || data.booking?.tripStartTime || new Date().toISOString();
-      setActiveRide((prev: any) => {
-        if (!prev) return null;
-        const updated = {
-          ...prev,
-          status: "on_trip",
-          tripStartTime,
-          trip_start_time: tripStartTime,
-        };
-        if (typeof window !== "undefined") {
-          localStorage.setItem("sr_active_ride", JSON.stringify(updated));
-        }
-        return updated;
-      });
-      setShowStartOtpModal(false);
-      setStartOtpInput("");
-      playSuccessSound();
-      toast.success("ওটিপি যাচাই সফল! যাত্রা শুরু হয়েছে। সাবধানে ড্রাইভ করুন।");
-    } catch {
-      toast.error("সার্ভার সংযোগ সমস্যা। আবার চেষ্টা করুন।");
-    } finally {
-      setIsVerifyingStartOtp(false);
+
+    // Local Fast Verification (Zero Latency 0ms UI Response)
+    const expectedOtp = (activeRide.startOtp || activeRide.start_otp || "").toString().trim();
+    if (expectedOtp && cleanOtp !== expectedOtp) {
+      toast.error("ভুল ওটিপি! অনুগ্রহ করে যাত্রীর থেকে সঠিক ওটিপি জেনে লিখুন।");
+      return;
     }
+
+    // OPTIMISTIC UPDATE: Instant 0ms transition into active trip
+    const nowIso = new Date().toISOString();
+    const previousRideState = activeRide;
+    const updatedRide = {
+      ...activeRide,
+      status: "on_trip",
+      tripStartTime: nowIso,
+      trip_start_time: nowIso,
+    };
+    setActiveRide(updatedRide);
+    setShowStartOtpModal(false);
+    setStartOtpInput("");
+    playSuccessSound();
+    toast.success("ওটিপি যাচাই সফল! যাত্রা শুরু হয়েছে। সাবধানে ড্রাইভ করুন।");
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("sr_active_ride", JSON.stringify(updatedRide));
+      } catch {}
+    }
+
+    // Background server synchronization
+    fetch("/api/bookings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "start",
+        bookingId: activeRide.id,
+        driverId: session?.driverId,
+        otp: cleanOtp,
+        startCoords: driverLiveCoords || (activeRide.pickupCoords || null),
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          // Revert if server rejected
+          setActiveRide(previousRideState);
+          toast.error(data.message || data.error);
+        }
+      })
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -717,6 +722,10 @@ function MobileAppPageContent() {
       }
       if (data.booking && data.booking.id) {
         setActiveBookingId(data.booking.id);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("sr_active_booking_id", data.booking.id);
+          localStorage.setItem("sr_search_status", "searching");
+        }
         requestNotificationPermission().catch(() => {});
       }
     } catch (err) {
@@ -817,19 +826,41 @@ function MobileAppPageContent() {
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
 
-    if (searchStatus === "searching" && activeBookingId) {
+    if (searchStatus === "searching" && (activeBookingId || session?.phone)) {
       const checkBookingAcceptance = async () => {
         try {
-          const res = await fetch(`/api/bookings?id=${activeBookingId}`);
-          const data = await res.json();
-          if (data.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress" || data.booking.status === "accepted")) {
-            const b = data.booking;
+          let b: any = null;
+          if (activeBookingId) {
+            const res = await fetch(`/api/bookings?id=${encodeURIComponent(activeBookingId)}&_t=${Date.now()}`, {
+              cache: "no-store",
+              headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+            });
+            const data = await res.json();
+            if (data?.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress" || data.booking.status === "accepted")) {
+              b = data.booking;
+            }
+          }
+
+          // Fallback check by passenger phone in case ID was refreshed
+          if (!b && session?.phone) {
+            const resPhone = await fetch(`/api/bookings?customer_phone=${encodeURIComponent(session.phone)}&active=true&_t=${Date.now()}`, {
+              cache: "no-store",
+              headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+            });
+            const dataPhone = await resPhone.json();
+            if (dataPhone?.booking && (dataPhone.booking.status === "assigned" || dataPhone.booking.status === "in_progress" || dataPhone.booking.status === "accepted")) {
+              b = dataPhone.booking;
+            }
+          }
+
+          if (b) {
             if (b.pickup_location) setPickupText(b.pickup_location);
             if (b.drop_location) setDropText(b.drop_location);
             if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
             if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
             if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
-            setPassengerBooking({
+
+            const acceptedPassengerBooking = {
               id: b.id,
               bookingNumber: b.booking_number,
               driverName: b.driver_name || "টোটো চালক",
@@ -837,11 +868,23 @@ function MobileAppPageContent() {
               totoNumber: b.driver_unique_id || b.toto_number || "",
               uniqueId: b.driver_unique_id || b.toto_number || "",
               startOtp: b.start_otp,
-            });
+              pickup: b.pickup_location,
+              drop: b.drop_location,
+              pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
+              dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+              fare: Number(b.estimated_fare || tripFare),
+            };
+
+            setPassengerBooking(acceptedPassengerBooking);
+            setActiveBookingId(b.id);
+            setRideStep("assigned");
+
             // Stop search countdown immediately!
             setSearchStatus("idle");
             setSearchCountdown(0);
             if (typeof window !== "undefined") {
+              localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedPassengerBooking));
+              localStorage.setItem("sr_active_booking_id", b.id);
               localStorage.removeItem("sr_search_status");
             }
             setPhase("passenger_home");
@@ -856,11 +899,11 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      pollInterval = setInterval(checkBookingAcceptance, 1000);
+      pollInterval = setInterval(checkBookingAcceptance, 800);
     }
 
     return () => clearInterval(pollInterval);
-  }, [searchStatus, activeBookingId]);
+  }, [searchStatus, activeBookingId, session?.phone, pickupCoords, dropCoords, tripFare]);
 
   // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
   useEffect(() => {
@@ -872,7 +915,10 @@ function MobileAppPageContent() {
     let pollInterval: NodeJS.Timeout | null = null;
     const pollRideStatus = async () => {
       try {
-        const res = await fetch(`/api/bookings?id=${bId}`);
+        const res = await fetch(`/api/bookings?id=${encodeURIComponent(bId)}&_t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        });
         const data = await res.json();
         const b = data.booking;
         if (!b || !isMounted) {
@@ -1518,8 +1564,11 @@ function MobileAppPageContent() {
           // Use driver live coordinates, cached device coordinates, or regional center
           const effectiveCoords = (coords && coords[0] !== 0) ? coords : [21.8760, 88.1920];
 
-          const queryParams = `?status=pending&driver_lat=${effectiveCoords[0]}&driver_lng=${effectiveCoords[1]}`;
-          const res = await fetch(`/api/bookings${queryParams}`);
+          const queryParams = `?status=pending&driver_lat=${effectiveCoords[0]}&driver_lng=${effectiveCoords[1]}&_t=${Date.now()}`;
+          const res = await fetch(`/api/bookings${queryParams}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+          });
           const data = await res.json();
           const pendingList = Array.isArray(data.bookings)
             ? data.bookings
@@ -3126,6 +3175,9 @@ function MobileAppPageContent() {
                 };
                 setActiveRide(optimisticRide);
                 setIncomingRide(null);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("sr_active_ride", JSON.stringify(optimisticRide));
+                }
                 playSuccessSound();
                 toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
 
@@ -3145,6 +3197,9 @@ function MobileAppPageContent() {
                   const data = await res.json();
                   if (!res.ok) {
                     setActiveRide(null);
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("sr_active_ride");
+                    }
                     toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
                   }
                 } catch (err) {
@@ -3157,7 +3212,7 @@ function MobileAppPageContent() {
 
         {/* Active In-Progress Ride View — Full-Screen Rapido Captain / Uber Driver HUD */}
         {activeRide && (
-          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "calc(100dvh - 58px)" }}>
+          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "calc(100dvh - 118px)", height: "calc(100dvh - 118px)" }}>
             <AppErrorBoundary>
               <DriverActiveTripMap
                 bookingId={activeRide.id}
@@ -3369,6 +3424,9 @@ function MobileAppPageContent() {
                     };
                     setActiveRide(optimisticRide);
                     setIncomingRide(null);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("sr_active_ride", JSON.stringify(optimisticRide));
+                    }
                     playSuccessSound();
                     toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
 
@@ -3379,7 +3437,7 @@ function MobileAppPageContent() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           action: "accept",
-                          bookingId: rideToAccept.id,
+                          bookingId: rideToAccept.id || rideToAccept.bookingNumber,
                           driverId: session?.driverId || "",
                           driverName: session?.driverName || "সুন্দরবন চালক",
                           driverPhone: session?.phone || "9593177885",
@@ -3390,6 +3448,9 @@ function MobileAppPageContent() {
                       if (!res.ok) {
                         // Revert if already taken or cancelled
                         setActiveRide(null);
+                        if (typeof window !== "undefined") {
+                          localStorage.removeItem("sr_active_ride");
+                        }
                         toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
                         return;
                       }

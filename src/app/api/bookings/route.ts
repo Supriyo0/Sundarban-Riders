@@ -554,14 +554,23 @@ function enrichBookingCoords(booking: any) {
     }
   }
 
-  // 4. Default fallback relative to pickup
-  if (!dropLat || !dropLng) {
+  const isMeteredTrip =
+    !meta.end_coords ||
+    (meta.end_coords[0] === 0 && meta.end_coords[1] === 0) ||
+    (typeof booking.drop_location === "string" && (booking.drop_location.includes("মিটার") || booking.drop_location.includes("বিনা গন্তব্য")));
+
+  // 4. Default fallback relative to pickup ONLY for fixed destination trips (NEVER for metered trips)
+  if (!isMeteredTrip && (!dropLat || !dropLng)) {
     dropLat = lat + 0.015;
     dropLng = lng + 0.015;
   }
+  if (isMeteredTrip) {
+    dropLat = null;
+    dropLng = null;
+  }
 
   const cleanPickup = meta.pickup_name || cleanLocationName(booking.pickup_location) || "পিকআপ লোকেশন";
-  const cleanDrop = meta.drop_name || cleanLocationName(booking.drop_location) || "গন্তব্য";
+  const cleanDrop = isMeteredTrip ? "মিটারযুক্ত রাইড (Metered Trip)" : (meta.drop_name || cleanLocationName(booking.drop_location) || "গন্তব্য");
 
   const seedNum = (booking.booking_number || booking.id || "").replace(/\D/g, "");
   const fallbackOtp = seedNum.length >= 4 ? seedNum.slice(-4) : "5821";
@@ -601,6 +610,8 @@ function enrichBookingCoords(booking: any) {
     driverLng = Number(booking.driver_lng);
   }
 
+  const resolvedTripDist = isMeteredTrip ? 0 : (meta.estimated_distance_km || booking.actual_distance_km || booking.trip_distance_km || null);
+
   return {
     ...booking,
     pickup_location: cleanPickup,
@@ -610,16 +621,20 @@ function enrichBookingCoords(booking: any) {
     drop_lat: dropLat,
     drop_lng: dropLng,
     start_coords: [lat, lng],
-    end_coords: [dropLat, dropLng],
+    end_coords: dropLat && dropLng ? [dropLat, dropLng] : undefined,
     driver_lat: driverLat,
     driver_lng: driverLng,
     driver_coords: driverLat && driverLng ? [driverLat, driverLng] : undefined,
     start_otp: startOtp,
     passenger_count: meta.passenger_count || 3,
+    trip_distance_km: resolvedTripDist,
+    estimated_distance_km: resolvedTripDist,
     actual_distance_km: meta.actual_distance_km || meta.live_distance_km || booking.actual_distance_km || null,
+    estimated_fare: booking.estimated_fare,
     final_fare: booking.final_fare || meta.calculated_fare || meta.live_fare || booking.estimated_fare,
     trip_start_time: meta.trip_start_time || null,
     tripStartTime: meta.trip_start_time || null,
+    is_metered: isMeteredTrip,
   };
 }
 
@@ -628,6 +643,12 @@ function enrichBookingCoords(booking: any) {
  */
 export async function GET(request: Request) {
   try {
+    const NO_CACHE_HEADERS = {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    };
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
     const status = searchParams.get("status");
@@ -637,17 +658,18 @@ export async function GET(request: Request) {
     const admin = supabaseAdmin();
 
     if (id) {
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const cleanId = (id || "").replace(/^#/, "").trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
       let query = admin.from("bookings").select("*, drivers(*)");
       if (isUuid) {
-        query = query.or(`id.eq.${id},booking_number.eq.${id}`);
+        query = query.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
       } else {
-        query = query.eq("booking_number", id);
+        query = query.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
       }
       const { data, error } = await query.maybeSingle();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      if (!data) return NextResponse.json({ booking: null });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
+      if (!data) return NextResponse.json({ booking: null }, { headers: NO_CACHE_HEADERS });
 
       const enriched = enrichBookingCoords(data);
       const d = data.drivers;
@@ -674,7 +696,7 @@ export async function GET(request: Request) {
           driver_unique_id: driverUid,
           unique_id: driverUid,
         },
-      });
+      }, { headers: NO_CACHE_HEADERS });
     }
 
     if (status === "pending") {
@@ -701,12 +723,12 @@ export async function GET(request: Request) {
         .order("created_at", { ascending: false })
         .limit(20);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
       const enriched = (data || []).map(enrichBookingCoords);
       return NextResponse.json({
         bookings: enriched,
         booking: enriched[0] || null,
-      });
+      }, { headers: NO_CACHE_HEADERS });
     }
 
     const driverPhone = searchParams.get("driver_phone") || searchParams.get("driverPhone");
@@ -862,7 +884,7 @@ export async function GET(request: Request) {
       }
 
       if (matchedDriverIds.length === 0) {
-        return NextResponse.json({ booking: null });
+        return NextResponse.json({ booking: null }, { headers: NO_CACHE_HEADERS });
       }
 
       const { data, error } = await admin
@@ -874,7 +896,7 @@ export async function GET(request: Request) {
         .limit(1)
         .maybeSingle();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
 
       // Auto-expire stale bookings older than 6 hours (prevents 2-day-old ghost rides)
       if (data) {
@@ -882,11 +904,11 @@ export async function GET(request: Request) {
         if (ageMs > 6 * 60 * 60 * 1000) {
           const newStatus = data.status === "pending" ? "cancelled" : "completed";
           void admin.from("bookings").update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", data.id);
-          return NextResponse.json({ booking: null });
+          return NextResponse.json({ booking: null }, { headers: NO_CACHE_HEADERS });
         }
       }
 
-      return NextResponse.json({ booking: data ? enrichBookingCoords(data) : null });
+      return NextResponse.json({ booking: data ? enrichBookingCoords(data) : null }, { headers: NO_CACHE_HEADERS });
     }
 
     if (customerPhone) {
@@ -945,7 +967,7 @@ export async function GET(request: Request) {
 
       const { data, error } = await activeQuery.limit(1).maybeSingle();
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
 
       // Auto-expire stale bookings older than 6 hours (e.g. unfinished ride from 2 days ago)
       if (data) {
@@ -956,7 +978,7 @@ export async function GET(request: Request) {
           return NextResponse.json({
             booking: null,
             customer: customerRecord || { cancellation_count: 0, is_blocked: false }
-          });
+          }, { headers: NO_CACHE_HEADERS });
         }
       }
 
@@ -990,7 +1012,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         booking: finalBooking,
         customer: customerRecord || { cancellation_count: 0, is_blocked: false }
-      });
+      }, { headers: NO_CACHE_HEADERS });
     }
 
     // Default: return recent pending bookings strictly within 5.0 km and within 3 minutes
@@ -1038,7 +1060,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       booking: valid[0] || null,
       bookings: valid,
-    });
+    }, { headers: NO_CACHE_HEADERS });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -1067,7 +1089,7 @@ export async function POST(request: Request) {
 
     const admin = supabaseAdmin();
     const cleanPhone = (customerPhone || "918348122122").replace(/[^0-9]/g, "");
-    const bookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
+    const bookingNumber = `SR-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
 
     // 0. Check if customer is blocked due to 3-strike cancellation policy
     const { data: existingCustomer } = await admin
@@ -1123,9 +1145,9 @@ export async function POST(request: Request) {
     }
     if (calculatedDist <= 0 || isNaN(calculatedDist)) calculatedDist = 1.0;
 
-    const baseFare = pricingConfig.baseFare || 25;
+    const meteredRateChartBase = calculateTotoFare(0, validPassengerCount, pricingConfig).totalFare;
     const finalEstimatedFare = isMeteredTrip
-      ? baseFare
+      ? meteredRateChartBase
       : calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
 
     // Cryptographically Secure Unpredictable 4-digit OTP (Decoupled from booking number)
@@ -1552,24 +1574,30 @@ export async function PATCH(request: Request) {
           ? body.endCoords
           : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
 
-      let distanceKm = 1.0;
+      const isMeteredTrip = enriched.is_metered || !enriched.drop_lat || (typeof booking.drop_location === "string" && (booking.drop_location.includes("মিটার") || booking.drop_location.includes("বিনা গন্তব্য")));
+
+      let distanceKm = 0.0;
       let calculatedRoadDist = 1.0;
-      if (sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
+      if (!isMeteredTrip && sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
         calculatedRoadDist = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
       }
       if (calculatedRoadDist <= 0) calculatedRoadDist = 1.0;
 
-      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number" && body.finalDistanceKm > 0) {
-        const reported = Math.max(1.0, Math.round(body.finalDistanceKm * 10) / 10);
-        // Anti-Fraud Guard: Driver reported distance cannot exceed 1.45x of physical road route
-        const maxAllowed = Math.max(2.5, Math.round(calculatedRoadDist * 1.45 * 10) / 10);
-        distanceKm = Math.min(reported, maxAllowed);
-      } else if (meta.live_distance_km && typeof meta.live_distance_km === "number" && meta.live_distance_km > 0) {
-        distanceKm = Math.max(1.0, Math.round(meta.live_distance_km * 10) / 10);
-      } else {
+      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number") {
+        const reported = Math.max(0, Math.round(body.finalDistanceKm * 10) / 10);
+        if (!isMeteredTrip) {
+          const maxAllowed = Math.max(2.5, Math.round(calculatedRoadDist * 1.45 * 10) / 10);
+          distanceKm = Math.min(reported, maxAllowed);
+        } else {
+          distanceKm = reported;
+        }
+      } else if (meta.live_distance_km !== undefined && typeof meta.live_distance_km === "number") {
+        distanceKm = Math.max(0, Math.round(meta.live_distance_km * 10) / 10);
+      } else if (!isMeteredTrip) {
         distanceKm = calculatedRoadDist;
+      } else {
+        distanceKm = 0.0;
       }
-      if (distanceKm <= 0) distanceKm = 1.0;
 
       const pricingConfig = await loadActivePricingConfig(admin);
       const passengerCount = meta.passenger_count || 3;

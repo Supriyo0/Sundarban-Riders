@@ -60,16 +60,14 @@ export class LiveFareMeter {
       const segKm = calculateHaversineKm(prev.lat, prev.lng, lat, lng);
       const timeDiffHrs = (now - prev.ts) / 3600000;
 
-      // Filter: ignore if movement is < 5 meters (GPS station jitter while waiting at traffic)
-      // And ignore unrealistic jumps (> 150 km/h for Toto)
-      if (segKm >= 0.005 && segKm <= 0.6) {
+      // Filter: ignore if movement is < 15 meters (GPS station jitter while waiting or stationary)
+      // And ignore drift where speed is below 2.5 km/h or unrealistic jumps (> 120 km/h)
+      if (segKm >= 0.015 && segKm <= 0.6) {
         if (timeDiffHrs > 0) {
           const speedKmh = segKm / timeDiffHrs;
-          if (speedKmh <= 120) {
+          if (speedKmh >= 2.5 && speedKmh <= 120) {
             this.totalKm += segKm;
           }
-        } else {
-          this.totalKm += segKm;
         }
       }
     }

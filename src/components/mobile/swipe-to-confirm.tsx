@@ -127,7 +127,7 @@ export function SwipeToConfirm({
   return (
     <div
       ref={containerRef}
-      className={`relative h-16 w-full select-none touch-none overflow-hidden rounded-full border p-1 transition-colors ${
+      className={`relative h-13 w-full select-none touch-none overflow-hidden rounded-full border p-1 transition-colors ${
         colors.track
       } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       onMouseDown={(e) => handleStart(e.clientX)}
@@ -140,10 +140,10 @@ export function SwipeToConfirm({
       />
 
       {/* Label Text */}
-      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center text-sm tracking-wide ${colors.textColor}`}>
+      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center text-xs sm:text-sm font-extrabold tracking-wide ${colors.textColor}`}>
         {isConfirmed ? (
-          <span className="flex items-center gap-2 text-emerald-800 font-bold">
-            <Check className="h-5 w-5 stroke-[3]" /> {confirmedLabel}
+          <span className="flex items-center gap-2 text-emerald-800 font-black">
+            <Check className="h-4.5 w-4.5 stroke-[3]" /> {confirmedLabel}
           </span>
         ) : (
           <span>{label}</span>
@@ -158,15 +158,15 @@ export function SwipeToConfirm({
         style={{
           transform: `translateX(${
             containerRef.current
-              ? dragProgress * (containerRef.current.clientWidth - 68)
+              ? dragProgress * (containerRef.current.clientWidth - 54)
               : 0
           }px)`,
         }}
       >
         {isConfirmed ? (
-          <Check className="h-6 w-6 stroke-[3]" />
+          <Check className="h-5 w-5 stroke-[3]" />
         ) : (
-          <ChevronRight className="h-6 w-6 stroke-[3] animate-pulse" />
+          <ChevronRight className="h-5 w-5 stroke-[3] animate-pulse" />
         )}
       </div>
     </div>

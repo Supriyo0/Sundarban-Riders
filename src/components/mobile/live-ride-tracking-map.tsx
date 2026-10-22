@@ -77,7 +77,7 @@ export function LiveRideTrackingMap({
   const [liveMeterFare, setLiveMeterFare] = useState(tripFare);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [rideProgressPct, setRideProgressPct] = useState<number>(35);
-  const lastNotifiedProgressRef = useRef<number>(0);
+  const notifiedMilestonesRef = useRef<Set<string>>(new Set());
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [rating, setRating] = useState(5);
   const [rated, setRated] = useState(false);
@@ -252,7 +252,10 @@ export function LiveRideTrackingMap({
       const bId = booking?.id || booking?.booking_number || booking?.bookingNumber;
       if (!bId || !mounted) return;
       try {
-        const res = await fetch(`/api/bookings?id=${bId}`);
+        const res = await fetch(`/api/bookings?id=${encodeURIComponent(bId)}&_t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        });
         const data = await res.json();
         const b = data?.booking;
         if (!b || !mounted) return;
@@ -304,9 +307,19 @@ export function LiveRideTrackingMap({
           }
           setRideProgressPct(progress);
 
-          // Push Progress Notification at 20%, 45%, 70%, 90% milestones
-          if (Math.abs(progress - lastNotifiedProgressRef.current) >= 20 || (computedEta <= 2 && lastNotifiedProgressRef.current < 80)) {
-            lastNotifiedProgressRef.current = progress;
+          // Push Progress Notification at 25%, 50%, 75%, 90% milestones AT MOST ONCE
+          let milestoneKey: string | null = null;
+          if (progress >= 90) milestoneKey = "milestone_90";
+          else if (progress >= 75) milestoneKey = "milestone_75";
+          else if (progress >= 50) milestoneKey = "milestone_50";
+          else if (progress >= 25) milestoneKey = "milestone_25";
+
+          if (computedEta <= 2 && !notifiedMilestonesRef.current.has("eta_arriving")) {
+            milestoneKey = "eta_arriving";
+          }
+
+          if (milestoneKey && !notifiedMilestonesRef.current.has(milestoneKey)) {
+            notifiedMilestonesRef.current.add(milestoneKey);
             const blockCount = Math.min(10, Math.max(1, Math.round(progress / 10)));
             const bar = "█".repeat(blockCount) + "░".repeat(10 - blockCount);
             const title = rideStep === "in_trip" ? `🏁 গন্তব্যের পথে (${progress}%)` : `📍 চালক পৌঁছাচ্ছেন (${progress}%)`;

@@ -258,6 +258,8 @@ export function DriverActiveTripMap({
     };
   }, [bookingId, status]);
 
+  const isMeteredTrip = !dropCoords || !dropCoords[0] || dropCoords[0] === 0 || (typeof drop === "string" && (drop.includes("মিটার") || drop.includes("বিনা গন্তব্য")));
+
   // Safe coordinate normalization
   const safePickup: [number, number] = (Array.isArray(pickupCoords) && pickupCoords.length === 2 && !isNaN(Number(pickupCoords[0])) && Number(pickupCoords[0]) !== 0)
     ? [Number(pickupCoords[0]), Number(pickupCoords[1])]
@@ -265,7 +267,7 @@ export function DriverActiveTripMap({
 
   const safeDrop: [number, number] = (Array.isArray(dropCoords) && dropCoords.length === 2 && !isNaN(Number(dropCoords[0])) && Number(dropCoords[0]) !== 0)
     ? [Number(dropCoords[0]), Number(dropCoords[1])]
-    : [21.8680, 88.1630];
+    : safePickup;
 
   const targetCoords: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
 
@@ -382,20 +384,22 @@ export function DriverActiveTripMap({
             subdomains: ["mt0", "mt1", "mt2", "mt3"],
           }).addTo(map);
 
-          // Destination marker
-          const dMarker = L.marker(targetCoords, {
-            icon: L.divIcon({
-              className: "",
-              html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
-                <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
-                  ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
-                </div>
-                <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
-              </div>`,
-              iconSize: [0, 0],
-            }),
-          }).addTo(map);
-          destMarkerRef.current = dMarker;
+          // Destination marker (render only when not a metered trip on journey)
+          if (!(status === "on_trip" && isMeteredTrip)) {
+            const dMarker = L.marker(targetCoords, {
+              icon: L.divIcon({
+                className: "",
+                html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
+                  <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
+                    ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
+                  </div>
+                  <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
+                </div>`,
+                iconSize: [0, 0],
+              }),
+            }).addTo(map);
+            destMarkerRef.current = dMarker;
+          }
 
           // Moving driver Toto marker with radar beacon
           const driverIcon = L.divIcon({
@@ -413,32 +417,36 @@ export function DriverActiveTripMap({
           }).addTo(map);
           driverMarkerRef.current = drvMarker;
 
-          // Street route casing
-          const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
-          const casing = L.polyline(pts, {
-            color: "#ffffff",
-            weight: 8,
-            opacity: 0.9,
-            lineCap: "round",
-            lineJoin: "round",
-          }).addTo(map);
-          routeCasingRef.current = casing;
+          if (!(status === "on_trip" && isMeteredTrip)) {
+            // Street route casing
+            const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
+            const casing = L.polyline(pts, {
+              color: "#ffffff",
+              weight: 8,
+              opacity: 0.9,
+              lineCap: "round",
+              lineJoin: "round",
+            }).addTo(map);
+            routeCasingRef.current = casing;
 
-          // Street route line
-          const line = L.polyline(pts, {
-            color: status === "heading_pickup" ? "#0284c7" : "#059669",
-            weight: 5,
-            opacity: 0.95,
-            lineCap: "round",
-            lineJoin: "round",
-          }).addTo(map);
-          routeLineRef.current = line;
+            // Street route line
+            const line = L.polyline(pts, {
+              color: status === "heading_pickup" ? "#0284c7" : "#059669",
+              weight: 5,
+              opacity: 0.95,
+              lineCap: "round",
+              lineJoin: "round",
+            }).addTo(map);
+            routeLineRef.current = line;
 
-          // Fit map bounds to show driver and destination at street zoom
-          try {
-            const b = L.latLngBounds(pts);
-            map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
-          } catch {}
+            // Fit map bounds to show driver and destination at street zoom
+            try {
+              const b = L.latLngBounds(pts);
+              map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
+            } catch {}
+          } else {
+            map.setView(currentFrom, 16);
+          }
 
           // Invalidate size on load
           map.whenReady(() => {
@@ -505,13 +513,13 @@ export function DriverActiveTripMap({
   const cleanPhone = (passengerPhone || "").replace(/\D/g, "").slice(-10);
 
   return (
-    <div className="relative w-full overflow-hidden select-none" style={{ height: "calc(100dvh - 58px)", background: "#0f172a" }}>
+    <div className="relative w-full overflow-hidden select-none" style={{ height: "calc(100dvh - 118px)", background: "#0f172a" }}>
 
       {/* ── 1. FULL-SCREEN LEAFLET NAVIGATION MAP ── */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
       {/* ── 2. TOP FLOATING NAVIGATION HUD (Rapido Captain Style) ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 p-3 pointer-events-none space-y-2">
+      <div className="absolute top-2 left-0 right-0 z-20 p-3 pt-1 pointer-events-none space-y-2">
         <div
           className="pointer-events-auto rounded-3xl p-3 shadow-2xl border border-white/20 flex items-center justify-between"
           style={{
@@ -551,17 +559,11 @@ export function DriverActiveTripMap({
             href={navUrl}
             target="_blank"
             rel="noreferrer"
-            className={`shrink-0 ml-2 px-3 py-2 rounded-2xl font-black text-xs text-white shadow-lg border border-white/30 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer ${
-              status === "heading_pickup"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/30"
-                : "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/30"
-            }`}
+            className="shrink-0 ml-1.5 px-2.5 py-1.5 rounded-xl font-bold text-[11px] text-white shadow-md bg-white/15 hover:bg-white/25 active:scale-95 transition-all flex items-center gap-1 border border-white/30 cursor-pointer"
             title={status === "heading_pickup" ? "গুগল ম্যাপে পিকআপে যান" : "গুগল ম্যাপে গন্তব্যে যান"}
           >
             <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
-            <span className="whitespace-nowrap font-bold text-[11px]">
-              {status === "heading_pickup" ? "🗺️ পিকআপে যান (Google Map)" : "🗺️ গন্তব্যে যান (Google Map)"}
-            </span>
+            <span className="whitespace-nowrap font-bold text-[11px]">ম্যাপ</span>
           </a>
         </div>
       </div>

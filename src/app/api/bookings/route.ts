@@ -1535,9 +1535,12 @@ export async function PATCH(request: Request) {
       const meta = getBookingMeta(booking);
 
       const sCoords = meta.start_coords || [enriched.pickup_lat, enriched.pickup_lng];
-      const eCoords = (body.endCoords && Array.isArray(body.endCoords) && body.endCoords.length === 2)
-        ? body.endCoords
-        : (enriched.drop_lat && enriched.drop_lng ? [enriched.drop_lat, enriched.drop_lng] : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
+      // Always prioritize the customer's booked drop location as the end coordinates to prevent remote driver GPS distortion
+      const eCoords = (enriched.drop_lat && enriched.drop_lng)
+        ? [enriched.drop_lat, enriched.drop_lng]
+        : (body.endCoords && Array.isArray(body.endCoords) && body.endCoords.length === 2
+          ? body.endCoords
+          : [enriched.pickup_lat + 0.02, enriched.pickup_lng + 0.02]);
 
       let distanceKm = 1.0;
       let calculatedRoadDist = 1.0;
@@ -1546,7 +1549,7 @@ export async function PATCH(request: Request) {
       }
       if (calculatedRoadDist <= 0) calculatedRoadDist = 1.0;
 
-      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number") {
+      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number" && body.finalDistanceKm > 0) {
         const reported = Math.max(1.0, Math.round(body.finalDistanceKm * 10) / 10);
         // Anti-Fraud Guard: Driver reported distance cannot exceed 1.45x of physical road route
         const maxAllowed = Math.max(2.5, Math.round(calculatedRoadDist * 1.45 * 10) / 10);
@@ -1564,8 +1567,18 @@ export async function PATCH(request: Request) {
       const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
       const calculatedFare = fareResult.totalFare;
 
-      const initialEstDist = booking.estimated_distance_km || meta.estimated_distance_km || meta.initial_distance_km || distanceKm;
-      const initialEstFare = booking.estimated_fare || meta.estimated_fare || meta.initial_fare || calculatedFare;
+      const initialEstDist = Number(booking.estimated_distance_km) || Number(meta.estimated_distance_km) || Number(meta.initial_distance_km) || distanceKm;
+      const initialEstFare = Number(booking.estimated_fare) || Number(meta.estimated_fare) || Number(meta.initial_fare) || calculatedFare;
+
+      // Anti-Inflation Guard: Respect upfront quoted estimated fare unless customer traveled substantially farther
+      let finalFareToCharge = calculatedFare;
+      if (initialEstFare > 0) {
+        if (initialEstDist <= 0 || distanceKm <= initialEstDist * 1.35) {
+          finalFareToCharge = initialEstFare;
+        } else {
+          finalFareToCharge = Math.min(calculatedFare, Math.round(initialEstFare * (distanceKm / initialEstDist)));
+        }
+      }
 
       const acceptStartMs = meta.trip_accepted_time
         ? Number(meta.trip_accepted_time)
@@ -1579,7 +1592,7 @@ export async function PATCH(request: Request) {
       // Store ONLY essential audit data required for administrative records and trip history.
       const cleanHistoryMeta = {
         actual_distance_km: distanceKm,
-        calculated_fare: calculatedFare,
+        calculated_fare: finalFareToCharge,
         estimated_distance_km: initialEstDist,
         estimated_fare: initialEstFare,
         fare_breakdown: fareResult,
@@ -1596,7 +1609,7 @@ export async function PATCH(request: Request) {
         .from("bookings")
         .update({
           status: "completed",
-          final_fare: calculatedFare,
+          final_fare: finalFareToCharge,
           feedback: JSON.stringify(cleanHistoryMeta),
           updated_at: new Date().toISOString(),
         })

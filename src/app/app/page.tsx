@@ -98,7 +98,15 @@ const LiveRideTrackingMap = dynamic(
 
 const DriverActiveTripMap = dynamic(
   () => import("@/components/mobile/driver-active-trip-map").then((mod) => mod.DriverActiveTripMap),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[calc(100dvh-58px)] flex flex-col items-center justify-center bg-slate-900 text-emerald-400 gap-3">
+        <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-semibold text-slate-300">ট্রিপ ম্যাপ লোড হচ্ছে...</span>
+      </div>
+    ),
+  }
 );
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
@@ -751,7 +759,7 @@ function MobileAppPageContent() {
   // Passenger Radar Search Countdown Effect (3 minutes timeout for nearby driver accept)
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (searchStatus === "searching") {
+    if (searchStatus === "searching" && !passengerBooking) {
       if (searchCountdown > 0) {
         timer = setTimeout(() => {
           setSearchCountdown((prev) => prev - 1);
@@ -783,7 +791,7 @@ function MobileAppPageContent() {
       }
     }
     return () => clearTimeout(timer);
-  }, [searchStatus, searchCountdown, activeBookingId]);
+  }, [searchStatus, searchCountdown, activeBookingId, passengerBooking]);
 
   // Passenger Live Polling: Check if any driver accepted the ride (from App or WhatsApp)
   useEffect(() => {
@@ -794,7 +802,7 @@ function MobileAppPageContent() {
         try {
           const res = await fetch(`/api/bookings?id=${activeBookingId}`);
           const data = await res.json();
-          if (data.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress")) {
+          if (data.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress" || data.booking.status === "accepted")) {
             const b = data.booking;
             if (b.pickup_location) setPickupText(b.pickup_location);
             if (b.drop_location) setDropText(b.drop_location);
@@ -810,7 +818,12 @@ function MobileAppPageContent() {
               uniqueId: b.driver_unique_id || b.toto_number || "",
               startOtp: b.start_otp,
             });
+            // Stop search countdown immediately!
             setSearchStatus("idle");
+            setSearchCountdown(0);
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("sr_search_status");
+            }
             setPhase("passenger_home");
             playSuccessSound();
             showLocalRideAlertNotification(
@@ -823,7 +836,7 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      pollInterval = setInterval(checkBookingAcceptance, 2000);
+      pollInterval = setInterval(checkBookingAcceptance, 1000);
     }
 
     return () => clearInterval(pollInterval);
@@ -3105,120 +3118,122 @@ function MobileAppPageContent() {
         {/* Active In-Progress Ride View — Full-Screen Rapido Captain / Uber Driver HUD */}
         {activeRide && (
           <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "calc(100dvh - 58px)" }}>
-            <DriverActiveTripMap
-              bookingId={activeRide.id}
-              bookingNumber={activeRide.bookingNumber}
-              tripStartTime={activeRide.tripStartTime || activeRide.trip_start_time}
-              pickup={activeRide.pickup}
-              drop={activeRide.drop}
-              pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
-              dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
-              driverCoords={driverLiveCoords || undefined}
-              status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
-              passengerName={activeRide.passengerName}
-              passengerPhone={activeRide.passengerPhone}
-              onArrivedAtPickup={() => {
-                toast.success("পিকআপ লোকেশনে পৌঁছে গেছেন! যাত্রীকে ওটিপি দিতে বলুন।");
-              }}
-              onRequestOtpModal={() => {
-                setStartOtpInput("");
-                setShowStartOtpModal(true);
-              }}
-              onCompleteTrip={async (finalKm) => {
-                try {
-                  const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
-                  const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+            <AppErrorBoundary>
+              <DriverActiveTripMap
+                bookingId={activeRide.id}
+                bookingNumber={activeRide.bookingNumber}
+                tripStartTime={activeRide.tripStartTime || activeRide.trip_start_time}
+                pickup={activeRide.pickup}
+                drop={activeRide.drop}
+                pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
+                dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
+                driverCoords={driverLiveCoords || undefined}
+                status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
+                passengerName={activeRide.passengerName}
+                passengerPhone={activeRide.passengerPhone}
+                onArrivedAtPickup={() => {
+                  toast.success("পিকআপ লোকেশনে পৌঁছে গেছেন! যাত্রীকে ওটিপি দিতে বলুন।");
+                }}
+                onRequestOtpModal={() => {
+                  setStartOtpInput("");
+                  setShowStartOtpModal(true);
+                }}
+                onCompleteTrip={async (finalKm) => {
+                  try {
+                    const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
+                    const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
 
-                  const res = await fetch("/api/bookings", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: "complete",
-                      bookingId: activeRide.id,
-                      driverId: session?.driverId,
-                      endCoords: driverLiveCoords || null,
-                      finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
+                    const res = await fetch("/api/bookings", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "complete",
+                        bookingId: activeRide.id,
+                        driverId: session?.driverId,
+                        endCoords: driverLiveCoords || null,
+                        finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
+                        durationMinutes: actualDurationMinutes,
+                      }),
+                    });
+                    const data = await res.json();
+                    const finalFare = data.booking?.final_fare || activeRide.fare || 50;
+                    const distKm = data.booking?.actual_distance_km || finalKm || 1.0;
+                    const estDist = activeRide.distanceKm || distKm;
+                    const estFare = activeRide.fare || finalFare;
+
+                    playSuccessSound();
+                    const completedData = {
+                      id: activeRide.bookingNumber || activeRide.id,
+                      bookingNumber: activeRide.bookingNumber,
+                      pickup: activeRide.pickup,
+                      drop: activeRide.drop,
+                      fare: finalFare,
+                      final_fare: finalFare,
+                      distanceKm: distKm,
+                      actual_distance_km: distKm,
                       durationMinutes: actualDurationMinutes,
-                    }),
-                  });
-                  const data = await res.json();
-                  const finalFare = data.booking?.final_fare || activeRide.fare || 50;
-                  const distKm = data.booking?.actual_distance_km || finalKm || 1.0;
-                  const estDist = activeRide.distanceKm || distKm;
-                  const estFare = activeRide.fare || finalFare;
+                      duration_minutes: actualDurationMinutes,
+                      estimatedDistanceKm: estDist,
+                      estimatedFare: estFare,
+                      passengerName: activeRide.passengerName,
+                      passengerPhone: activeRide.passengerPhone,
+                      status: "completed",
+                      completedAt: new Date().toISOString(),
+                      created_at: activeRide.created_at || new Date().toISOString(),
+                    };
+                    setDriverCompletedRide(completedData);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                      localStorage.removeItem("sr_active_ride");
+                      localStorage.removeItem("sr_live_driver_loc");
 
-                  playSuccessSound();
-                  const completedData = {
-                    id: activeRide.bookingNumber || activeRide.id,
-                    bookingNumber: activeRide.bookingNumber,
-                    pickup: activeRide.pickup,
-                    drop: activeRide.drop,
-                    fare: finalFare,
-                    final_fare: finalFare,
-                    distanceKm: distKm,
-                    actual_distance_km: distKm,
-                    durationMinutes: actualDurationMinutes,
-                    duration_minutes: actualDurationMinutes,
-                    estimatedDistanceKm: estDist,
-                    estimatedFare: estFare,
-                    passengerName: activeRide.passengerName,
-                    passengerPhone: activeRide.passengerPhone,
-                    status: "completed",
-                    completedAt: new Date().toISOString(),
-                    created_at: activeRide.created_at || new Date().toISOString(),
-                  };
-                  setDriverCompletedRide(completedData);
-                  if (typeof window !== "undefined") {
-                    localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                    localStorage.removeItem("sr_active_ride");
-                    localStorage.removeItem("sr_live_driver_loc");
+                      // Persist full ride history locally on driver's device
+                      try {
+                        const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                        localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+                      } catch {}
+                    }
+                    setActiveRide(null);
+                    setPhase("rider_trip_completed");
+                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+                  } catch {
+                    playSuccessSound();
+                    const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
+                    const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+                    const completedData = {
+                      id: activeRide.bookingNumber || activeRide.id,
+                      pickup: activeRide.pickup,
+                      drop: activeRide.drop,
+                      fare: activeRide.fare || 50,
+                      distanceKm: finalKm || 1.0,
+                      durationMinutes: actualDurationMinutes,
+                      duration_minutes: actualDurationMinutes,
+                      estimatedDistanceKm: activeRide.distanceKm,
+                      estimatedFare: activeRide.fare,
+                      passengerName: activeRide.passengerName,
+                      passengerPhone: activeRide.passengerPhone,
+                      completedAt: new Date().toISOString(),
+                    };
+                    setDriverCompletedRide(completedData);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                      localStorage.removeItem("sr_active_ride");
+                      localStorage.removeItem("sr_live_driver_loc");
 
-                    // Persist full ride history locally on driver's device
-                    try {
-                      const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
-                      const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
-                      localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
-                    } catch {}
+                      try {
+                        const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                        localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+                      } catch {}
+                    }
+                    setActiveRide(null);
+                    setPhase("rider_trip_completed");
+                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ সংগ্রহ করুন।`);
                   }
-                  setActiveRide(null);
-                  setPhase("rider_trip_completed");
-                  toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
-                } catch {
-                  playSuccessSound();
-                  const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
-                  const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-                  const completedData = {
-                    id: activeRide.bookingNumber || activeRide.id,
-                    pickup: activeRide.pickup,
-                    drop: activeRide.drop,
-                    fare: activeRide.fare || 50,
-                    distanceKm: finalKm || 1.0,
-                    durationMinutes: actualDurationMinutes,
-                    duration_minutes: actualDurationMinutes,
-                    estimatedDistanceKm: activeRide.distanceKm,
-                    estimatedFare: activeRide.fare,
-                    passengerName: activeRide.passengerName,
-                    passengerPhone: activeRide.passengerPhone,
-                    completedAt: new Date().toISOString(),
-                  };
-                  setDriverCompletedRide(completedData);
-                  if (typeof window !== "undefined") {
-                    localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                    localStorage.removeItem("sr_active_ride");
-                    localStorage.removeItem("sr_live_driver_loc");
-
-                    try {
-                      const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
-                      const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
-                      localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
-                    } catch {}
-                  }
-                  setActiveRide(null);
-                  setPhase("rider_trip_completed");
-                  toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ সংগ্রহ করুন।`);
-                }
-              }}
-            />
+                }}
+              />
+            </AppErrorBoundary>
           </div>
         )}
 

@@ -51,6 +51,7 @@ export function DriverActiveTripMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const driverMarkerRef = useRef<any>(null);
+  const destMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
   const meterRef = useRef<LiveFareMeter | null>(null);
@@ -117,7 +118,10 @@ export function DriverActiveTripMap({
         if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0 && lat !== 21.877) return [lat, lng];
       }
     }
-    if (pickupCoords && pickupCoords[0] && pickupCoords[0] !== 0) return pickupCoords;
+    // If heading to pickup, do not place driver on top of pickup point with 0 distance
+    if (pickupCoords && pickupCoords[0] && pickupCoords[0] !== 0) {
+      return [pickupCoords[0] + 0.005, pickupCoords[1] + 0.005];
+    }
     return [21.5698, 88.2518];
   });
 
@@ -135,8 +139,12 @@ export function DriverActiveTripMap({
     let capWatchId: string | null = null;
     let isCancelled = false;
 
-    const handleCoords = (latitude: number, longitude: number) => {
+    const handleCoords = (latitude: number, longitude: number, accuracy?: number) => {
       if (latitude && longitude && latitude !== 0) {
+        // Filter out coarse cell-tower jumps (> 400m)
+        if (accuracy && accuracy > 400 && activeDriverCoords[0] !== 0) {
+          return;
+        }
         const coords: [number, number] = [latitude, longitude];
         setActiveDriverCoords(coords);
 
@@ -250,8 +258,22 @@ export function DriverActiveTripMap({
     };
   }, [bookingId, status]);
 
-  const targetCoords = status === "heading_pickup" ? pickupCoords : dropCoords;
-  const origin = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : pickupCoords;
+  // Safe coordinate normalization
+  const safePickup: [number, number] = (Array.isArray(pickupCoords) && pickupCoords.length === 2 && !isNaN(Number(pickupCoords[0])) && Number(pickupCoords[0]) !== 0)
+    ? [Number(pickupCoords[0]), Number(pickupCoords[1])]
+    : [21.8760, 88.1920];
+
+  const safeDrop: [number, number] = (Array.isArray(dropCoords) && dropCoords.length === 2 && !isNaN(Number(dropCoords[0])) && Number(dropCoords[0]) !== 0)
+    ? [Number(dropCoords[0]), Number(dropCoords[1])]
+    : [21.8680, 88.1630];
+
+  const targetCoords: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
+
+  const currentFrom: [number, number] = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 0 && activeDriverCoords[0] !== 21.877)
+    ? activeDriverCoords
+    : (status === "heading_pickup" ? [safePickup[0] + 0.005, safePickup[1] + 0.005] : safePickup);
+
+  const origin: [number, number] = currentFrom;
 
   // Build Google Maps turn-by-turn navigation URL
   const getNavUrl = (target: [number, number]) => {
@@ -329,113 +351,106 @@ export function DriverActiveTripMap({
     };
   }, [status, activeDriverCoords?.[0], activeDriverCoords?.[1], pickupCoords, dropCoords]);
 
-  // Leaflet map initialization with street-level zoom
+
+  // Leaflet map initialization (mounts once and remains stable without white screen)
   useEffect(() => {
     let mounted = true;
     async function init() {
       if (typeof window === "undefined" || !mapContainerRef.current) return;
-      const LMod = await import("leaflet");
-      const L = (LMod as any).default || LMod;
-      if (!mounted) return;
+      try {
+        const LMod = await import("leaflet");
+        const L = (LMod as any).default || LMod;
+        if (!mounted || !mapContainerRef.current) return;
 
-      const currentFrom = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : (status === "heading_pickup" ? pickupCoords : dropCoords);
+        if (!mapInstanceRef.current) {
+          if ((mapContainerRef.current as any)._leaflet_id) {
+            (mapContainerRef.current as any)._leaflet_id = null;
+          }
 
-      if (!mapInstanceRef.current) {
-        (mapContainerRef.current as any)._leaflet_id = null;
-        const map = L.map(mapContainerRef.current, {
-          center: currentFrom,
-          zoom: 17,
-          zoomControl: false,
-          attributionControl: false,
-          scrollWheelZoom: true,
-          dragging: true,
-        });
+          const map = L.map(mapContainerRef.current, {
+            center: currentFrom,
+            zoom: 17,
+            zoomControl: false,
+            attributionControl: false,
+            scrollWheelZoom: true,
+            dragging: true,
+          });
 
-        // Google Maps street layer with multi-subdomain rotation
-        L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
-          maxZoom: 20,
-          subdomains: ["mt0", "mt1", "mt2", "mt3"],
-        }).addTo(map);
+          // Google Maps street layer with multi-subdomain rotation
+          L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
+            maxZoom: 20,
+            subdomains: ["mt0", "mt1", "mt2", "mt3"],
+          }).addTo(map);
 
-        // Destination marker
-        L.marker(targetCoords, {
-          icon: L.divIcon({
+          // Destination marker
+          const dMarker = L.marker(targetCoords, {
+            icon: L.divIcon({
+              className: "",
+              html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
+                <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
+                  ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
+                </div>
+                <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
+              </div>`,
+              iconSize: [0, 0],
+            }),
+          }).addTo(map);
+          destMarkerRef.current = dMarker;
+
+          // Moving driver Toto marker with radar beacon
+          const driverIcon = L.divIcon({
             className: "",
-            html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
-              <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
-                ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
-              </div>
-              <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
+            html: `<div style="transform:translate(-50%,-50%);position:relative;display:flex;align-items:center;justify-content:center;">
+              <div style="position:absolute;width:64px;height:64px;background:rgba(2,132,199,0.25);border-radius:50%;animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite;"></div>
+              <div style="position:absolute;width:48px;height:48px;background:rgba(2,132,199,0.35);border-radius:50%;"></div>
+              <div style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#0284c7,#38bdf8);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:24px;">🛺</div>
             </div>`,
             iconSize: [0, 0],
-          }),
-        }).addTo(map);
+          });
+          const drvMarker = L.marker(currentFrom, {
+            icon: driverIcon,
+            zIndexOffset: 1000,
+          }).addTo(map);
+          driverMarkerRef.current = drvMarker;
 
-        // Moving driver Toto marker with radar beacon
-        const driverIcon = L.divIcon({
-          className: "",
-          html: `<div style="transform:translate(-50%,-50%);position:relative;display:flex;align-items:center;justify-content:center;">
-            <div style="position:absolute;width:64px;height:64px;background:rgba(2,132,199,0.25);border-radius:50%;animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite;"></div>
-            <div style="position:absolute;width:48px;height:48px;background:rgba(2,132,199,0.35);border-radius:50%;"></div>
-            <div style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#0284c7,#38bdf8);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:24px;">🛺</div>
-          </div>`,
-          iconSize: [0, 0],
-        });
-        const dMarker = L.marker(currentFrom, {
-          icon: driverIcon,
-          zIndexOffset: 1000,
-        }).addTo(map);
-        driverMarkerRef.current = dMarker;
+          // Street route casing
+          const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
+          const casing = L.polyline(pts, {
+            color: "#ffffff",
+            weight: 8,
+            opacity: 0.9,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(map);
+          routeCasingRef.current = casing;
 
-        // Street route casing
-        const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
-        const casing = L.polyline(pts, {
-          color: "#ffffff",
-          weight: 8,
-          opacity: 0.9,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(map);
-        routeCasingRef.current = casing;
+          // Street route line
+          const line = L.polyline(pts, {
+            color: status === "heading_pickup" ? "#0284c7" : "#059669",
+            weight: 5,
+            opacity: 0.95,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(map);
+          routeLineRef.current = line;
 
-        // Street route line
-        const line = L.polyline(pts, {
-          color: status === "heading_pickup" ? "#0284c7" : "#059669",
-          weight: 5,
-          opacity: 0.95,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(map);
-        routeLineRef.current = line;
+          // Fit map bounds to show driver and destination at street zoom
+          try {
+            const b = L.latLngBounds(pts);
+            map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
+          } catch {}
 
-        // Fit map bounds to show driver and destination at street zoom
-        try {
-          const b = L.latLngBounds(pts);
-          map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
-        } catch {}
+          // Invalidate size on load
+          map.whenReady(() => {
+            map.invalidateSize();
+            setTimeout(() => map?.invalidateSize(), 150);
+            setTimeout(() => map?.invalidateSize(), 500);
+          });
 
-        // Crucial: Invalidate size immediately and after layout settles so map NEVER renders white
-        map.whenReady(() => {
-          map.invalidateSize();
-          setTimeout(() => map?.invalidateSize(), 100);
-          setTimeout(() => map?.invalidateSize(), 300);
-          setTimeout(() => map?.invalidateSize(), 800);
-        });
-
-        mapInstanceRef.current = map;
-      } else {
-        // Smoothly update driver marker
-        if (driverMarkerRef.current && activeDriverCoords?.[0]) {
-          driverMarkerRef.current.setLatLng(activeDriverCoords);
-          mapInstanceRef.current.panTo(activeDriverCoords, { animate: true, duration: 1.0 });
+          mapInstanceRef.current = map;
         }
-        const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
-        if (routeCasingRef.current) routeCasingRef.current.setLatLngs(pts);
-        if (routeLineRef.current) {
-          routeLineRef.current.setLatLngs(pts);
-          routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
-        }
-        mapInstanceRef.current.invalidateSize();
+      } catch (err) {
+        console.warn("Leaflet active trip init error:", err);
       }
     }
     init();
@@ -455,7 +470,27 @@ export function DriverActiveTripMap({
       mounted = false;
       if (ro) ro.disconnect();
     };
-  }, [activeDriverCoords, pickupCoords, dropCoords, status, routeCoords, targetCoords]);
+  }, []);
+
+  // Update markers, route polyline, and target location dynamically without recreating map
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    try {
+      if (driverMarkerRef.current && currentFrom?.[0]) {
+        driverMarkerRef.current.setLatLng(currentFrom);
+      }
+      if (destMarkerRef.current && targetCoords?.[0]) {
+        destMarkerRef.current.setLatLng(targetCoords);
+      }
+      const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
+      if (routeCasingRef.current) routeCasingRef.current.setLatLngs(pts);
+      if (routeLineRef.current) {
+        routeLineRef.current.setLatLngs(pts);
+        routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
+      }
+      mapInstanceRef.current.invalidateSize();
+    } catch {}
+  }, [currentFrom?.[0], currentFrom?.[1], targetCoords?.[0], targetCoords?.[1], status, routeCoords]);
 
   // Cleanup on unmount
   useEffect(() => {

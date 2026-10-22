@@ -971,9 +971,8 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // Clear stale polyline immediately so an old route pointing in a different direction is never left visible
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+          // Immediately connect pickup and drop pins with route line in 0ms so the user never sees a missing/blank line
+          applyRouteGeometry([pCoords, dCoords]);
 
           try {
             const controller = new AbortController();
@@ -1031,8 +1030,8 @@ export function InteractiveBookingMap({
               // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
-            if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
-            if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+            // Keep straight connecting route line visible even if road api fails
+            applyRouteGeometry([pCoords, dCoords]);
           } finally {
             setIsCalculatingRoute(false);
           }

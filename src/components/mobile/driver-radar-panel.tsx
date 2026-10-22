@@ -842,7 +842,7 @@ export function DriverRadarPanel({
   // -------------------------------------------------------------
   if (activeTab === "trips") {
     return (
-      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pb-32 bg-slate-50 select-none">
+      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pt-18 pb-40 bg-slate-50 select-none">
         {/* Header */}
         <div className="flex items-center justify-between pb-1 border-b border-slate-200">
           <div>
@@ -1168,7 +1168,7 @@ export function DriverRadarPanel({
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
-              ? "max-h-[calc(100dvh-170px)] pb-20 sm:pb-24 overflow-y-auto"
+              ? "max-h-[calc(100dvh-170px)] pb-36 sm:pb-40 overflow-y-auto"
               : "max-h-28 overflow-hidden"
           }`}
         >

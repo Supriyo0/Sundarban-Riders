@@ -1219,6 +1219,22 @@ export async function POST(request: Request) {
   }
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 60): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      const msg = err?.message || err?.toString() || "";
+      const isTransient = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT");
+      if (!isTransient || i === retries) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastError;
+}
+
 /**
  * PATCH: Driver accepts, declines, starts, completes, or cancels a booking
  */
@@ -1260,13 +1276,16 @@ export async function PATCH(request: Request) {
     // 1. Fetch current booking state safely without invalid UUID cast errors
     const rawBId = (bookingId || "").replace(/^#/, "").trim();
     const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawBId);
-    let fetchBookingQuery = admin.from("bookings").select("*");
-    if (isBIdUuid) {
-      fetchBookingQuery = fetchBookingQuery.or(`id.eq.${rawBId},booking_number.eq.${rawBId},booking_number.eq.#${rawBId}`);
-    } else {
-      fetchBookingQuery = fetchBookingQuery.or(`booking_number.eq.${rawBId},booking_number.eq.#${rawBId},booking_number.ilike.%${rawBId}%`);
-    }
-    const { data: booking, error: fetchErr } = await fetchBookingQuery.limit(1).maybeSingle();
+    
+    const { data: booking, error: fetchErr } = await withRetry(async () => {
+      let fetchBookingQuery = admin.from("bookings").select("*");
+      if (isBIdUuid) {
+        fetchBookingQuery = fetchBookingQuery.or(`id.eq.${rawBId},booking_number.eq.${rawBId},booking_number.eq.#${rawBId}`);
+      } else {
+        fetchBookingQuery = fetchBookingQuery.or(`booking_number.eq.${rawBId},booking_number.eq.#${rawBId},booking_number.ilike.%${rawBId}%`);
+      }
+      return fetchBookingQuery.limit(1).maybeSingle();
+    });
 
     if (fetchErr || !booking) {
       return NextResponse.json({ error: "বুকিং পাওয়া যায়নি" }, { status: 404 });
@@ -1395,13 +1414,15 @@ export async function PATCH(request: Request) {
         updateData.driver_id = validDriverId;
       }
 
-      const { data: assigned, error: assignErr } = await admin
-        .from("bookings")
-        .update(updateData)
-        .eq("id", booking.id)
-        .in("status", ["pending", "searching"])
-        .select()
-        .maybeSingle();
+      const { data: assigned, error: assignErr } = await withRetry(async () => {
+        return admin
+          .from("bookings")
+          .update(updateData)
+          .eq("id", booking.id)
+          .in("status", ["pending", "searching"])
+          .select()
+          .maybeSingle();
+      });
 
       if (assignErr) {
         console.error("[bookings accept] Database update error:", assignErr);

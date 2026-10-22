@@ -301,7 +301,7 @@ interface DisclaimerScreenProps {
 export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerScreenProps) {
   const items = role === "rider" ? RIDER_DISCLAIMERS : PASSENGER_DISCLAIMERS;
   const pdfUrl = role === "rider" ? "/rider-disclaimer.pdf" : "/customer-disclaimer.pdf";
-  const pdfName = role === "rider" ? "FINAL RIDER DISCLAIMER 28-09-26.pdf" : "COUSTOMER DISCLAIMER 28-09-26.pdf";
+  const pdfName = role === "rider" ? "rider-disclaimer.pdf" : "customer-disclaimer.pdf";
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
@@ -691,7 +691,7 @@ export function DisclaimerViewerModal({
 
   const items = activeTab === "rider" ? RIDER_DISCLAIMERS : PASSENGER_DISCLAIMERS;
   const pdfUrl = activeTab === "rider" ? "/rider-disclaimer.pdf" : "/customer-disclaimer.pdf";
-  const pdfName = activeTab === "rider" ? "FINAL RIDER DISCLAIMER 28-09-26.pdf" : "COUSTOMER DISCLAIMER 28-09-26.pdf";
+  const pdfName = activeTab === "rider" ? "rider-disclaimer.pdf" : "customer-disclaimer.pdf";
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in select-none">

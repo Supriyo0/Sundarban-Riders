@@ -1493,11 +1493,11 @@ export async function PATCH(request: Request) {
     // -------------------------------------------------------------
     // ACTION: START TRIP (OTP Required - Passenger must provide OTP)
     // -------------------------------------------------------------
-    if (action === "start") {
+    if (action === "start" || action === "start_trip") {
       const meta = getBookingMeta(booking);
       const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
       const expectedOtp = (meta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821")).toString();
-      const providedOtp = (body.otp || "").toString().trim();
+      const providedOtp = (body.otp || body.startOtp || body.start_otp || "").toString().trim();
 
       if (!providedOtp) {
         return NextResponse.json(

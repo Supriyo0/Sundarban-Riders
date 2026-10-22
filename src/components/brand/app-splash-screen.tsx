@@ -167,15 +167,15 @@ export function AppSplashScreen({
       </div>
 
       {/* Central Liquid Glass Hero Card */}
-      <div className="relative z-10 flex flex-col items-center text-center my-auto w-full max-w-sm px-4">
+      <div className="relative z-10 flex flex-col items-center text-center my-auto w-full max-w-xs px-2">
         {/* Floating Specular Ring with Glowing Brand Logo */}
-        <div className="relative mb-6">
+        <div className="relative mb-4">
           {/* Outer Pulsing Radar Rings */}
-          <div className="absolute inset-[-14px] rounded-full border border-emerald-400/30 animate-ping opacity-60 pointer-events-none" />
-          <div className="absolute inset-[-28px] rounded-full border border-emerald-500/20 animate-pulse pointer-events-none" />
+          <div className="absolute inset-[-10px] rounded-full border border-emerald-400/30 animate-ping opacity-60 pointer-events-none" />
+          <div className="absolute inset-[-20px] rounded-full border border-emerald-500/20 animate-pulse pointer-events-none" />
 
           {/* Liquid Glass Frosted Circle */}
-          <div className="relative flex items-center justify-center w-36 h-36 rounded-full bg-white/[0.1] backdrop-blur-3xl border-2 border-white/40 shadow-[0_20px_50px_rgba(16,185,129,0.4),inset_0_2px_4px_rgba(255,255,255,0.6)] p-2 transition-transform duration-300 hover:scale-105">
+          <div className="relative flex items-center justify-center w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-white/[0.1] backdrop-blur-3xl border-2 border-white/40 shadow-[0_15px_40px_rgba(16,185,129,0.35),inset_0_2px_4px_rgba(255,255,255,0.6)] p-1.5 transition-transform duration-300 hover:scale-105">
             <div className="w-full h-full rounded-full overflow-hidden bg-white shadow-[inset_0_2px_8px_rgba(0,0,0,0.15)] flex items-center justify-center relative">
               <img
                 src="/sundarban-logo.png"
@@ -186,24 +186,24 @@ export function AppSplashScreen({
           </div>
 
           {/* 24x7 Live Pill */}
-          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-400/60 text-[10px] font-black text-emerald-300 uppercase tracking-widest shadow-xl flex items-center gap-1.5 whitespace-nowrap backdrop-blur-md">
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-400/60 text-[9px] font-black text-emerald-300 uppercase tracking-widest shadow-xl flex items-center gap-1 whitespace-nowrap backdrop-blur-md">
             <Sparkles className="w-2.5 h-2.5 text-amber-400 animate-spin" />
             <span>24×7 লাইভ জিপিএস</span>
           </div>
         </div>
 
         {/* Brand Typography with Liquid Glass Frosted Backdrop */}
-        <div className="w-full p-5 rounded-3xl bg-white/[0.06] backdrop-blur-3xl border border-white/15 shadow-[0_16px_40px_rgba(0,0,0,0.35),inset_0_1px_1px_rgba(255,255,255,0.3)] space-y-2">
-          <h1 className="text-3xl font-black tracking-tight text-white flex items-center justify-center gap-2">
+        <div className="w-full p-3.5 sm:p-4 rounded-2xl bg-white/[0.06] backdrop-blur-3xl border border-white/15 shadow-[0_12px_30px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.3)] space-y-1.5">
+          <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center justify-center gap-1.5">
             <span>SUNDARBAN</span>
-            <span className="text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.6)]">RIDERS</span>
+            <span className="text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.6)]">RIDERS</span>
           </h1>
 
-          <p className="text-amber-300 font-bold text-sm tracking-tight flex items-center justify-center gap-1.5">
+          <p className="text-amber-300 font-bold text-xs tracking-tight flex items-center justify-center gap-1">
             <span>অনলাইন স্মার্ট টোটো বুকিং নেটওয়ার্ক</span>
           </p>
 
-          <p className="text-emerald-200/70 text-[11px] font-medium leading-relaxed pt-0.5">
+          <p className="text-emerald-200/70 text-[10.5px] font-medium leading-tight pt-0.5">
             কাকদ্বীপ • নামখানা • ডায়মন্ড হারবার • লক্ষ্মীকান্তপুর
           </p>
         </div>

@@ -236,6 +236,7 @@ export function DriverRadarPanel({
               longitude: lng,
               ...(name ? { current_location_name: name } : {}),
               is_active: isOnline,
+              is_available: isOnline,
             }),
           });
         } catch {}
@@ -407,11 +408,11 @@ export function DriverRadarPanel({
             }
           }
 
-          // Single clean check with 10s maximumAge
+          // Single clean check with maximumAge: 0 for fresh satellite GPS
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
             timeout: 10000,
-            maximumAge: 10000,
+            maximumAge: 0,
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
@@ -449,7 +450,7 @@ export function DriverRadarPanel({
             handleFail("🛰️ দুর্বল GPS সিগন্যাল। ফোনের লোকেশন অন রাখুন।", false);
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     },
     [handleIncomingCoords]
@@ -469,7 +470,7 @@ export function DriverRadarPanel({
       if (isNative) {
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 5000 },
+            { enableHighAccuracy: true, maximumAge: 0 },
             (position, err) => {
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude } = position.coords;
@@ -492,7 +493,7 @@ export function DriverRadarPanel({
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
         );
       }
     };
@@ -1097,59 +1098,10 @@ export function DriverRadarPanel({
       {/* 1. EDGE-TO-EDGE FULL CANVAS NAVIGATION MAP */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
-      {/* 2. TOP FLOATING UBER DRIVER STATUS HUD */}
-      <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
-        <div className="pointer-events-auto rounded-3xl p-3 shadow-[0_10px_35px_rgba(0,0,0,0.14)] border border-slate-200/80 bg-white/95 backdrop-blur-xl flex items-center justify-between gap-2">
-          {/* Driver Profile Badge */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center text-lg font-black shrink-0">
-              🛺
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-xs text-slate-900 truncate">
-                  {driverSession?.driverName || "চালকের ড্যাশবোর্ড"}
-                </span>
-                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
-                  ★ 5.0
-                </span>
-              </div>
-              <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 block truncate">
-                🆔 {driverSession?.uniqueId || driverSession?.totoNumber || "SR-DRV"}
-              </span>
-            </div>
-          </div>
-
-          {/* Today's Earnings Pill & Online Switcher */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Earnings Pill */}
-            <button
-              type="button"
-              onClick={() => setActiveTab("trips")}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-black font-mono transition-all flex items-center gap-1 cursor-pointer"
-            >
-              <span>₹{tripStats.todayEarnings}</span>
-            </button>
-
-            {/* Online / Offline Toggle Button */}
-            <button
-              type="button"
-              onClick={() => onToggleOnline?.(!isOnline)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
-                isOnline
-                  ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-2 ring-emerald-500/20"
-                  : "bg-red-50 text-red-600 border border-red-200"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
-              <span>{isOnline ? "অনলাইন" : "অফলাইন"}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Location Permission Warning Banner (If GPS Denied / Blocked) */}
-        {locationError && (
-          <div className="mt-2 pointer-events-auto p-2.5 rounded-2xl bg-amber-50/98 backdrop-blur-md border border-amber-300 text-amber-950 shadow-lg flex items-center justify-between gap-2 animate-in slide-in-from-top-2">
+      {/* 2. TOP FLOATING NOTIFICATIONS (Location error & pending rides) */}
+      {locationError && (
+        <div className="absolute top-3 left-3 right-3 z-30 pointer-events-none">
+          <div className="pointer-events-auto p-2.5 rounded-2xl bg-amber-50/98 backdrop-blur-md border border-amber-300 text-amber-950 shadow-lg flex items-center justify-between gap-2 animate-in slide-in-from-top-2">
             <div className="flex items-center gap-2 min-w-0">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
               <span className="text-[11px] font-bold leading-tight line-clamp-2">
@@ -1166,19 +1118,19 @@ export function DriverRadarPanel({
               <span>{locationError.includes("পারমিশন") ? "অনুমতি দিন" : "রিফ্রেশ"}</span>
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* 3. FLOATING MAP ON-SCREEN CONTROLS */}
-      {/* Floating Active Rides Indicator Pill (After 30s timer ends, rider can tap to open panel and accept) */}
+      {/* Floating Active Rides Indicator Pill */}
       {pendingBookings.length > 0 && (
         <button
           type="button"
           onClick={() => setSheetExpanded(true)}
-          className="absolute top-16 left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all"
+          className={`absolute ${locationError ? "top-16" : "top-3"} left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all`}
         >
           <span className="w-2.5 h-2.5 rounded-full bg-amber-300 animate-ping" />
-          <span>🛺 {pendingBookings.length}টি রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>
+          <span>🛺 {pendingBookings.length}টি নতুন রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>
         </button>
       )}
 
@@ -1187,7 +1139,7 @@ export function DriverRadarPanel({
         type="button"
         onClick={toggleMapLayer}
         title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "স্ট্রিট ভিউ"}
-        className="absolute bottom-48 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
+        className="absolute bottom-52 right-3.5 z-20 pointer-events-auto w-11 h-11 bg-white/95 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-90 cursor-pointer"
       >
         <Layers className="w-5 h-5 text-slate-700" />
       </button>
@@ -1198,7 +1150,7 @@ export function DriverRadarPanel({
         onClick={() => updateDriverLocation(true)}
         disabled={isUpdatingLocation}
         title="আমার অবস্থান"
-        className={`absolute bottom-34 right-3.5 z-20 pointer-events-auto w-11 h-11 rounded-2xl shadow-lg border flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
+        className={`absolute bottom-38 right-3.5 z-20 pointer-events-auto w-11 h-11 rounded-2xl shadow-lg border flex items-center justify-center transition-transform active:scale-90 cursor-pointer ${
           hasValidLocation
             ? "bg-white hover:bg-emerald-50 text-emerald-600 border-slate-200"
             : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-bounce"
@@ -1211,13 +1163,13 @@ export function DriverRadarPanel({
         )}
       </button>
 
-      {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER (Smooth Touch Gestures & Tap Toggle) */}
-      <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-none">
+      {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER (Positioned strictly above MobileBottomNav) */}
+      <div className="absolute bottom-[72px] sm:bottom-[76px] left-0 right-0 z-30 pointer-events-none">
         <div
-          className={`pointer-events-auto mx-2 sm:mx-3 mb-2 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
+          className={`pointer-events-auto mx-2 sm:mx-3 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
-              ? "max-h-[82dvh] pb-28 sm:pb-32 overflow-y-auto"
-              : "max-h-24 overflow-hidden"
+              ? "max-h-[calc(100dvh-170px)] pb-20 sm:pb-24 overflow-y-auto"
+              : "max-h-28 overflow-hidden"
           }`}
         >
           {/* Interactive Drag / Tap Handle */}

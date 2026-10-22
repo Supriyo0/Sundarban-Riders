@@ -656,7 +656,7 @@ export function InteractiveBookingMap({
     return calculateTotoFare(d, passengerCount, pricingConfig);
   }, [distanceKm, passengerCount, pricingConfig]);
 
-  // NEARBY ACTIVE DRIVERS: Real drivers within 8.0 km radius of pickup or region hub
+  // NEARBY ACTIVE DRIVERS: Real drivers within 15.0 km radius of pickup or region hub
   const nearbyDrivers = useMemo(() => {
     const centerLat = pickupCoords[0] !== 0 ? pickupCoords[0] : (dropCoords[0] !== 0 ? dropCoords[0] : 21.8760);
     const centerLng = pickupCoords[1] !== 0 ? pickupCoords[1] : (dropCoords[1] !== 0 ? dropCoords[1] : 88.1920);
@@ -672,7 +672,7 @@ export function InteractiveBookingMap({
           distanceKm: distKm,
         };
       })
-      .filter((d): d is any => d !== null && d.distanceKm <= 8.0)
+      .filter((d): d is any => d !== null && d.distanceKm <= 15.0)
       .sort((a, b) => a.distanceKm - b.distanceKm);
   }, [realDrivers, pickupCoords, dropCoords]);
 

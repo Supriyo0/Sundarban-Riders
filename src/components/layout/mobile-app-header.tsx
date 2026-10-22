@@ -8,6 +8,9 @@ interface MobileAppHeaderProps {
   role: "rider" | "passenger";
   userName?: string;
   userPhoto?: string;
+  isOnline?: boolean;
+  onToggleOnline?: (online: boolean) => void;
+  todayEarnings?: number;
   isSoundMuted?: boolean;
   onToggleSound?: () => void;
   onSwitchRole?: () => void;
@@ -20,6 +23,9 @@ export function MobileAppHeader({
   role,
   userName,
   userPhoto,
+  isOnline = true,
+  onToggleOnline,
+  todayEarnings,
   isSoundMuted = false,
   onToggleSound,
   onSwitchRole,
@@ -71,6 +77,22 @@ export function MobileAppHeader({
 
         {/* Right Controls: iOS Liquid Glass Pill Keys */}
         <div className="flex items-center gap-1.5 shrink-0 z-10">
+          {/* Driver Online / Offline Toggle Pill */}
+          {role === "rider" && onToggleOnline && (
+            <button
+              type="button"
+              onClick={() => onToggleOnline(!isOnline)}
+              className={`h-8 px-2.5 rounded-xl text-xs font-black transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                isOnline
+                  ? "bg-emerald-600 text-white shadow-emerald-600/30 ring-1 ring-emerald-500/30"
+                  : "bg-red-50 hover:bg-red-100 text-red-600 border border-red-200"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-white animate-ping" : "bg-red-500"}`} />
+              <span>{isOnline ? "অনলাইন" : "অফলাইন"}</span>
+            </button>
+          )}
+
           {/* Sound toggle */}
           {onToggleSound && (
             <button

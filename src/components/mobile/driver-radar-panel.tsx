@@ -629,17 +629,17 @@ export function DriverRadarPanel({
         const bRes = await fetch(`/api/bookings${qParams}`);
         const bJson = await bRes.json();
         const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
-        // Strictly filter out any pending ride older than 3 minutes (180s) or taken by another driver or > 5 km
+        // Filter out pending rides older than 5 minutes (300s) or taken by another driver or > 35 km
         const validPending = rawBookings.filter((b: any) => {
           if (b.status !== "pending") return false;
           if (b.driver_id) return false;
-          if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 180 * 1000) return false;
+          if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 300 * 1000) return false;
           if (curCoords[0] !== 0) {
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
               const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
-              if (dKm > 5.0) return false;
+              if (dKm > 35.0) return false;
             }
           }
           return true;
@@ -658,8 +658,12 @@ export function DriverRadarPanel({
           }
           const first = newlyArrivedRides[0];
           const pText = cleanLocation(first.pickup_location) || "পিকআপ";
-          const dText = cleanLocation(first.drop_location) || "গন্তব্য";
-          const fare = first.estimated_fare || first.fare || 40;
+          const isMetered = !first.drop_lat || (typeof first.drop_location === "string" && (first.drop_location.includes("মিটার") || first.drop_location.includes("বিনা গন্তব্য")));
+          const dText = isMetered ? "মিটার অনুযায়ী গন্তব্য" : (cleanLocation(first.drop_location) || "গন্তব্য");
+          let fare = Number(first.estimated_fare) || Number(first.fare) || 25;
+          if (isMetered || fare > 5000) {
+            fare = 25;
+          }
           showLocalRideAlertNotification(
             "🔔 নতুন রাইড অনুরোধ এসেছে!",
             `📍 ${pText} থেকে ${dText} (ভাড়া: ₹${fare})`,

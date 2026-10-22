@@ -74,9 +74,12 @@ async function notifyOnlineDriversViaWhatsApp(
           dLng = meta.lng;
         } catch {}
       }
-      if (!pLat || !pLng || !dLat || !dLng) return false;
-      const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-      return dKm <= 5.0;
+      if (pLat && pLng && dLat && dLng) {
+        const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
+        return dKm <= 35.0;
+      }
+      // If driver is online/active, still notify even if exact GPS is resolving
+      return true;
     });
 
     for (const d of nearbyDrivers) {
@@ -675,9 +678,9 @@ export async function GET(request: Request) {
     }
 
     if (status === "pending") {
-      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-      // Automatically cancel any pending bookings older than 3 minutes so no rider sees stale rides
+      // Automatically cancel any pending bookings older than 5 minutes so no rider sees stale rides
       try {
         await admin
           .from("bookings")
@@ -687,14 +690,14 @@ export async function GET(request: Request) {
             updated_at: new Date().toISOString(),
           })
           .eq("status", "pending")
-          .lt("created_at", threeMinutesAgo);
+          .lt("created_at", fiveMinutesAgo);
       } catch {}
 
       const { data, error } = await admin
         .from("bookings")
         .select("*")
         .eq("status", "pending")
-        .gte("created_at", threeMinutesAgo)
+        .gte("created_at", fiveMinutesAgo)
         .order("created_at", { ascending: false })
         .limit(20);
 
@@ -1108,15 +1111,22 @@ export async function POST(request: Request) {
     );
 
     // Authoritative Server-side Distance & Fare Validation (Zero-trust client fare)
-    let calculatedDist = Number(tripDistance) || 0;
-    if (pickupCoords && dropCoords && Array.isArray(pickupCoords) && Array.isArray(dropCoords)) {
-      calculatedDist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
-    }
-    if (calculatedDist <= 0) calculatedDist = 1.0;
+    const hasValidPickup = pickupCoords && Array.isArray(pickupCoords) && pickupCoords.length === 2 && pickupCoords[0] !== 0 && !isNaN(pickupCoords[0]);
+    const hasValidDrop = dropCoords && Array.isArray(dropCoords) && dropCoords.length === 2 && dropCoords[0] !== 0 && !isNaN(dropCoords[0]);
+    const isMeteredTrip = !hasValidDrop || (typeof dropLocation === "string" && (dropLocation.includes("মিটার") || dropLocation.includes("বিনা গন্তব্য")));
 
-    // Authoritative Server Calculation (Prevents Client Fare Tampering)
-    const serverFare = calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
-    const finalEstimatedFare = serverFare;
+    let calculatedDist = Number(tripDistance) || 1.0;
+    if (hasValidPickup && hasValidDrop && !isMeteredTrip) {
+      calculatedDist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
+    } else {
+      calculatedDist = 1.0;
+    }
+    if (calculatedDist <= 0 || isNaN(calculatedDist)) calculatedDist = 1.0;
+
+    const baseFare = pricingConfig.baseFare || 25;
+    const finalEstimatedFare = isMeteredTrip
+      ? baseFare
+      : calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
 
     // Cryptographically Secure Unpredictable 4-digit OTP (Decoupled from booking number)
     const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -1690,6 +1700,16 @@ export async function PATCH(request: Request) {
       }
 
       const isSystemTimeout = Boolean(body.isSystemTimeout) || body.cancelReason === "3_min_timeout_expired";
+
+      // If a driver already accepted the booking, system timeout cancellation MUST NOT cancel it!
+      if (isSystemTimeout && (booking.status === "assigned" || booking.status === "in_progress" || booking.status === "completed" || booking.status === "accepted")) {
+        return NextResponse.json({
+          success: true,
+          message: "রাইড ইতিমধ্যে একজন চালক গ্রহণ করেছেন, স্বয়ংক্রিয় বাতিল উপেক্ষা করা হলো।",
+          booking: enrichBookingCoords(booking),
+        });
+      }
+
       const isCancelledByDriver = Boolean(driverId);
       const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
 

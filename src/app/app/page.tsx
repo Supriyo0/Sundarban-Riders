@@ -96,18 +96,7 @@ const LiveRideTrackingMap = dynamic(
   { ssr: false }
 );
 
-const DriverActiveTripMap = dynamic(
-  () => import("@/components/mobile/driver-active-trip-map").then((mod) => mod.DriverActiveTripMap),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full h-full min-h-[calc(100dvh-58px)] flex flex-col items-center justify-center bg-slate-900 text-emerald-400 gap-3">
-        <div className="w-9 h-9 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-xs font-semibold text-slate-300">ট্রিপ ম্যাপ লোড হচ্ছে...</span>
-      </div>
-    ),
-  }
-);
+import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";
@@ -765,29 +754,60 @@ function MobileAppPageContent() {
           setSearchCountdown((prev) => prev - 1);
         }, 1000);
       } else {
-        // 3-minute timeout reached without acceptance!
-        // Totally cancel the booking in database so no rider will ever see it again
+        // Countdown reached 0: verify whether driver just accepted before cancelling
         const expiredBookingId = activeBookingId;
         if (expiredBookingId) {
-          fetch("/api/bookings", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "cancel",
-              bookingId: expiredBookingId,
-              cancelReason: "3_min_timeout_expired",
-              isSystemTimeout: true,
-            }),
-          }).catch(() => {});
-        }
+          fetch(`/api/bookings?id=${expiredBookingId}`)
+            .then((r) => r.json())
+            .then((resData) => {
+              const b = resData?.booking;
+              if (b && (b.status === "assigned" || b.status === "in_progress" || b.status === "accepted")) {
+                // Driver accepted! Do NOT cancel!
+                setPassengerBooking({
+                  id: b.id,
+                  bookingNumber: b.booking_number,
+                  driverName: b.driver_name || "টোটো চালক",
+                  driverPhone: b.driver_phone || "",
+                  totoNumber: b.driver_unique_id || b.toto_number || "",
+                  uniqueId: b.driver_unique_id || b.toto_number || "",
+                  startOtp: b.start_otp,
+                });
+                setSearchStatus("idle");
+                setSearchCountdown(0);
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("sr_search_status");
+                }
+                playSuccessSound();
+                return;
+              }
 
-        setSearchStatus("unaccepted");
-        setActiveBookingId(null);
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("sr_active_booking_id");
-          localStorage.removeItem("sr_search_status");
+              // Genuinely expired without any accept
+              fetch("/api/bookings", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "cancel",
+                  bookingId: expiredBookingId,
+                  cancelReason: "3_min_timeout_expired",
+                  isSystemTimeout: true,
+                }),
+              }).catch(() => {});
+
+              setSearchStatus("unaccepted");
+              setActiveBookingId(null);
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("sr_active_booking_id");
+                localStorage.removeItem("sr_search_status");
+              }
+              toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
+            })
+            .catch(() => {
+              setSearchStatus("unaccepted");
+              setActiveBookingId(null);
+            });
+        } else {
+          setSearchStatus("unaccepted");
         }
-        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
       }
     }
     return () => clearTimeout(timer);
@@ -1506,43 +1526,63 @@ function MobileAppPageContent() {
             : data.booking
             ? [data.booking]
             : [];
-          const b = pendingList.find(
-            (item: any) =>
-              item &&
-              item.status === "pending" &&
-              !item.driver_id &&
-              !declinedBookingIdsRef.current.has(item.id) &&
-              !alertedBookingIdsRef.current.has(item.id)
-          );
+          const b = pendingList.find((item: any) => {
+            if (!item || item.status !== "pending" || item.driver_id) return false;
+            if (declinedBookingIdsRef.current.has(item.id)) return false;
+            if (alertedBookingIdsRef.current.has(item.id)) return false;
+
+            const pLat = Number(item.pickup_lat || item.start_coords?.[0]);
+            const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
+            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
+              const dKm = calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng);
+              if (dKm > 35.0) {
+                // Out of range: mark so it does not block evaluating subsequent pending bookings
+                alertedBookingIdsRef.current.add(item.id);
+                return false;
+              }
+            }
+            return true;
+          });
+
           if (b) {
-            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
-            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            if (!pLat || !pLng || isNaN(pLat) || isNaN(pLng) || pLat === 0 || pLng === 0) return;
-
-            // 8.0 km radius check
-            const dKm = calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng);
-            if (dKm > 8.0) return; // Ignore bookings farther than 8 km
-
             alertedBookingIdsRef.current.add(b.id);
 
+            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             const dDropLat = Number(b.drop_lat || b.end_coords?.[0]);
             const dDropLng = Number(b.drop_lng || b.end_coords?.[1]);
-            const tripDistKm = Number(b.trip_distance_km) || (pLat && dDropLat ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
+
+            const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
+            const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
+
+            const dKm = hasValidPickup ? calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng) : 1.2;
+
+            const isMetered = !hasValidDrop || (typeof b.drop_location === "string" && (b.drop_location.includes("মিটার") || b.drop_location.includes("বিনা গন্তব্য")));
+
+            const tripDistKm = isMetered
+              ? null
+              : Number(b.trip_distance_km) || (hasValidPickup && hasValidDrop ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
+
+            // Guard against astronomical fare from old metered bookings
+            let displayFare = Number(b.estimated_fare) || Number(b.fare) || 25;
+            if (isMetered || displayFare > 5000) {
+              displayFare = 25;
+            }
 
             setAlertCountdown(30);
             setIncomingRide({
               id: b.id,
               bookingNumber: b.booking_number || b.id?.slice(0, 8),
-              fare: b.estimated_fare || b.fare || 0,
+              fare: displayFare,
               passengerName: b.customer_name || "যাত্রী",
               passengerRating: 5.0,
               passengerPhone: b.customer_phone || "",
               pickup: b.pickup_location || "পিকআপ লোকেশন",
               pickupDistance: `${dKm.toFixed(1)} কিমি দূরে`,
-              drop: b.drop_location || "গন্তব্য",
-              tripDistance: `${tripDistKm.toFixed(1)} কিমি ট্রিপ`,
-              pickupCoords: [pLat, pLng],
-              dropCoords: dDropLat && dDropLng ? [dDropLat, dDropLng] : [21.8680, 88.1630],
+              drop: isMetered ? "মিটার অনুযায়ী গন্তব্য" : (b.drop_location || "গন্তব্য"),
+              tripDistance: isMetered ? "মিটার অনুযায়ী" : `${tripDistKm ? tripDistKm.toFixed(1) : "1.5"} কিমি ট্রিপ`,
+              pickupCoords: hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920],
+              dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
             });
           }
         } catch {

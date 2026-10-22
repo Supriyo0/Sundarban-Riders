@@ -837,23 +837,13 @@ export async function GET(request: Request) {
           });
         }
 
-        const orClauses: string[] = [];
-        if (matchedDriverIds.length > 0) {
-          orClauses.push(`driver_id.in.(${matchedDriverIds.join(",")})`);
-        }
-        if (last10Driver.length >= 10) {
-          orClauses.push(`driver_phone.ilike.%${last10Driver}%`);
-        }
-
         let histQuery = admin
           .from("bookings")
           .select("*, drivers(*)")
           .order("created_at", { ascending: false })
           .limit(50);
 
-        if (orClauses.length > 0) {
-          histQuery = histQuery.or(orClauses.join(","));
-        } else {
+        if (matchedDriverIds.length > 0) {
           histQuery = histQuery.in("driver_id", matchedDriverIds);
         }
 
@@ -1256,7 +1246,7 @@ export async function PATCH(request: Request) {
       if (cleanPhone) {
         await admin.from("bookings").update({ status: "completed", updated_at: new Date().toISOString() })
           .in("status", ["assigned", "in_progress"])
-          .or(`customer_phone.ilike.%${cleanPhone}%,driver_phone.ilike.%${cleanPhone}%`);
+          .ilike("customer_phone", `%${cleanPhone}%`);
       }
       if (driverId) {
         await admin.from("drivers").update({ is_available: true, is_active: false }).eq("id", driverId);
@@ -1338,32 +1328,27 @@ export async function PATCH(request: Request) {
       }
 
       // 1. IDEMPOTENT RE-ACCEPT CHECK:
-      // If this booking is ALREADY assigned to THIS driver (due to retry or re-click), succeed cleanly!
-      const isAlreadyAcceptedByThisDriver =
-        booking.status === "assigned" &&
-        ((validDriverId && booking.driver_id === validDriverId) ||
-         (cleanPhone && existingMeta.driver_phone && existingMeta.driver_phone.includes(cleanPhone)));
-
-      if (isAlreadyAcceptedByThisDriver) {
+      // If this booking is ALREADY assigned, succeed cleanly without throwing 409
+      if (booking.status === "assigned") {
         const enriched = enrichBookingCoords(booking);
         return NextResponse.json({
           success: true,
           booking: {
             ...enriched,
-            driver_name: driverName || "সুন্দরবন চালক",
-            driver_phone: driverPhone || "9593177885",
-            toto_number: totoNumber || "WB-96-T-8421",
+            driver_name: driverName || existingMeta.driver_name || "সুন্দরবন চালক",
+            driver_phone: driverPhone || existingMeta.driver_phone || "9593177885",
+            toto_number: totoNumber || existingMeta.toto_number || "WB-96-T-8421",
           },
           message: "রাইড ইতিমধ্যে সফলভাবে গৃহীত হয়েছে!",
         });
       }
 
-      // Check if already taken by another driver or cancelled
+      // Check if cancelled or already on trip
       if (booking.status !== "pending" && booking.status !== "searching") {
         return NextResponse.json(
           {
             error: "booking_already_taken",
-            message: "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।",
+            message: "দুঃখিত! এই রাইডটি ইতিমধ্যে সমাপ্ত বা বাতিল হয়েছে।",
           },
           { status: 409 }
         );

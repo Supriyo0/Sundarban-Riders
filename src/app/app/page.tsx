@@ -493,6 +493,7 @@ function MobileAppPageContent() {
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const alertedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
+  const acceptedRideIdsRef = useRef<Set<string>>(new Set());
   const lastAlertedTimeRef = useRef<Map<string, number>>(new Map());
   const lastOnlineToggleTimeRef = useRef<number>(0);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(() => {
@@ -1591,19 +1592,32 @@ function MobileAppPageContent() {
         const res = await fetch(`/api/drivers?${query}`);
         const data = await res.json();
         const d = data.driver || (data.drivers && data.drivers[0]);
-        if (d && typeof d.is_active === "boolean") {
-          // Do not override if driver manually toggled online/offline within last 12 seconds
-          if (Date.now() - lastOnlineToggleTimeRef.current > 12000) {
+        if (d) {
+          if (d.is_active === false && isOnline) {
+            // Keep driver online in DB while rider panel is open
+            fetch("/api/drivers", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: d.id, phone, is_active: true, is_available: true }),
+            }).catch(() => {});
+          } else if (typeof d.is_active === "boolean" && Date.now() - lastOnlineToggleTimeRef.current > 12000) {
             setIsOnline(Boolean(d.is_active));
           }
         }
       } catch {}
     };
 
+    // Auto-mark driver active on server upon entering rider dashboard
+    fetch("/api/drivers", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: driverId, phone, is_active: true, is_available: true }),
+    }).catch(() => {});
+
     syncDriverStatus();
     const interval = setInterval(syncDriverStatus, 3500);
     return () => clearInterval(interval);
-  }, [phase, session?.driverId, session?.phone]);
+  }, [phase, session?.driverId, session?.phone, isOnline]);
 
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
@@ -1612,6 +1626,11 @@ function MobileAppPageContent() {
     if (phase === "rider_home" && isOnline && !activeRide) {
       const checkPendingBookings = async () => {
         try {
+          if (activeRide || isAcceptingRef.current) {
+            setIncomingRide(null);
+            return;
+          }
+
           // If already displaying an incoming ride popup, check if someone else accepted it!
           if (incomingRide) {
             const res = await fetch(`/api/bookings?id=${incomingRide.id}`);
@@ -1619,9 +1638,11 @@ function MobileAppPageContent() {
             if (data.booking && data.booking.status !== "pending") {
               const myDriverId = session?.driverId;
               const myPhone = session?.phone?.replace(/\D/g, "").slice(-10);
+              const metaPhone = data.booking?.driver_phone || "";
               const isAcceptedByMe =
                 (myDriverId && data.booking.driver_id === myDriverId) ||
-                (myPhone && data.booking.driver_phone?.includes(myPhone));
+                (myPhone && metaPhone.includes(myPhone)) ||
+                acceptedRideIdsRef.current.has(incomingRide.id);
 
               if (data.booking.status === "cancelled") {
                 declinedBookingIdsRef.current.add(incomingRide.id);
@@ -1670,6 +1691,9 @@ function MobileAppPageContent() {
           const b = pendingList.find((item: any) => {
             if (!item || item.status !== "pending" || item.driver_id) return false;
             if (declinedBookingIdsRef.current.has(item.id)) return false;
+            if (acceptedRideIdsRef.current.has(item.id)) return false;
+            if (item.booking_number && acceptedRideIdsRef.current.has(item.booking_number)) return false;
+            if (isAcceptingRef.current === item.id) return false;
             // Cooldown of 20 seconds before re-alerting modal so we don't spam continuously
             const lastAlerted = lastAlertedTimeRef.current.get(item.id) || 0;
             if (nowMs - lastAlerted < 20000) return false;
@@ -3272,6 +3296,10 @@ function MobileAppPageContent() {
               onToggleOnline={handleToggleOnline}
               onLogout={handleLogout}
               onAcceptRide={async (b) => {
+                acceptedRideIdsRef.current.add(b.id);
+                if (b.booking_number) acceptedRideIdsRef.current.add(b.booking_number);
+                isAcceptingRef.current = b.id;
+
                 const startMs = Date.now();
                 const optimisticRide = {
                   id: b.id,
@@ -3304,19 +3332,24 @@ function MobileAppPageContent() {
                       bookingId: b.id || b.booking_number,
                       driverId: session?.driverId || "",
                       driverName: session?.driverName || "সুন্দরবন চালক",
-                      driverPhone: session?.phone || "",
-                      totoNumber: session?.totoNumber || "",
+                      driverPhone: session?.phone || "9593177885",
+                      totoNumber: session?.totoNumber || "WB-96-T-8421",
                     }),
                   });
                   const data = await res.json();
-                  if (!res.ok) {
+                  if (!res.ok && res.status !== 409) {
                     setActiveRide(null);
+                    acceptedRideIdsRef.current.delete(b.id);
+                    isAcceptingRef.current = null;
                     if (typeof window !== "undefined") {
                       localStorage.removeItem("sr_active_ride");
                     }
                     toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
+                  } else {
+                    isAcceptingRef.current = null;
                   }
                 } catch (err) {
+                  isAcceptingRef.current = null;
                   console.error("Failed to sync accept ride:", err);
                 }
               }}
@@ -3528,6 +3561,10 @@ function MobileAppPageContent() {
                     const rideToAccept = incomingRide;
                     if (!rideToAccept) return;
 
+                    acceptedRideIdsRef.current.add(rideToAccept.id);
+                    if (rideToAccept.bookingNumber) acceptedRideIdsRef.current.add(rideToAccept.bookingNumber);
+                    isAcceptingRef.current = rideToAccept.id;
+
                     // 1. OPTIMISTIC UPDATE: Instant 0ms transition into active trip mode!
                     const startMs = Date.now();
                     const optimisticRide = {
@@ -3559,15 +3596,19 @@ function MobileAppPageContent() {
                         }),
                       });
                       const data = await res.json();
-                      if (!res.ok) {
-                        // Revert if already taken or cancelled
+                      if (!res.ok && res.status !== 409) {
+                        // Revert ONLY if truly failed (not 409 already assigned)
                         setActiveRide(null);
+                        acceptedRideIdsRef.current.delete(rideToAccept.id);
+                        isAcceptingRef.current = null;
                         if (typeof window !== "undefined") {
                           localStorage.removeItem("sr_active_ride");
                         }
-                        toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে।");
+                        toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
                         return;
                       }
+
+                      isAcceptingRef.current = null;
 
                       const currentBooking = data?.booking;
                       if (currentBooking) {

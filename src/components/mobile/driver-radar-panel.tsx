@@ -1426,7 +1426,10 @@ export function DriverRadarPanel({
                           <Button
                             type="button"
                             size="sm"
-                            onClick={() => onAcceptRide(booking)}
+                            onClick={() => {
+                              setPendingBookings((prev) => prev.filter((p) => p.id !== booking.id));
+                              onAcceptRide(booking);
+                            }}
                             className="shrink-0 h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 cursor-pointer"
                           >
                             গ্রহণ

@@ -1602,15 +1602,18 @@ export async function PATCH(request: Request) {
         .maybeSingle();
 
       // Also persist real live coordinates to the driver record in drivers table
-      if (booking.driver_id && currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
+      const targetDId = body.driverId || booking.driver_id;
+      if (targetDId && currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
         const lat = Number(currentCoords[0]);
         const lng = Number(currentCoords[1]);
         if (!isNaN(lat) && !isNaN(lng) && lat !== 0) {
-          void admin.from("drivers").update({
-            latitude: lat,
-            longitude: lng,
-            updated_at: new Date().toISOString(),
-          }).eq("id", booking.driver_id);
+          try {
+            await admin.from("drivers").update({
+              latitude: lat,
+              longitude: lng,
+              updated_at: new Date().toISOString(),
+            }).eq("id", targetDId);
+          } catch {}
         }
       }
 

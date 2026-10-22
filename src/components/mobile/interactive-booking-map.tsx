@@ -411,6 +411,15 @@ export function InteractiveBookingMap({
   const [roadDurationMin, setRoadDurationMin] = useState(5);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
+
+  // Safety auto-unlock: guarantees user is never stuck on loading screen
+  useEffect(() => {
+    if (!isCalculatingRoute) return;
+    const timer = setTimeout(() => {
+      setIsCalculatingRoute(false);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [isCalculatingRoute]);
   // True when user is typing a custom pickup — GPS watcher must NOT override it
   const hasManualPickupRef = useRef(false);
   const pickupInputFocusedRef = useRef(false);
@@ -2481,59 +2490,12 @@ export function InteractiveBookingMap({
         </button>
       </div>
 
-      {/* Route Calculation Centered Screen-Blur Modal (Exact Middle, All Background Blurred, Non-touchable) */}
-      {/* Route Calculation Centered Screen-Blur Modal (100% Liquid Glass Orb, Non-touchable Background, With Escape/Dismiss) */}
+      {/* Route Calculation Non-blocking Floating Status Pill */}
       {isCalculatingRoute && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-auto select-none animate-in fade-in duration-200"
-          style={{
-            background: "radial-gradient(circle at 50% 40%, rgba(6,78,59,0.35) 0%, rgba(15,23,42,0.65) 100%)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-          }}
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-        >
-          <div className="relative px-6 py-7 rounded-[32px] backdrop-blur-3xl bg-white/85 dark:bg-slate-900/85 border border-white/90 dark:border-white/25 shadow-[0_32px_80px_rgba(0,0,0,0.35),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-200 overflow-hidden">
-            {/* Top liquid specular glass reflection sheen */}
-            <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-white/40 via-white/10 to-transparent pointer-events-none rounded-t-[32px]" />
-
-            {/* VisionOS-grade Dual-Orb Liquid Plasma Spinner */}
-            <div className="relative w-20 h-20 flex items-center justify-center">
-              {/* Outer Counter-Rotating Refractive Teal Ring */}
-              <div
-                className="absolute inset-0 rounded-full border-2 border-teal-400/30 border-t-teal-400 border-b-emerald-400"
-                style={{ animation: "spin 3.2s linear infinite reverse" }}
-              />
-              {/* Inner High-Speed Glowing Emerald Plasma Ring */}
-              <div
-                className="absolute inset-1.5 rounded-full border-[2.5px] border-emerald-500/20 border-t-emerald-500 border-r-teal-300 shadow-[0_0_16px_rgba(16,185,129,0.5)]"
-                style={{ animation: "spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite" }}
-              />
-              {/* Pulsing Core Glow */}
-              <div className="absolute inset-3 rounded-full bg-emerald-400/20 animate-ping opacity-50" />
-              {/* Center Floating 3D Toto Emblem */}
-              <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-white to-emerald-50 dark:from-slate-800 dark:to-slate-900 border border-emerald-400/40 flex items-center justify-center text-2xl shadow-lg">
-                🛺
-              </div>
-            </div>
-
-            <div className="space-y-1 z-10">
-              <h4 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
-                Calculating Road Route & Fare...
-              </h4>
-              <p className="text-[11.5px] font-semibold text-emerald-800 dark:text-emerald-300 leading-snug">
-                Satellite road network & routing active
-              </p>
-            </div>
-
-            {/* Live Progress Telemetry Pill */}
-            <div className="z-10 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[10.5px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              <span>Mapping rural roads & verified highway paths</span>
-            </div>
-
-            {/* Dismiss / Cancel Button — Guarantees user is never trapped */}
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="px-4 py-2 rounded-full backdrop-blur-xl bg-slate-900/90 text-white shadow-xl border border-white/20 flex items-center gap-2.5 text-xs font-bold pointer-events-auto">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span>সঠিক রাস্তার রুট ও ভাড়া গণনা হচ্ছে...</span>
             <button
               type="button"
               onClick={() => {
@@ -2541,9 +2503,9 @@ export function InteractiveBookingMap({
                 routeAbortControllerRef.current?.abort();
                 setIsCalculatingRoute(false);
               }}
-              className="z-10 text-xs font-black text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 pt-0.5 cursor-pointer transition-colors flex items-center gap-1 active:scale-95"
+              className="ml-1 text-[11px] text-slate-400 hover:text-white cursor-pointer px-1"
             >
-              <span>✕ Cancel</span>
+              ✕
             </button>
           </div>
         </div>

@@ -626,7 +626,10 @@ export function DriverRadarPanel({
           curCoords[0] !== 0
             ? `?status=pending&driver_lat=${curCoords[0]}&driver_lng=${curCoords[1]}`
             : `?status=pending`;
-        const bRes = await fetch(`/api/bookings${qParams}`);
+        const bRes = await fetch(`/api/bookings${qParams}&_t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        });
         const bJson = await bRes.json();
         const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
         // Filter out pending rides older than 5 minutes (300s) or taken by another driver or > 35 km
@@ -639,7 +642,7 @@ export function DriverRadarPanel({
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
               const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
-              if (dKm > 35.0) return false;
+              if (dKm > 60.0) return false;
             }
           }
           return true;
@@ -679,7 +682,7 @@ export function DriverRadarPanel({
     };
 
     fetchRadarEntities();
-    pollTimer = setInterval(fetchRadarEntities, 2000);
+    pollTimer = setInterval(fetchRadarEntities, 1200);
 
     return () => clearInterval(pollTimer);
   }, [driverSession?.driverId]);

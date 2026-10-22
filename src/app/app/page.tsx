@@ -707,7 +707,7 @@ function MobileAppPageContent() {
         }),
       });
       const data = await res.json();
-      if (!res.ok && data.error === "customer_blocked") {
+            if (!res.ok && data.error === "customer_blocked") {
         setIsCustomerBlocked(true);
         setCustomerStrikes(data.cancellation_count || 3);
         setSearchStatus("idle");
@@ -757,7 +757,13 @@ function MobileAppPageContent() {
   // Passenger Radar Search Countdown Effect (3 minutes timeout for nearby driver accept)
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (searchStatus === "searching" && !passengerBooking) {
+    // If passengerBooking is already set, immediately kill the countdown — do not cancel!
+    if (passengerBooking) {
+      setSearchStatus("idle");
+      setSearchCountdown(0);
+      return;
+    }
+    if (searchStatus === "searching") {
       if (searchCountdown > 0) {
         timer = setTimeout(() => {
           setSearchCountdown((prev) => prev - 1);
@@ -766,13 +772,16 @@ function MobileAppPageContent() {
         // Countdown reached 0: verify whether driver just accepted before cancelling
         const expiredBookingId = activeBookingId;
         if (expiredBookingId) {
-          fetch(`/api/bookings?id=${expiredBookingId}`)
+          fetch(`/api/bookings?id=${expiredBookingId}&_t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+          })
             .then((r) => r.json())
             .then((resData) => {
               const b = resData?.booking;
               if (b && (b.status === "assigned" || b.status === "in_progress" || b.status === "accepted")) {
-                // Driver accepted! Do NOT cancel!
-                setPassengerBooking({
+                // Driver accepted! Do NOT cancel — transition to ride tracking
+                const acceptedBooking = {
                   id: b.id,
                   bookingNumber: b.booking_number,
                   driverName: b.driver_name || "টোটো চালক",
@@ -780,17 +789,28 @@ function MobileAppPageContent() {
                   totoNumber: b.driver_unique_id || b.toto_number || "",
                   uniqueId: b.driver_unique_id || b.toto_number || "",
                   startOtp: b.start_otp,
-                });
+                  pickup: b.pickup_location,
+                  drop: b.drop_location,
+                  pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
+                  dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+                  fare: Number(b.estimated_fare || tripFare),
+                };
+                setPassengerBooking(acceptedBooking);
+                setActiveBookingId(b.id);
+                setRideStep("assigned");
                 setSearchStatus("idle");
                 setSearchCountdown(0);
                 if (typeof window !== "undefined") {
+                  localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedBooking));
+                  localStorage.setItem("sr_active_booking_id", b.id);
                   localStorage.removeItem("sr_search_status");
                 }
+                setPhase("passenger_home");
                 playSuccessSound();
                 return;
               }
 
-              // Genuinely expired without any accept
+              // Genuinely expired without any accept — cancel
               fetch("/api/bookings", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -808,7 +828,7 @@ function MobileAppPageContent() {
                 localStorage.removeItem("sr_active_booking_id");
                 localStorage.removeItem("sr_search_status");
               }
-              toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
+              toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রাইডটি স্বয়ংক্রিয়ভাবে বাতিল করা হয়েছে।");
             })
             .catch(() => {
               setSearchStatus("unaccepted");
@@ -899,7 +919,8 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      pollInterval = setInterval(checkBookingAcceptance, 800);
+      // Poll every 500ms — faster than the 1-second countdown tick to prevent false cancels
+      pollInterval = setInterval(checkBookingAcceptance, 500);
     }
 
     return () => clearInterval(pollInterval);
@@ -3113,33 +3134,37 @@ function MobileAppPageContent() {
     return (
       <MobileAppShell
         topHeader={
-          <MobileAppHeader
-            role="rider"
-            userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
-            userPhoto={session?.photo || session?.driverPhoto}
-            isOnline={isOnline}
-            onToggleOnline={handleToggleOnline}
-            isSoundMuted={isSoundMuted}
-            onToggleSound={() => {
-              setIsSoundMuted(!isSoundMuted);
-              toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
-            }}
-            onSwitchRole={handleSwitchRole}
-            onSosClick={() => setShowSosModal(true)}
-            onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
-            onOpenProfile={() => setShowProfileModal(true)}
-          />
+          activeRide ? undefined : (
+            <MobileAppHeader
+              role="rider"
+              userName={session?.driverName || "চালকের ড্যাশবোর্ড"}
+              userPhoto={session?.photo || session?.driverPhoto}
+              isOnline={isOnline}
+              onToggleOnline={handleToggleOnline}
+              isSoundMuted={isSoundMuted}
+              onToggleSound={() => {
+                setIsSoundMuted(!isSoundMuted);
+                toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
+              }}
+              onSwitchRole={handleSwitchRole}
+              onSosClick={() => setShowSosModal(true)}
+              onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
+              onOpenProfile={() => setShowProfileModal(true)}
+            />
+          )
         }
         bottomNav={
-          <MobileBottomNav
-            activeTab={bottomNavTab}
-            onTabChange={(t) => {
-              if (t === "safety") setShowSosModal(true);
-              else if (t === "profile") setShowProfileModal(true);
-              else setBottomNavTab(t);
-            }}
-            role="rider"
-          />
+          activeRide ? undefined : (
+            <MobileBottomNav
+              activeTab={bottomNavTab}
+              onTabChange={(t) => {
+                if (t === "safety") setShowSosModal(true);
+                else if (t === "profile") setShowProfileModal(true);
+                else setBottomNavTab(t);
+              }}
+              role="rider"
+            />
+          )
         }
       >
         <div className="w-full min-h-full flex-1 text-slate-900 flex flex-col relative select-none">
@@ -3212,7 +3237,7 @@ function MobileAppPageContent() {
 
         {/* Active In-Progress Ride View — Full-Screen Rapido Captain / Uber Driver HUD */}
         {activeRide && (
-          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "calc(100dvh - 118px)", height: "calc(100dvh - 118px)" }}>
+          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "100%", height: "100%" }}>
             <AppErrorBoundary>
               <DriverActiveTripMap
                 bookingId={activeRide.id}

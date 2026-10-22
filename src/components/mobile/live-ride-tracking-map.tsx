@@ -220,29 +220,45 @@ export function LiveRideTrackingMap({
   };
 
   // 1. Fetch real street-following road route from /api/route
+  // IMPORTANT: Do NOT include driverPos in deps — re-fetching on every GPS tick causes
+  // straight fallback lines to appear. Fetch once per rideStep change using a stable snapshot.
+  const routeOriginSnapshotRef = useRef<[number, number] | null>(null);
   useEffect(() => {
     let cancelled = false;
     const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
-    const from = driverPos;
-    
-    // Metered trip without preset drop — do not attempt route to [0,0]
-    if (!target || target[0] === 0 || isNaN(target[0])) {
-      return;
-    }
 
-    fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${target[0]}&toLng=${target[1]}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
-          setRouteCoords(data.coordinates);
-        }
+    // Metered trip without preset drop — do not attempt route to [0,0]
+    if (!target || target[0] === 0 || isNaN(target[0])) return;
+
+    // Snapshot driver position at the moment rideStep changes (best current known location)
+    const snapFrom: [number, number] =
+      driverPos[0] && driverPos[0] !== 0
+        ? driverPos
+        : [pickupCoords[0] + 0.003, pickupCoords[1] + 0.003];
+    routeOriginSnapshotRef.current = snapFrom;
+
+    // Small delay to get first GPS fix before fetching
+    const timer = setTimeout(() => {
+      const from = routeOriginSnapshotRef.current ?? snapFrom;
+      fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${target[0]}&toLng=${target[1]}`, {
+        cache: "no-store",
       })
-      .catch(() => {});
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+            setRouteCoords(data.coordinates);
+          }
+        })
+        .catch(() => {});
+    }, 600);
+
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [rideStep, driverPos, pickupCoords, dropCoords]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rideStep]);
 
   // 2. Poll driver location, trip start time & booking status every 2.5s
   useEffect(() => {

@@ -9,6 +9,21 @@ import { LiveFareMeter, LiveMeterReading } from "@/lib/mobile/live-fare-meter";
 import { DEFAULT_TOTO_PRICING, TotoPricingConfig } from "@/lib/pricing/fare-calculator";
 import { SwipeToConfirm } from "@/components/mobile/swipe-to-confirm";
 
+
+function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 100) / 100;
+}
+
 interface DriverActiveTripMapProps {
   bookingId?: string;
   bookingNumber?: string;
@@ -55,10 +70,15 @@ export function DriverActiveTripMap({
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
   const meterRef = useRef<LiveFareMeter | null>(null);
+  // Stable origin snapshot for route fetch — captured once per status change
+  const routeOriginRef = useRef<[number, number] | null>(null);
+  // Leaflet library ref (set on first map init, reused by route update effect)
+  const leafletRef = useRef<any>(null);
 
   const [routeDistance, setRouteDistance] = useState(2.5);
   const [routeDuration, setRouteDuration] = useState(8);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+  const [routeLoaded, setRouteLoaded] = useState(false);
   const [meterReading, setMeterReading] = useState<LiveMeterReading>({
     totalKm: 0,
     liveFare: 34,
@@ -233,7 +253,8 @@ export function DriverActiveTripMap({
 
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
-            if (!isCancelled || !pos?.coords) return;
+            // FIX: was `!isCancelled` (inverted) — GPS watch never fired on web
+            if (isCancelled || !pos?.coords) return;
             handleCoords(pos.coords.latitude, pos.coords.longitude);
           },
           () => {
@@ -324,34 +345,67 @@ export function DriverActiveTripMap({
     }
   }, [activeDriverCoords, status, bookingId, onOdometerUpdate]);
 
-  // Fetch real street road route from /api/route starting from actual live driver location
+  // Stable reference to last fetched origin to prevent infinite fetching while ensuring road route updates
+  const lastFetchedOriginRef = useRef<[number, number] | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    const from: [number, number] = (activeDriverCoords?.[0] && activeDriverCoords[0] !== 21.877) ? activeDriverCoords : pickupCoords;
-    const to: [number, number] = status === "heading_pickup" ? pickupCoords : dropCoords;
-    
-    // Metered trip without preset drop — do not attempt route to [0,0]
-    if (!to || to[0] === 0 || isNaN(to[0])) {
+
+    const to: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
+    if (!to || to[0] === 0 || isNaN(to[0])) return;
+
+    const snapOrigin: [number, number] =
+      activeDriverCoords?.[0] && activeDriverCoords[0] !== 0 && activeDriverCoords[0] !== 21.877
+        ? activeDriverCoords
+        : currentFrom;
+
+    const last = lastFetchedOriginRef.current;
+    const distMoved = last
+      ? calculateDistanceKm(last[0], last[1], snapOrigin[0], snapOrigin[1])
+      : 999;
+
+    // If already have road route and haven't moved > 150m, skip re-fetching
+    if (last && distMoved < 0.15 && routeCoords.length > 2) {
       return;
     }
 
-    fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${to[0]}&toLng=${to[1]}`)
-      .then((r) => r.json())
-      .then((data) => {
+    const fetchRoute = async (origin: [number, number]) => {
+      try {
+        const res = await fetch(
+          `/api/route?fromLat=${origin[0]}&fromLng=${origin[1]}&toLat=${to[0]}&toLng=${to[1]}`,
+          { cache: "no-store" }
+        );
+        if (cancelled) return;
+        const data = await res.json();
         if (cancelled) return;
         if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
           setRouteCoords(data.coordinates);
+          setRouteLoaded(true);
+          lastFetchedOriginRef.current = origin;
+        } else {
+          // If road route not yet resolved, use direct connecting line
+          if (routeCoords.length <= 1) {
+            setRouteCoords([origin, to]);
+            setRouteLoaded(true);
+          }
         }
         if (data?.distanceKm) setRouteDistance(data.distanceKm);
         if (data?.durationMin) setRouteDuration(data.durationMin);
-      })
-      .catch(() => {
-        if (!cancelled) setRouteCoords([from, to]);
-      });
+      } catch {
+        if (!cancelled && routeCoords.length <= 1) {
+          setRouteCoords([snapOrigin, to]);
+          setRouteLoaded(true);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => fetchRoute(snapOrigin), 350);
+
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [status, activeDriverCoords?.[0], activeDriverCoords?.[1], pickupCoords, dropCoords]);
+  }, [status, activeDriverCoords, safePickup, safeDrop]);
 
 
   // Leaflet map initialization (mounts once and remains stable without white screen)
@@ -362,6 +416,7 @@ export function DriverActiveTripMap({
       try {
         const LMod = await import("leaflet");
         const L = (LMod as any).default || LMod;
+        leafletRef.current = L; // store for later use in route update effect
         if (!mounted || !mapContainerRef.current) return;
 
         if (!mapInstanceRef.current) {
@@ -417,35 +472,19 @@ export function DriverActiveTripMap({
           }).addTo(map);
           driverMarkerRef.current = drvMarker;
 
-          if (!(status === "on_trip" && isMeteredTrip)) {
-            // Street route casing
-            const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
-            const casing = L.polyline(pts, {
-              color: "#ffffff",
-              weight: 8,
-              opacity: 0.9,
-              lineCap: "round",
-              lineJoin: "round",
-            }).addTo(map);
-            routeCasingRef.current = casing;
-
-            // Street route line
-            const line = L.polyline(pts, {
-              color: status === "heading_pickup" ? "#0284c7" : "#059669",
-              weight: 5,
-              opacity: 0.95,
-              lineCap: "round",
-              lineJoin: "round",
-            }).addTo(map);
-            routeLineRef.current = line;
-
-            // Fit map bounds to show driver and destination at street zoom
-            try {
-              const b = L.latLngBounds(pts);
-              map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
-            } catch {}
-          } else {
+          // NOTE: Route polylines are NOT drawn here at init time.
+          // They are drawn by the `routeLoaded` effect once the road route API responds.
+          // This prevents a straight fallback line appearing before the real route loads.
+          if (status === "on_trip" && isMeteredTrip) {
             map.setView(currentFrom, 16);
+          } else {
+            // Center map between driver and destination; route will be fitted once loaded
+            try {
+              const b = L.latLngBounds([currentFrom, targetCoords]);
+              map.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
+            } catch {
+              map.setView(currentFrom, 16);
+            }
           }
 
           // Invalidate size on load
@@ -480,25 +519,62 @@ export function DriverActiveTripMap({
     };
   }, []);
 
-  // Update markers, route polyline, and target location dynamically without recreating map
+  // Update driver marker position on every GPS update (smooth tracking)
   useEffect(() => {
-    if (!mapInstanceRef.current) return;
+    if (!mapInstanceRef.current || !driverMarkerRef.current || !currentFrom?.[0]) return;
     try {
-      if (driverMarkerRef.current && currentFrom?.[0]) {
-        driverMarkerRef.current.setLatLng(currentFrom);
-      }
+      driverMarkerRef.current.setLatLng(currentFrom);
+      mapInstanceRef.current.invalidateSize();
+    } catch {}
+  }, [currentFrom?.[0], currentFrom?.[1]]);
+
+  // Update route polyline and fit bounds ONLY when route data actually loads
+  useEffect(() => {
+    if (!mapInstanceRef.current || !routeLoaded) return;
+    try {
+      const L = leafletRef.current;
+      const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
+
       if (destMarkerRef.current && targetCoords?.[0]) {
         destMarkerRef.current.setLatLng(targetCoords);
       }
-      const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
-      if (routeCasingRef.current) routeCasingRef.current.setLatLngs(pts);
-      if (routeLineRef.current) {
+
+      if (routeCasingRef.current && routeLineRef.current) {
+        // Route polylines already exist — just update them
+        routeCasingRef.current.setLatLngs(pts);
         routeLineRef.current.setLatLngs(pts);
         routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
+      } else if (L && !(status === "on_trip" && isMeteredTrip)) {
+        // Create polylines fresh if they don't exist yet (first route load)
+        const casing = L.polyline(pts, {
+          color: "#ffffff",
+          weight: 8,
+          opacity: 0.9,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(mapInstanceRef.current);
+        routeCasingRef.current = casing;
+
+        const line = L.polyline(pts, {
+          color: status === "heading_pickup" ? "#0284c7" : "#059669",
+          weight: 5,
+          opacity: 0.95,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(mapInstanceRef.current);
+        routeLineRef.current = line;
       }
-      mapInstanceRef.current.invalidateSize();
+
+      // Fit bounds to show full route
+      if (L && pts.length > 1) {
+        try {
+          const b = L.latLngBounds(pts);
+          mapInstanceRef.current.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
+        } catch {}
+      }
     } catch {}
-  }, [currentFrom?.[0], currentFrom?.[1], targetCoords?.[0], targetCoords?.[1], status, routeCoords]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeLoaded, routeCoords, status]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -513,13 +589,13 @@ export function DriverActiveTripMap({
   const cleanPhone = (passengerPhone || "").replace(/\D/g, "").slice(-10);
 
   return (
-    <div className="relative w-full overflow-hidden select-none" style={{ height: "calc(100dvh - 118px)", background: "#0f172a" }}>
+    <div className="relative w-full overflow-hidden select-none" style={{ minHeight: "100%", height: "100%", background: "#0f172a" }}>
 
       {/* ── 1. FULL-SCREEN LEAFLET NAVIGATION MAP ── */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
       {/* ── 2. TOP FLOATING NAVIGATION HUD (Rapido Captain Style) ── */}
-      <div className="absolute top-2 left-0 right-0 z-20 p-3 pt-1 pointer-events-none space-y-2">
+      <div className="absolute top-0 sm:top-2 left-0 right-0 z-30 p-3 pt-3 sm:pt-4 pointer-events-none space-y-2">
         <div
           className="pointer-events-auto rounded-3xl p-3 shadow-2xl border border-white/20 flex items-center justify-between"
           style={{
@@ -559,11 +635,11 @@ export function DriverActiveTripMap({
             href={navUrl}
             target="_blank"
             rel="noreferrer"
-            className="shrink-0 ml-1.5 px-2.5 py-1.5 rounded-xl font-bold text-[11px] text-white shadow-md bg-white/15 hover:bg-white/25 active:scale-95 transition-all flex items-center gap-1 border border-white/30 cursor-pointer"
+            className="shrink-0 ml-1.5 px-3 py-2 rounded-xl font-black text-xs text-white shadow-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all flex items-center gap-1.5 border border-white/40 cursor-pointer"
             title={status === "heading_pickup" ? "গুগল ম্যাপে পিকআপে যান" : "গুগল ম্যাপে গন্তব্যে যান"}
           >
-            <Navigation className="w-3.5 h-3.5 fill-white shrink-0" />
-            <span className="whitespace-nowrap font-bold text-[11px]">ম্যাপ</span>
+            <Navigation className="w-4 h-4 fill-white shrink-0" />
+            <span className="whitespace-nowrap font-black text-xs">Google Map</span>
           </a>
         </div>
       </div>

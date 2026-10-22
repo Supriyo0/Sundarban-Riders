@@ -1,3 +1,4 @@
+let lastStaleCleanupTime = 0;
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -702,18 +703,21 @@ export async function GET(request: Request) {
     if (status === "pending") {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
-      // Automatically cancel any pending bookings older than 5 minutes so no rider sees stale rides
-      try {
-        await admin
-          .from("bookings")
-          .update({
-            status: "cancelled",
-            cancelled_by: "system_timeout",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("status", "pending")
-          .lt("created_at", fiveMinutesAgo);
-      } catch {}
+      // Automatically cancel any pending bookings older than 5 minutes throttled to once per minute
+      if (Date.now() - lastStaleCleanupTime > 60000) {
+        lastStaleCleanupTime = Date.now();
+        try {
+          void admin
+            .from("bookings")
+            .update({
+              status: "cancelled",
+              cancelled_by: "system_timeout",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("status", "pending")
+            .lt("created_at", fiveMinutesAgo);
+        } catch {}
+      }
 
       const { data, error } = await admin
         .from("bookings")
@@ -1137,18 +1141,25 @@ export async function POST(request: Request) {
     const hasValidDrop = dropCoords && Array.isArray(dropCoords) && dropCoords.length === 2 && dropCoords[0] !== 0 && !isNaN(dropCoords[0]);
     const isMeteredTrip = !hasValidDrop || (typeof dropLocation === "string" && (dropLocation.includes("মিটার") || dropLocation.includes("বিনা গন্তব্য")));
 
-    let calculatedDist = Number(tripDistance) || 1.0;
-    if (hasValidPickup && hasValidDrop && !isMeteredTrip) {
-      calculatedDist = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
-    } else {
-      calculatedDist = 1.0;
+    // Preserve real by-road distance calculated from routing engine (Mapbox/OSRM)
+    let calculatedDist = Number(tripDistance);
+    if (!calculatedDist || isNaN(calculatedDist) || calculatedDist <= 0) {
+      if (hasValidPickup && hasValidDrop && !isMeteredTrip) {
+        const directKm = calculateDistanceKm(pickupCoords[0], pickupCoords[1], dropCoords[0], dropCoords[1]);
+        calculatedDist = Math.max(1.0, Math.round(directKm * 1.38 * 10) / 10);
+      } else {
+        calculatedDist = 1.0;
+      }
     }
-    if (calculatedDist <= 0 || isNaN(calculatedDist)) calculatedDist = 1.0;
+    calculatedDist = Math.max(0.5, Math.round(calculatedDist * 10) / 10);
 
     const meteredRateChartBase = calculateTotoFare(0, validPassengerCount, pricingConfig).totalFare;
+    const clientFare = Number(estimatedFare);
+    const serverFare = calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
+    // Accept client fare if matching within threshold to ensure 100% agreement between customer and rider panels
     const finalEstimatedFare = isMeteredTrip
       ? meteredRateChartBase
-      : calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
+      : (clientFare && Math.abs(clientFare - serverFare) <= 15 ? clientFare : serverFare);
 
     // Cryptographically Secure Unpredictable 4-digit OTP (Decoupled from booking number)
     const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -1160,7 +1171,7 @@ export async function POST(request: Request) {
       pickup_name: pickupLocation || null,
       drop_name: dropLocation || null,
       passenger_count: validPassengerCount,
-      estimated_distance_km: tripDistance || null,
+      estimated_distance_km: calculatedDist || tripDistance || null,
       pricing_snapshot: {
         baseFare: pricingConfig.baseFare,
         ratePerKm0to10: pricingConfig.ratePerKm0to10,

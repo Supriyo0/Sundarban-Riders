@@ -63,12 +63,12 @@ export class LiveFareMeter {
    * Uses reference-based accumulation (>= 7 meters) to accurately track
    * slow vehicle speeds (5-20 km/h) while filtering stationary jitter.
    */
-  public addGpsReading(lat: number, lng: number): LiveMeterReading {
+  public addGpsReading(lat: number, lng: number, timestamp?: number): LiveMeterReading {
     if (!lat || !lng || isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
       return this.getReading();
     }
 
-    const now = Date.now();
+    const now = timestamp || Date.now();
 
     if (!this.lastAccumPoint) {
       this.lastAccumPoint = { lat, lng, ts: now };
@@ -82,8 +82,9 @@ export class LiveFareMeter {
     // Movement threshold: 7 meters (0.007 km)
     if (d >= 0.007) {
       const speedKmh = dtHrs > 0 ? d / dtHrs : 0;
-      // Filter out impossible jumps (> 90 km/h)
-      if (speedKmh <= 90) {
+      // Allow accumulation if speed <= 90 km/h OR if points arrived in rapid mobile network burst (< 0.8s) with reasonable distance (< 35m)
+      const isBurstPacket = dtHrs < (0.8 / 3600) && d <= 0.035;
+      if (speedKmh <= 90 || isBurstPacket) {
         this.totalKm += d;
         this.lastAccumPoint = { lat, lng, ts: now };
       } else {

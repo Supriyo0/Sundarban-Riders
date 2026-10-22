@@ -1330,19 +1330,34 @@ export async function PATCH(request: Request) {
       }
 
       // 1. IDEMPOTENT RE-ACCEPT CHECK:
-      // If this booking is ALREADY assigned, succeed cleanly without throwing 409
+      // If this booking is ALREADY assigned to THIS SPECIFIC DRIVER, succeed cleanly without throwing 409
       if (booking.status === "assigned") {
-        const enriched = enrichBookingCoords(booking);
-        return NextResponse.json({
-          success: true,
-          booking: {
-            ...enriched,
-            driver_name: driverName || existingMeta.driver_name || "সুন্দরবন চালক",
-            driver_phone: driverPhone || existingMeta.driver_phone || "9593177885",
-            toto_number: totoNumber || existingMeta.toto_number || "WB-96-T-8421",
+        const isAssignedToThisDriver =
+          (validDriverId && booking.driver_id === validDriverId) ||
+          (cleanPhone && (existingMeta.driver_phone || "").replace(/\D/g, "").slice(-10) === cleanPhone);
+
+        if (isAssignedToThisDriver) {
+          const enriched = enrichBookingCoords(booking);
+          return NextResponse.json({
+            success: true,
+            booking: {
+              ...enriched,
+              driver_name: driverName || existingMeta.driver_name || "সুন্দরবন চালক",
+              driver_phone: driverPhone || existingMeta.driver_phone || "",
+              toto_number: totoNumber || existingMeta.toto_number || "WB-96-T-8421",
+            },
+            message: "রাইড ইতিমধ্যে সফলভাবে গৃহীত হয়েছে!",
+          });
+        }
+
+        // Assigned to a DIFFERENT driver: strictly reject with 409!
+        return NextResponse.json(
+          {
+            error: "booking_already_taken",
+            message: "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন।",
           },
-          message: "রাইড ইতিমধ্যে সফলভাবে গৃহীত হয়েছে!",
-        });
+          { status: 409 }
+        );
       }
 
       // Check if cancelled or already on trip

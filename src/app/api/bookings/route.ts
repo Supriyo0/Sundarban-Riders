@@ -1114,10 +1114,12 @@ export async function POST(request: Request) {
     const bookingNumber = `SR-${Date.now().toString().slice(-4)}${Math.floor(10 + Math.random() * 90)}`;
 
     // 0. Check if customer is blocked due to 3-strike cancellation policy
+    const last10 = cleanPhone.slice(-10);
     const { data: existingCustomer } = await admin
       .from("customers")
       .select("id, cancellation_count, is_blocked")
-      .eq("phone", cleanPhone)
+      .or(`phone.eq.${cleanPhone},phone.eq.${last10},phone.eq.91${last10},phone.ilike.%${last10}%`)
+      .limit(1)
       .maybeSingle();
 
     if (existingCustomer && ((existingCustomer.cancellation_count || 0) >= 3 || existingCustomer.is_blocked)) {

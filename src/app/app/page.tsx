@@ -1881,8 +1881,8 @@ function MobileAppPageContent() {
 
     const applyLocationFix = (lat: number, lng: number, accuracy?: number) => {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
-      // Filter coarse cell-tower / IP location (> 300m) if better satellite fix already locked
-      if (accuracy !== undefined && accuracy > 300 && bestAccuracy <= 100) {
+      // Filter coarse cell-tower / IP location (> 200m) to stop location jumping
+      if (accuracy !== undefined && accuracy > 200) {
         return;
       }
       if (accuracy !== undefined && accuracy < bestAccuracy) {
@@ -1909,7 +1909,7 @@ function MobileAppPageContent() {
     };
 
     if (isNative) {
-      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 })
+      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 })
         .then((pos) => {
           if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
         })
@@ -1917,18 +1917,7 @@ function MobileAppPageContent() {
     }
 
     if (typeof window !== "undefined" && navigator.geolocation) {
-      // Stage 1: Fast fused / cached position (returns quickly)
-      navigator.geolocation.getCurrentPosition(
-        (fastPos) => {
-          if (fastPos?.coords) {
-            applyLocationFix(fastPos.coords.latitude, fastPos.coords.longitude, fastPos.coords.accuracy);
-          }
-        },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 10000 }
-      );
-
-      // Stage 2: Satellite high accuracy
+      // Pure Satellite high accuracy GPS
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (pos?.coords) {
@@ -1936,7 +1925,7 @@ function MobileAppPageContent() {
           }
         },
         () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 3000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
       );
     }
   }, []);

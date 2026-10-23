@@ -1258,11 +1258,6 @@ export async function POST(request: Request) {
       ? `${dropLocation} (GPS: ${dropCoords[0].toFixed(5)},${dropCoords[1].toFixed(5)})`
       : dropLocation;
 
-    const pLatVal = hasValidPickup ? Number(pickupCoords[0]) : null;
-    const pLngVal = hasValidPickup ? Number(pickupCoords[1]) : null;
-    const dLatVal = hasValidDrop ? Number(dropCoords[0]) : null;
-    const dLngVal = hasValidDrop ? Number(dropCoords[1]) : null;
-
     const { data: booking, error: insertErr } = await admin
       .from("bookings")
       .insert({
@@ -1271,10 +1266,6 @@ export async function POST(request: Request) {
         customer_phone: cleanPhone,
         pickup_location: pickupLocString,
         drop_location: dropLocString,
-        pickup_lat: pLatVal,
-        pickup_lng: pLngVal,
-        drop_lat: dLatVal,
-        drop_lng: dLngVal,
         estimated_fare: finalEstimatedFare,
         feedback: initialMeta,
         status: "pending",
@@ -1840,11 +1831,6 @@ export async function PATCH(request: Request) {
         .update({
           status: "completed",
           final_fare: finalFareToCharge,
-          actual_distance_km: distanceKm,
-          pickup_lat: enrichedBooking.pickup_lat,
-          pickup_lng: enrichedBooking.pickup_lng,
-          drop_lat: enrichedBooking.drop_lat,
-          drop_lng: enrichedBooking.drop_lng,
           feedback: JSON.stringify(cleanHistoryMeta),
           updated_at: new Date().toISOString(),
         })

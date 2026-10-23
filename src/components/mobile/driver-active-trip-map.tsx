@@ -172,8 +172,8 @@ export function DriverActiveTripMap({
 
     const handleCoords = (latitude: number, longitude: number, accuracy?: number) => {
       if (latitude && longitude && latitude !== 0) {
-        // Filter out coarse cell-tower jumps (> 400m)
-        if (accuracy && accuracy > 400 && activeDriverCoords[0] !== 0) {
+        // Filter out coarse cell-tower jumps (> 200m)
+        if (accuracy && accuracy > 200) {
           return;
         }
         const coords: [number, number] = [latitude, longitude];
@@ -207,72 +207,47 @@ export function DriverActiveTripMap({
     };
 
     const startWatching = async () => {
-      // 1. Native platform (Capacitor) with resilient low-connection fallback
+      // 1. Native platform (Capacitor) pure satellite GPS
       if (Capacitor.isNativePlatform()) {
         Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 6000 })
           .then((pos) => {
             if (!isCancelled && pos?.coords) {
-              handleCoords(pos.coords.latitude, pos.coords.longitude);
+              handleCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
             }
           })
-          .catch(() => {
-            // Low-connection fallback: standard accuracy cell/WiFi
-            Geolocation.getCurrentPosition({ enableHighAccuracy: false, timeout: 10000 })
-              .then((pos) => {
-                if (!isCancelled && pos?.coords) {
-                  handleCoords(pos.coords.latitude, pos.coords.longitude);
-                }
-              })
-              .catch(() => {});
-          });
+          .catch(() => {});
 
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 5000 },
+            { enableHighAccuracy: true, maximumAge: 3000 },
             (position, err) => {
-              if (isCancelled || err || !position?.coords) {
-                // If high accuracy watch drops in low connection, try reading cached or non-high accuracy
-                return;
-              }
-              handleCoords(position.coords.latitude, position.coords.longitude);
+              if (isCancelled || err || !position?.coords) return;
+              handleCoords(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
             }
           );
           return;
         } catch {}
       }
 
-      // 2. Web / Browser platform with 2-tier fallback
+      // 2. Web / Browser platform pure satellite GPS
       if (typeof window !== "undefined" && navigator.geolocation) {
-        const fetchOneShot = (highAcc: boolean) => {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (!isCancelled && pos?.coords) {
-                handleCoords(pos.coords.latitude, pos.coords.longitude);
-              }
-            },
-            () => {
-              if (highAcc) {
-                // Retry with standard accuracy (works under low signal/cell towers)
-                fetchOneShot(false);
-              }
-            },
-            { enableHighAccuracy: highAcc, timeout: highAcc ? 6000 : 12000, maximumAge: highAcc ? 0 : 30000 }
-          );
-        };
-
-        fetchOneShot(true);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (!isCancelled && pos?.coords) {
+              handleCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+            }
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
+        );
 
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
-            // FIX: was `!isCancelled` (inverted) — GPS watch never fired on web
             if (isCancelled || !pos?.coords) return;
-            handleCoords(pos.coords.latitude, pos.coords.longitude);
+            handleCoords(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
           },
-          () => {
-            // In case of watch error, attempt non-high accuracy one-shot
-            fetchOneShot(false);
-          },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+          () => {},
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
         );
       }
     };

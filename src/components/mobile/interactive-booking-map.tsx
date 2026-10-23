@@ -977,6 +977,8 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
+          // Immediately draw direct route line so the path is NEVER missing or blank while road network resolves
+          applyRouteGeometry([pCoords, dCoords]);
           try {
             if (routeAbortControllerRef.current) {
               routeAbortControllerRef.current.abort();
@@ -1310,13 +1312,19 @@ export function InteractiveBookingMap({
         }
       };
 
-      const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string) => {
+      const handleSuccess = async (latitude: number, longitude: number, preResolvedName?: string, accuracy?: number) => {
         clearTimeout(watchdog);
         isLocatingRef.current = false;
         setIsLocating(false);
 
         if (isNaN(latitude) || latitude === 0 || isNaN(longitude) || longitude === 0) {
           handleFail("⚠️ Invalid GPS coordinates received.");
+          return;
+        }
+
+        // Discard coarse cellular / IP locations (> 200m) to prevent wild location jumping
+        if (accuracy !== undefined && accuracy > 200) {
+          console.log("[GPS] Discarded coarse position fix with accuracy:", accuracy);
           return;
         }
 
@@ -1418,7 +1426,7 @@ export function InteractiveBookingMap({
             });
 
             if (position?.coords?.latitude && position?.coords?.longitude) {
-              await handleSuccess(position.coords.latitude, position.coords.longitude);
+              await handleSuccess(position.coords.latitude, position.coords.longitude, undefined, position.coords.accuracy);
               return;
             }
           } catch (e) {
@@ -1451,7 +1459,7 @@ export function InteractiveBookingMap({
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (pos?.coords?.latitude && pos?.coords?.longitude) {
-            handleSuccess(pos.coords.latitude, pos.coords.longitude);
+            handleSuccess(pos.coords.latitude, pos.coords.longitude, undefined, pos.coords.accuracy);
           } else {
             handleFail("⚠️ Could not acquire GPS coordinates.");
           }
@@ -1547,8 +1555,10 @@ export function InteractiveBookingMap({
             { enableHighAccuracy: true, maximumAge: 3000 },
             async (position, err) => {
               if (isCancelled || err || !position?.coords) return;
-              const { latitude, longitude } = position.coords;
+              const { latitude, longitude, accuracy } = position.coords;
               if (!latitude || !longitude) return;
+              // Discard coarse cell-tower / network fixes (> 200m)
+              if (accuracy !== undefined && accuracy > 200) return;
 
               // Always update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
@@ -1588,8 +1598,10 @@ export function InteractiveBookingMap({
         watchId = navigator.geolocation.watchPosition(
           async (pos) => {
             if (isCancelled || !pos?.coords) return;
-            const { latitude, longitude } = pos.coords;
+            const { latitude, longitude, accuracy } = pos.coords;
             if (!latitude || !longitude) return;
+            // Discard coarse cell-tower / network fixes (> 200m)
+            if (accuracy !== undefined && accuracy > 200) return;
 
             // Always update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);

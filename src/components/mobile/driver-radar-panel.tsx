@@ -270,10 +270,17 @@ export function DriverRadarPanel({
     [syncDriverPositionToBackend]
   );
 
+  const handleIncomingCoordsRef = useRef<any>(null);
+
   // Smooth incoming coordinate handler with dead-zone noise filtering
   const handleIncomingCoords = useCallback(
-    (latitude: number, longitude: number, isUserAction = false) => {
+    (latitude: number, longitude: number, isUserAction = false, accuracy?: number) => {
       if (isNaN(latitude) || isNaN(longitude) || latitude === 0 || longitude === 0) return;
+
+      // Discard coarse cellular / network guesses (> 200m)
+      if (accuracy !== undefined && accuracy > 200) {
+        return;
+      }
 
       const prev = lastCoordsRef.current;
       // Filter out GPS micro-jitter (under 8 meters) when stationary unless user clicked recenter
@@ -313,6 +320,8 @@ export function DriverRadarPanel({
     },
     [ensureDriverMarker, throttledSyncDriverPosition, onLocationUpdate, driverLocationName]
   );
+
+  handleIncomingCoordsRef.current = handleIncomingCoords;
 
   // Sync initialCoords prop if passed from parent
   useEffect(() => {
@@ -384,7 +393,7 @@ export function DriverRadarPanel({
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [selectedTripDetail, setSelectedTripDetail] = useState<any | null>(null);
 
-  // 1. Fetch & update Driver's own real-time GPS location (Fast two-stage: cache/fused first, then satellite)
+  // 1. Fetch & update Driver's own real-time GPS location (Pure satellite GPS, zero cell-tower jumps)
   const updateDriverLocation = useCallback(
     async (userInitiated = false) => {
       setIsUpdatingLocation(true);
@@ -429,19 +438,7 @@ export function DriverRadarPanel({
             }
           }
 
-          // Stage 1: Quick fused / cached fix (low latency)
-          try {
-            const quickPos = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: false,
-              timeout: 3000,
-              maximumAge: 15000,
-            });
-            if (quickPos?.coords?.latitude && quickPos?.coords?.longitude) {
-              handleIncomingCoords(quickPos.coords.latitude, quickPos.coords.longitude, userInitiated);
-            }
-          } catch {}
-
-          // Stage 2: Satellite high accuracy
+          // High accuracy satellite GPS
           const position = await Geolocation.getCurrentPosition({
             enableHighAccuracy: true,
             timeout: 8000,
@@ -449,7 +446,7 @@ export function DriverRadarPanel({
           });
 
           if (position?.coords?.latitude && position?.coords?.longitude) {
-            handleIncomingCoords(position.coords.latitude, position.coords.longitude, userInitiated);
+            handleIncomingCoordsRef.current?.(position.coords.latitude, position.coords.longitude, userInitiated, position.coords.accuracy);
             setIsUpdatingLocation(false);
             if (userInitiated) {
               toast.success("📍 অবস্থান আপডেট হয়েছে");
@@ -467,21 +464,10 @@ export function DriverRadarPanel({
         return;
       }
 
-      // Stage 1: Fast fused position (returns in ~50ms on mobile browsers)
-      navigator.geolocation.getCurrentPosition(
-        (fastPos) => {
-          if (fastPos?.coords?.latitude && fastPos?.coords?.longitude) {
-            handleIncomingCoords(fastPos.coords.latitude, fastPos.coords.longitude, userInitiated);
-          }
-        },
-        () => {},
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 15000 }
-      );
-
-      // Stage 2: Precision GPS
+      // High-accuracy precision GPS
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          handleIncomingCoords(pos.coords.latitude, pos.coords.longitude, userInitiated);
+          handleIncomingCoordsRef.current?.(pos.coords.latitude, pos.coords.longitude, userInitiated, pos.coords.accuracy);
           setIsUpdatingLocation(false);
           if (userInitiated) {
             toast.success("📍 অবস্থান আপডেট হয়েছে");
@@ -498,10 +484,10 @@ export function DriverRadarPanel({
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
       );
     },
-    [handleIncomingCoords]
+    []
   );
 
-  // Real-time continuous GPS tracking for Driver (Single active watcher, no fighting)
+  // Real-time continuous GPS tracking for Driver (Single active watcher, no fighting or constant recreation)
   useEffect(() => {
     updateDriverLocation(false);
 
@@ -515,12 +501,12 @@ export function DriverRadarPanel({
       if (isNative) {
         try {
           capWatchId = await Geolocation.watchPosition(
-            { enableHighAccuracy: true, maximumAge: 0 },
+            { enableHighAccuracy: true, maximumAge: 3000 },
             (position, err) => {
               if (isCancelled || err || !position?.coords) return;
-              const { latitude, longitude } = position.coords;
+              const { latitude, longitude, accuracy } = position.coords;
               if (latitude && longitude && latitude !== 0) {
-                handleIncomingCoords(latitude, longitude, false);
+                handleIncomingCoordsRef.current?.(latitude, longitude, false, accuracy);
               }
             }
           );
@@ -532,13 +518,13 @@ export function DriverRadarPanel({
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
             if (isCancelled || !pos?.coords) return;
-            const { latitude, longitude } = pos.coords;
+            const { latitude, longitude, accuracy } = pos.coords;
             if (latitude && longitude && latitude !== 0) {
-              handleIncomingCoords(latitude, longitude, false);
+              handleIncomingCoordsRef.current?.(latitude, longitude, false, accuracy);
             }
           },
           () => {},
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+          { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
         );
       }
     };
@@ -554,7 +540,7 @@ export function DriverRadarPanel({
         Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
       }
     };
-  }, [handleIncomingCoords, updateDriverLocation]);
+  }, [activeTab, updateDriverLocation]);
 
   // 2. Fetch Driver Trip History & Today's Earnings
   const fetchDriverTrips = useCallback(async () => {

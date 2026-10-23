@@ -120,11 +120,15 @@ export function startDriverBackgroundLocationTracking(
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
 
-  // 3. Start high-accuracy GPS watchPosition
+  // 3. Start high-accuracy continuous GPS watchPosition
   activeWatchId = navigator.geolocation.watchPosition(
     (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
+      if (!pos?.coords) return;
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      // Discard coarse cellular / IP locations (> 200m)
+      if (accuracy !== undefined && accuracy > 200) {
+        return;
+      }
       currentCoords = [lat, lng];
       options.onLocationUpdate([lat, lng]);
       syncDriverLocationToServer(options.driverId, options.phone, lat, lng);
@@ -134,38 +138,23 @@ export function startDriverBackgroundLocationTracking(
     },
     {
       enableHighAccuracy: true,
-      maximumAge: 5000,
-      timeout: 10000,
+      maximumAge: 3000,
+      timeout: 15000,
     }
   );
 
-  // 4. Fallback periodic heartbeat timer (every 12 seconds)
-  // Ensures location continues to ping even if watchPosition lags or pauses
+  // 4. Server heartbeat: every 15s re-sync last known accurate coordinates WITHOUT re-triggering GPS hardware
   heartbeatIntervalId = setInterval(() => {
     if (!isTrackingRunning) return;
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        currentCoords = [lat, lng];
-        options.onLocationUpdate([lat, lng]);
-        syncDriverLocationToServer(options.driverId, options.phone, lat, lng);
-      },
-      () => {
-        // If GPS single fix fails but we have cached coords, ping last known
-        if (currentCoords) {
-          syncDriverLocationToServer(
-            options.driverId,
-            options.phone,
-            currentCoords[0],
-            currentCoords[1]
-          );
-        }
-      },
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 8000 }
-    );
-  }, 12000);
+    if (currentCoords && currentCoords[0] !== 0 && currentCoords[1] !== 0) {
+      syncDriverLocationToServer(
+        options.driverId,
+        options.phone,
+        currentCoords[0],
+        currentCoords[1]
+      );
+    }
+  }, 15000);
 
   // Return cleanup function
   return () => {

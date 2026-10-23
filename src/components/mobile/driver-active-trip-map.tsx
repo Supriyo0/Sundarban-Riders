@@ -440,10 +440,12 @@ export function DriverActiveTripMap({
             dragging: true,
           });
 
-          // Google Maps street layer with multi-subdomain rotation
+          // Google Maps street layer with multi-subdomain rotation and pre-buffering
           L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
             maxZoom: 20,
             subdomains: ["mt0", "mt1", "mt2", "mt3"],
+            keepBuffer: 8,
+            updateWhenIdle: false,
           }).addTo(map);
 
           // Destination marker (render only when not a metered trip on journey)
@@ -494,11 +496,13 @@ export function DriverActiveTripMap({
             }
           }
 
-          // Invalidate size on load
+          // Force Leaflet tile & layout recalculation on mount and after layout paints
           map.whenReady(() => {
             map.invalidateSize();
-            setTimeout(() => map?.invalidateSize(), 150);
-            setTimeout(() => map?.invalidateSize(), 500);
+            setTimeout(() => map?.invalidateSize(), 100);
+            setTimeout(() => map?.invalidateSize(), 300);
+            setTimeout(() => map?.invalidateSize(), 600);
+            setTimeout(() => map?.invalidateSize(), 1200);
           });
 
           mapInstanceRef.current = map;
@@ -671,43 +675,43 @@ export function DriverActiveTripMap({
               </div>
 
               {/* 4 STATS GRID: Duration, Distance, Clock/Time, Fare */}
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-4 gap-1 sm:gap-1.5">
                 {/* 1. Travelling Duration */}
-                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
-                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">সময়কাল</span>
-                  <p className="text-base sm:text-lg font-black text-sky-400 font-mono tabular-nums leading-tight mt-0.5">
+                <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-white/5 min-w-0">
+                  <span className="text-[8px] sm:text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block truncate">সময়কাল</span>
+                  <p className="text-xs sm:text-base font-black text-sky-400 font-mono tabular-nums leading-tight mt-0.5 truncate">
                     {formatDuration(elapsedSeconds)}
                   </p>
-                  <span className="text-[8px] text-slate-400 block font-medium">মি : সে</span>
+                  <span className="text-[7.5px] sm:text-[8px] text-slate-400 block font-medium">মি : সে</span>
                 </div>
 
                 {/* 2. Travelling Distance */}
-                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
-                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">দূরত্ব</span>
-                  <p className="text-base sm:text-lg font-black text-emerald-400 font-mono tabular-nums leading-tight mt-0.5">
+                <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-white/5 min-w-0">
+                  <span className="text-[8px] sm:text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block truncate">দূরত্ব</span>
+                  <p className="text-xs sm:text-base font-black text-emerald-400 font-mono tabular-nums leading-tight mt-0.5 truncate">
                     {meterReading.totalKm.toFixed(2)}
                   </p>
-                  <span className="text-[8px] text-slate-400 block font-medium">কিমি</span>
+                  <span className="text-[7.5px] sm:text-[8px] text-slate-400 block font-medium">কিমি</span>
                 </div>
 
                 {/* 3. Time (Current Clock) */}
-                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-white/5">
-                  <span className="text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block">বর্তমান ঘড়ি</span>
-                  <p className="text-xs sm:text-sm font-black text-amber-300 font-mono leading-tight mt-1 truncate">
+                <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-white/5 min-w-0">
+                  <span className="text-[8px] sm:text-[8.5px] text-slate-400 font-bold uppercase tracking-tight block truncate">ঘড়ি</span>
+                  <p className="text-[10px] sm:text-xs font-black text-amber-300 font-mono leading-tight mt-1 truncate">
                     {currentClockTime ? currentClockTime.replace(/:\d\d\s/, " ") : "--:--"}
                   </p>
-                  <span className="text-[8px] text-amber-400/80 block font-medium truncate">
-                    {routeDuration ? `~${routeDuration}মি গন্তব্য` : "লাইভ সময়"}
+                  <span className="text-[7.5px] sm:text-[8px] text-amber-400/80 block font-medium truncate">
+                    {routeDuration ? `~${routeDuration}মি` : "লাইভ"}
                   </span>
                 </div>
 
                 {/* 4. Live Cash Fare */}
-                <div className="bg-slate-800/80 rounded-2xl p-2 text-center border border-amber-500/25">
-                  <span className="text-[8.5px] text-amber-400 font-black uppercase tracking-tight block">নগদ ভাড়া</span>
-                  <p className="text-base sm:text-lg font-black text-amber-400 font-mono tabular-nums leading-tight mt-0.5">
+                <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-amber-500/25 min-w-0">
+                  <span className="text-[8px] sm:text-[8.5px] text-amber-400 font-black uppercase tracking-tight block truncate">ভাড়া</span>
+                  <p className="text-xs sm:text-base font-black text-amber-400 font-mono tabular-nums leading-tight mt-0.5 truncate">
                     ₹{meterReading.liveFare}
                   </p>
-                  <span className="text-[8px] text-slate-400 block font-bold">টাকা</span>
+                  <span className="text-[7.5px] sm:text-[8px] text-slate-400 block font-bold">টাকা</span>
                 </div>
               </div>
             </div>

@@ -2726,8 +2726,8 @@ export function InteractiveBookingMap({
               /* Full Expanded Sheet */
               <>
                 {/* Route Summary Pill */}
-                <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate max-w-[70%]">
+                <div className="flex items-center justify-between gap-2 text-xs pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold truncate min-w-0 flex-1">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
                         hasValidPickup ? "bg-emerald-500" : "bg-amber-500 animate-ping"
@@ -2738,14 +2738,14 @@ export function InteractiveBookingMap({
                         ? pickupInputValue.slice(0, 16)
                         : "⚠️ Select pickup location"}
                     </span>
-                    <span>➔</span>
+                    <span className="shrink-0">➔</span>
                     <span className="truncate text-slate-900">{dropInputValue.slice(0, 18)}</span>
                   </div>
                   <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 shrink-0">
                     {isCalculatingRoute ? (
                       <span className="flex items-center gap-1">
                         <RefreshCw className="w-3 h-3 animate-spin" />
-                        Calculating route...
+                        Calculating...
                       </span>
                     ) : distanceKm > 0 ? (
                       `${distanceKm} km • ~${roadDurationMin} min`
@@ -2782,22 +2782,22 @@ export function InteractiveBookingMap({
                 )}
 
                 {/* Uber Toto Vehicle Card - Liquid Refraction Polish */}
-                <div className="p-3.5 rounded-2xl liquid-glass-pill bg-white/35 dark:bg-slate-800/35 border-2 border-emerald-500/70 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl shadow-md shadow-emerald-600/30 shrink-0">
+                <div className="p-3 sm:p-3.5 rounded-2xl liquid-glass-pill bg-white/35 dark:bg-slate-800/35 border-2 border-emerald-500/70 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-xl sm:text-2xl shadow-md shadow-emerald-600/30 shrink-0">
                       🛺
                     </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <h4 className="font-black text-sm text-slate-900">Sundarban Smart Toto</h4>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="font-black text-xs sm:text-sm text-slate-900 truncate">Sundarban Smart Toto</h4>
                         {fareResult.isNight && (
-                          <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                          <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
                             <Moon className="w-2.5 h-2.5" />
                             <span>+₹{fareResult.nightCharge}</span>
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] font-semibold mt-0.5">
+                      <p className="text-[10px] sm:text-[11px] font-semibold mt-0.5 truncate">
                         {nearbyDrivers.length > 0 ? (
                           <span className="text-emerald-700 font-bold">
                             ⚡ ~{nearestDriverInfo?.etaMin || 3} min pickup ({nearestDriverInfo?.distanceKm.toFixed(1)} km away)
@@ -2808,33 +2808,33 @@ export function InteractiveBookingMap({
                           </span>
                         )}
                       </p>
-                      <div className="flex items-center gap-1 text-[10px] text-emerald-800 font-bold mt-0.5">
-                        <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                        <span>Verified Driver • Non-stop Road Route</span>
+                      <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-emerald-800 font-bold mt-0.5 truncate">
+                        <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span className="truncate">Verified Driver • Non-stop Road Route</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="text-right shrink-0">
-                    <div className="text-2xl font-black text-emerald-700 font-mono">
+                    <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
                       {isCalculatingRoute ? "₹--" : `₹${fareResult.totalFare}.00`}
                     </div>
-                    <span className="text-[9.5px] font-bold text-slate-500 block">
-                      {isCalculatingRoute ? "⏳ Calculating route..." : distanceKm > 0 ? `Distance: ${distanceKm} km` : "Base Fare: ₹30"}
+                    <span className="text-[9px] sm:text-[9.5px] font-bold text-slate-500 block">
+                      {isCalculatingRoute ? "⏳ Calculating..." : distanceKm > 0 ? `${distanceKm} km` : "Base Fare: ₹30"}
                     </span>
                   </div>
                 </div>
 
                 {/* Night Charge Breakdown Explanation Badge */}
                 {fareResult.isNight && (
-                  <div className="p-2.5 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs text-purple-950 flex items-center justify-between font-bold">
-                    <div className="flex items-center gap-2">
-                      <Moon className="w-4 h-4 text-purple-700 shrink-0" />
-                      <span>
-                        Daytime Fare: ₹{fareResult.totalFare - fareResult.nightCharge} + 🌙 Night Charge: ₹{fareResult.nightCharge} (9:30 PM - 5:00 AM)
+                  <div className="p-2 sm:p-2.5 rounded-2xl bg-purple-50/90 border border-purple-200 text-xs text-purple-950 flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 font-bold">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Moon className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                      <span className="text-[10.5px] leading-tight">
+                        Daytime: ₹{fareResult.totalFare - fareResult.nightCharge} + 🌙 Night Charge: ₹{fareResult.nightCharge}
                       </span>
                     </div>
-                    <span className="text-purple-800 font-mono font-black shrink-0">= ₹{fareResult.totalFare}</span>
+                    <span className="text-purple-800 font-mono font-black shrink-0 text-[11px] ml-auto">= ₹{fareResult.totalFare}</span>
                   </div>
                 )}
 

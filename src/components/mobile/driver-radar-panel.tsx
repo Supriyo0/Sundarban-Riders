@@ -104,6 +104,8 @@ interface DriverRadarPanelProps {
   initialTab?: "radar" | "trips";
   initialCoords?: [number, number];
   initialLocationName?: string;
+  onLocationUpdate?: (coords: [number, number], locationName?: string) => void;
+  onIncomingBookingAlert?: (booking: any) => void;
 }
 
 export function DriverRadarPanel({
@@ -115,6 +117,8 @@ export function DriverRadarPanel({
   initialTab = "radar",
   initialCoords,
   initialLocationName,
+  onLocationUpdate,
+  onIncomingBookingAlert,
 }: DriverRadarPanelProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -301,10 +305,13 @@ export function DriverRadarPanel({
       // Move marker smoothly
       ensureDriverMarker(newCoords, isUserAction);
 
+      // Instantly propagate accurate live GPS coordinates to parent page
+      onLocationUpdate?.(newCoords, driverLocationName);
+
       // Throttled sync to backend (stops database & admin panel flood)
       throttledSyncDriverPosition(latitude, longitude);
     },
-    [ensureDriverMarker, throttledSyncDriverPosition]
+    [ensureDriverMarker, throttledSyncDriverPosition, onLocationUpdate, driverLocationName]
   );
 
   // Sync initialCoords prop if passed from parent
@@ -714,6 +721,11 @@ export function DriverRadarPanel({
 
         validPending.forEach((b: any) => knownPendingRideIdsRef.current.add(b.id));
         setPendingBookings(validPending);
+
+        // Instantly notify parent page so the incoming ride modal displays with 0ms delay!
+        if (validPending.length > 0 && onIncomingBookingAlert) {
+          onIncomingBookingAlert(validPending[0]);
+        }
       } catch (err) {
         console.warn("Radar fetch error:", err);
       }

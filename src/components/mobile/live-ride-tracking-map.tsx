@@ -66,6 +66,7 @@ export function LiveRideTrackingMap({
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
   const meterRef = useRef<LiveFareMeter>(new LiveFareMeter(passengerCount, pricingConfig, booking?.trip_start_time || booking?.tripStartTime));
+  const lastPannedPosRef = useRef<[number, number] | null>(null);
 
   const [driverPos, setDriverPos] = useState<[number, number]>(() => {
     if (booking?.driver_lat && booking?.driver_lng) {
@@ -464,9 +465,14 @@ export function LiveRideTrackingMap({
           routeLineRef.current.setStyle({ color: rideStep === "in_trip" ? "#059669" : "#0284c7" });
         }
 
-        // Pan map smoothly to follow driver
+        // Pan map smoothly to follow driver only when moved >= 15m (0.015 km)
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.panTo(driverPos, { animate: true, duration: 1.0 });
+          const prev = lastPannedPosRef.current;
+          const moved = prev ? haversineKm(prev, driverPos) : 999;
+          if (moved >= 0.015) {
+            lastPannedPosRef.current = driverPos;
+            mapInstanceRef.current.panTo(driverPos, { animate: true, duration: 1.0 });
+          }
         }
       }
     };

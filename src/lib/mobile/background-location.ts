@@ -76,6 +76,7 @@ async function syncDriverLocationToServer(
         latitude,
         longitude,
         is_active: true,
+        is_available: true,
       }),
     });
   } catch (err) {

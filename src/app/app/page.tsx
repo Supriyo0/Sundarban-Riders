@@ -731,8 +731,8 @@ function MobileAppPageContent() {
           customerPhone: session.phone,
           pickupLocation: pickupText,
           dropLocation: dropText,
-          pickupCoords,
-          dropCoords,
+          pickupCoords: effectivePickupCoords,
+          dropCoords: (dropCoords && dropCoords[0] !== 0 ? dropCoords : undefined),
           estimatedFare: tripFare || 20,
           tripDistance,
           passengerCount: passengerCount || 3,
@@ -836,22 +836,10 @@ function MobileAppPageContent() {
         }, 1000);
       } else {
         // Countdown reached 0 (time is up):
-        // Immediately dismiss the searching popup! No hanging at 00:00!
-        const expiredBookingId = activeBookingId;
-        setSearchStatus("idle");
-        setSearchCountdown(0);
-        setActiveBookingId(null);
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("sr_active_booking_id");
-          localStorage.removeItem("sr_search_status");
-        }
-        toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি। রিকোয়েস্টটি বাতিল করা হয়েছে।", {
-          duration: 5000,
-        });
-
-        // Background check: verify whether driver just accepted before final system timeout
+        // Query server FIRST before dismissing so we NEVER abandon a ride that the driver just accepted!
+        const expiredBookingId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
         if (expiredBookingId) {
-          fetch(`/api/bookings?id=${expiredBookingId}&_t=${Date.now()}`, {
+          fetch(`/api/bookings?id=${encodeURIComponent(expiredBookingId)}&_t=${Date.now()}`, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
           })
@@ -859,7 +847,7 @@ function MobileAppPageContent() {
             .then((resData) => {
               const b = resData?.booking;
               if (b && (b.status === "assigned" || b.status === "in_progress" || b.status === "accepted")) {
-                // Driver accepted right at buzzer! Transition to ride tracking
+                // Driver accepted right at buzzer! Transition immediately to ride tracking!
                 const acceptedBooking = {
                   id: b.id,
                   bookingNumber: b.booking_number,
@@ -877,9 +865,12 @@ function MobileAppPageContent() {
                 setPassengerBooking(acceptedBooking);
                 setActiveBookingId(b.id);
                 setRideStep("assigned");
+                setSearchStatus("idle");
+                setSearchCountdown(0);
                 if (typeof window !== "undefined") {
                   localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedBooking));
                   localStorage.setItem("sr_active_booking_id", b.id);
+                  localStorage.removeItem("sr_search_status");
                 }
                 setPhase("passenger_home");
                 playSuccessSound();
@@ -887,7 +878,17 @@ function MobileAppPageContent() {
                 return;
               }
 
-              // Genuinely expired without any accept — cancel on server
+              // Truly unaccepted after 3 minutes: Cancel booking on server so driver panel is informed
+              setSearchStatus("unaccepted");
+              setSearchCountdown(0);
+              setActiveBookingId(null);
+              if (typeof window !== "undefined") {
+                localStorage.removeItem("sr_active_booking_id");
+                localStorage.removeItem("sr_search_status");
+              }
+              toast.error("দুঃখিত! বিগত ৩ মিনিটে কোনো চালক রাইড গ্রহণ করতে পারেননি।", {
+                duration: 5000,
+              });
               fetch("/api/bookings", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -899,7 +900,14 @@ function MobileAppPageContent() {
                 }),
               }).catch(() => {});
             })
-            .catch(() => {});
+            .catch(() => {
+              setSearchStatus("unaccepted");
+              setSearchCountdown(0);
+              setActiveBookingId(null);
+            });
+        } else {
+          setSearchStatus("idle");
+          setSearchCountdown(0);
         }
       }
     }
@@ -1630,16 +1638,84 @@ function MobileAppPageContent() {
     };
 
     // Auto-mark driver active on server upon entering rider dashboard
+    const initialPatch: Record<string, any> = { id: driverId, phone, is_active: true, is_available: true };
+    const savedLat = driverLiveCoords?.[0] || (typeof window !== "undefined" ? parseFloat(localStorage.getItem("sr_last_known_lat") || "0") : 0);
+    const savedLng = driverLiveCoords?.[1] || (typeof window !== "undefined" ? parseFloat(localStorage.getItem("sr_last_known_lng") || "0") : 0);
+    if (savedLat && savedLng && !isNaN(savedLat) && !isNaN(savedLng) && savedLat !== 0) {
+      initialPatch.latitude = savedLat;
+      initialPatch.longitude = savedLng;
+    }
     fetch("/api/drivers", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: driverId, phone, is_active: true, is_available: true }),
+      body: JSON.stringify(initialPatch),
     }).catch(() => {});
 
     syncDriverStatus();
     const interval = setInterval(syncDriverStatus, 3500);
     return () => clearInterval(interval);
   }, [phase, session?.driverId, session?.phone, isOnline]);
+
+  // Reusable helper: Display incoming ride modal with audio chime and haptics
+  const triggerIncomingRideAlert = useCallback((b: any) => {
+    if (!b || activeRide || isAcceptingRef.current) return;
+    if (declinedBookingIdsRef.current.has(b.id)) return;
+    if (acceptedRideIdsRef.current.has(b.id)) return;
+    if (b.booking_number && acceptedRideIdsRef.current.has(b.booking_number)) return;
+    if (incomingRide && incomingRide.id === b.id) return;
+
+    const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+    const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+    const dDropLat = Number(b.drop_lat || b.end_coords?.[0]);
+    const dDropLng = Number(b.drop_lng || b.end_coords?.[1]);
+
+    const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
+    const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
+
+    const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : (hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920]);
+    const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 0.8;
+
+    if (dKm > 5.0) return; // Strictly enforce 5.0 km radius
+
+    const isMetered = !hasValidDrop || (typeof b.drop_location === "string" && (b.drop_location.includes("মিটার") || b.drop_location.includes("বিনা গন্তব্য")));
+    const tripDistKm = isMetered
+      ? null
+      : Number(b.trip_distance_km) || (hasValidPickup && hasValidDrop ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
+
+    let displayFare = Number(b.estimated_fare) || Number(b.fare) || 25;
+    if (isMetered || displayFare > 5000) {
+      displayFare = 25;
+    }
+
+    setAlertCountdown(30);
+    playRideAlertSound();
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      try {
+        navigator.vibrate([400, 150, 400, 150, 600]);
+      } catch {}
+    }
+
+    showLocalRideAlertNotification(
+      "🔔 নতুন রাইড অনুরোধ এসেছে!",
+      `পিকআপ: ${b.pickup_location || "পিকআপ"} • ভাড়া: ₹${displayFare}`,
+      b.id
+    );
+
+    setIncomingRide({
+      id: b.id,
+      bookingNumber: b.booking_number || b.id?.slice(0, 8),
+      fare: displayFare,
+      passengerName: b.customer_name || "যাত্রী",
+      passengerRating: 5.0,
+      passengerPhone: b.customer_phone || "",
+      pickup: b.pickup_location || "পিকআপ লোকেশন",
+      pickupDistance: `${dKm.toFixed(1)} কিমি দূরে`,
+      drop: isMetered ? "মিটার অনুযায়ী গন্তব্য" : (b.drop_location || "গন্তব্য"),
+      tripDistance: isMetered ? "মিটার অনুযায়ী" : `${tripDistKm ? tripDistKm.toFixed(1) : "1.5"} কিমি ট্রিপ`,
+      pickupCoords: hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920],
+      dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
+    });
+  }, [activeRide, incomingRide, driverLiveCoords]);
 
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {
@@ -1695,10 +1771,18 @@ function MobileAppPageContent() {
             }
           }
 
-          // Use driver live coordinates, cached device coordinates, or regional center
-          const effectiveCoords = (coords && coords[0] !== 0) ? coords : [21.8760, 88.1920];
+          // Build query with live coordinates and driver session identity
+          let queryParams = `?status=pending&_t=${Date.now()}`;
+          if (coords && coords[0] !== 0) {
+            queryParams += `&driver_lat=${coords[0]}&driver_lng=${coords[1]}`;
+          }
+          if (session?.driverId) {
+            queryParams += `&driver_id=${encodeURIComponent(session.driverId)}`;
+          }
+          if (session?.phone) {
+            queryParams += `&driver_phone=${encodeURIComponent(session.phone)}`;
+          }
 
-          const queryParams = `?status=pending&driver_lat=${effectiveCoords[0]}&driver_lng=${effectiveCoords[1]}&_t=${Date.now()}`;
           const res = await fetch(`/api/bookings${queryParams}`, {
             cache: "no-store",
             headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
@@ -1709,24 +1793,20 @@ function MobileAppPageContent() {
             : data.booking
             ? [data.booking]
             : [];
-          const nowMs = Date.now();
+
           const b = pendingList.find((item: any) => {
             if (!item || item.status !== "pending" || item.driver_id) return false;
             if (declinedBookingIdsRef.current.has(item.id)) return false;
             if (acceptedRideIdsRef.current.has(item.id)) return false;
             if (item.booking_number && acceptedRideIdsRef.current.has(item.booking_number)) return false;
             if (isAcceptingRef.current === item.id) return false;
-            // Cooldown of 20 seconds before re-alerting modal so we don't spam continuously
-            const lastAlerted = lastAlertedTimeRef.current.get(item.id) || 0;
-            if (nowMs - lastAlerted < 20000) return false;
 
             const pLat = Number(item.pickup_lat || item.start_coords?.[0]);
             const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
-            const hasRealDriverGps = coords && coords[0] !== 0;
-            if (hasRealDriverGps && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
-              const dKm = calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng);
+            if (coords && coords[0] !== 0 && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
+              const dKm = calculateDistanceKm(coords[0], coords[1], pLat, pLng);
               if (dKm > 5.0) {
-                // Out of 5.0 km range: strictly skip
+                // Strictly skip out of 5.0 km radius
                 return false;
               }
             }
@@ -1734,45 +1814,7 @@ function MobileAppPageContent() {
           });
 
           if (b) {
-            lastAlertedTimeRef.current.set(b.id, nowMs);
-
-            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
-            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            const dDropLat = Number(b.drop_lat || b.end_coords?.[0]);
-            const dDropLng = Number(b.drop_lng || b.end_coords?.[1]);
-
-            const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
-            const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
-
-            const dKm = hasValidPickup ? calculateDistanceKm(effectiveCoords[0], effectiveCoords[1], pLat, pLng) : 1.2;
-
-            const isMetered = !hasValidDrop || (typeof b.drop_location === "string" && (b.drop_location.includes("মিটার") || b.drop_location.includes("বিনা গন্তব্য")));
-
-            const tripDistKm = isMetered
-              ? null
-              : Number(b.trip_distance_km) || (hasValidPickup && hasValidDrop ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
-
-            // Guard against astronomical fare from old metered bookings
-            let displayFare = Number(b.estimated_fare) || Number(b.fare) || 25;
-            if (isMetered || displayFare > 5000) {
-              displayFare = 25;
-            }
-
-            setAlertCountdown(30);
-            setIncomingRide({
-              id: b.id,
-              bookingNumber: b.booking_number || b.id?.slice(0, 8),
-              fare: displayFare,
-              passengerName: b.customer_name || "যাত্রী",
-              passengerRating: 5.0,
-              passengerPhone: b.customer_phone || "",
-              pickup: b.pickup_location || "পিকআপ লোকেশন",
-              pickupDistance: `${dKm.toFixed(1)} কিমি দূরে`,
-              drop: isMetered ? "মিটার অনুযায়ী গন্তব্য" : (b.drop_location || "গন্তব্য"),
-              tripDistance: isMetered ? "মিটার অনুযায়ী" : `${tripDistKm ? tripDistKm.toFixed(1) : "1.5"} কিমি ট্রিপ`,
-              pickupCoords: hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920],
-              dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
-            });
+            triggerIncomingRideAlert(b);
           }
         } catch {
           // Ignore transient network errors
@@ -1800,7 +1842,7 @@ function MobileAppPageContent() {
     }
 
     return () => clearInterval(pollInterval);
-  }, [phase, isOnline, incomingRide, activeRide]);
+  }, [phase, isOnline, incomingRide, activeRide, driverLiveCoords, session?.driverId, session?.phone, triggerIncomingRideAlert]);
 
   // Poll active ride for real-time cancellation by customer
   useEffect(() => {
@@ -2964,411 +3006,466 @@ function MobileAppPageContent() {
   if (phase === "kyc_form") {
     return (
       <MobileAppShell>
-        <div className="min-h-full text-slate-900 pb-12" style={{background: "linear-gradient(180deg, #fefce8 0%, #f8fafc 30%, #ffffff 100%)"}}>
-        <div className="px-6 pt-5 space-y-6">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
-              নতুন চালক নিবন্ধন
-            </span>
+        <div
+          className="h-full w-full flex flex-col bg-slate-50 text-slate-900 select-none overflow-hidden relative"
+          style={{ background: "linear-gradient(180deg, #fefce8 0%, #f8fafc 30%, #ffffff 100%)" }}
+        >
+          {/* Header Bar */}
+          <div className="shrink-0 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 flex items-center justify-between z-20 shadow-xs">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPhase("select_role")}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer text-xs font-bold"
+                title="ফিরে যান"
+              >
+                ←
+              </button>
+              <span className="text-xs text-amber-800 font-bold bg-amber-100 px-3 py-1 rounded-full border border-amber-200">
+                নতুন চালক নিবন্ধন
+              </span>
+            </div>
             <span className="text-xs text-slate-600 font-mono font-semibold">+91 {phoneInput || session?.phone || ""}</span>
           </div>
 
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-              চালক তথ্য ও ডকুমেন্ট সাবমিট
-            </h2>
-            <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-              যাচাইকরণের জন্য আধার কার্ড ও টোটো রসিদের ছবি আপলোড করুন। ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন (ঐচ্ছিক)।
-            </p>
+          {/* Scrollable Form Body */}
+          <div className="flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6 pt-5 pb-24 space-y-6 touch-pan-y">
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+                চালক তথ্য ও ডকুমেন্ট সাবমিট
+              </h2>
+              <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+                যাচাইকরণের জন্য আধার কার্ড ও টোটো রসিদের ছবি আপলোড করুন। ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন (ঐচ্ছিক)।
+              </p>
+            </div>
+
+            <form id="kyc-submit-form" onSubmit={handleKycSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold">পূর্ণ নাম *</Label>
+                <Input
+                  placeholder="যেমন: রাজেশ মন্ডল"
+                  value={kycName}
+                  onChange={(e) => setKycName(e.target.value)}
+                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold">ইমেইল ঠিকানা (ঐচ্ছিক / অনুমোদনপত্রের জন্য)</Label>
+                <Input
+                  type="email"
+                  placeholder="example@gmail.com"
+                  value={kycEmail}
+                  onChange={(e) => setKycEmail(e.target.value)}
+                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-700 font-semibold">জেলা *</Label>
+                  <Input
+                    value={kycDistrict}
+                    onChange={(e) => setKycDistrict(e.target.value)}
+                    className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-slate-700 font-semibold">ব্লক *</Label>
+                  <Input
+                    value={kycBlock}
+                    onChange={(e) => setKycBlock(e.target.value)}
+                    className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* 1. Aadhaar Card Number (AT TOP) */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                  <span>১. আধার নম্বর (Aadhaar Number) *</span>
+                  <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
+                </Label>
+                <Input
+                  placeholder="১২ ডিজিটের আধার নম্বর (যেমন: 1234 5678 9012)"
+                  value={kycAadharNumber}
+                  onChange={(e) => setKycAadharNumber(e.target.value)}
+                  className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm"
+                />
+              </div>
+
+              {/* 2. Toto Registration Number */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                  <span>২. টোটো রেজিস্ট্রেশন নম্বর (Toto Registration No) *</span>
+                  <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
+                </Label>
+                <Input
+                  placeholder="যেমন: WB-96-T-8421"
+                  value={kycTotoNumber}
+                  onChange={(e) => setKycTotoNumber(e.target.value)}
+                  className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl uppercase shadow-sm"
+                />
+              </div>
+
+              {/* 3. Driving Licence Number (OPTIONAL) */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                  <span>৩. ড্রাইভিং লাইসেন্স নম্বর (Driving Licence No)</span>
+                  <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">ঐচ্ছিক (Optional)</span>
+                </Label>
+                <Input
+                  placeholder="ড্রাইভিং লাইসেন্স নম্বর (যদি থাকে, যেমন: WB-01-2020-0012345)"
+                  value={kycLicenseNumber}
+                  onChange={(e) => setKycLicenseNumber(e.target.value)}
+                  className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm uppercase"
+                />
+              </div>
+
+              {/* Document Upload Section: Aadhaar (Top), Toto Rosit (Middle), Driving Licence (Optional Bottom) */}
+              <div className="space-y-4 pt-2">
+                <input
+                  ref={aadharFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={handleAadharFileChange}
+                />
+                <input
+                  ref={receiptFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={handleReceiptFileChange}
+                />
+                <input
+                  ref={licenseFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={handleLicenseFileChange}
+                />
+
+                {/* 1. Aadhaar Card Upload Card (TOP - Mandatory) */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                    <span>১. আধার কার্ডের ছবি (Aadhaar Card) *</span>
+                    {kycAadharDoc ? (
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
+                        বাধ্যতামূলক
+                      </span>
+                    )}
+                  </Label>
+
+                  {kycAadharDoc ? (
+                    <div className="p-3.5 rounded-2xl border-2 border-emerald-400 bg-emerald-50/40 shadow-sm space-y-3">
+                      <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-emerald-200">
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-emerald-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
+                          {kycAadharDoc.startsWith("data:image") || kycAadharDoc.startsWith("http") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={kycAadharDoc} alt="Aadhar Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-8 h-8 text-emerald-600" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {kycAadharName || "আধার কার্ড (সংযুক্ত)"}
+                          </p>
+                          <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
+                            ✓ আধার কার্ডের প্রিভিউ প্রস্তুত
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+                          disabled={uploadingAadhar}
+                          onClick={() => aadharFileInputRef.current?.click()}
+                        >
+                          {uploadingAadhar ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />}
+                          ছবি পরিবর্তন (Replace)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
+                          onClick={() => {
+                            setKycAadharDoc("");
+                            setKycAadharName("");
+                            if (aadharFileInputRef.current) aadharFileInputRef.current.value = "";
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          মুছে ফেলুন (Remove)
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => aadharFileInputRef.current?.click()}
+                      className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-slate-900">আধার কার্ডের ছবি নির্বাচন করুন</h5>
+                        <p className="text-[11px] text-slate-500 mt-0.5">আধার কার্ডের সামনের পরিষ্কার ছবি বা স্ক্যান কপি আপলোড করুন</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-4 text-xs font-bold rounded-xl border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 gap-1.5 shadow-xs pointer-events-none"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        আধার ছবি সিলেক্ট করুন
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Toto Rosit / Receipt Upload Card (MIDDLE - Mandatory) */}
+                <div className="space-y-2 pt-1">
+                  <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                    <span>২. টোটো রসিদ / রেজিস্ট্রেশন ডকুমেন্ট (Toto Rosit / Receipt) *</span>
+                    {kycReceiptDoc ? (
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
+                        বাধ্যতামূলক
+                      </span>
+                    )}
+                  </Label>
+
+                  {kycReceiptDoc ? (
+                    <div className="p-3.5 rounded-2xl border-2 border-purple-400 bg-purple-50/40 shadow-sm space-y-3">
+                      <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-purple-200">
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-purple-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
+                          {kycReceiptDoc.startsWith("data:image") || kycReceiptDoc.startsWith("http") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={kycReceiptDoc} alt="Toto Receipt Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-8 h-8 text-purple-600" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {kycReceiptName || "টোটো রসিদ (সংযুক্ত)"}
+                          </p>
+                          <p className="text-[11px] text-purple-600 font-semibold mt-0.5">
+                            ✓ রসিদের প্রিভিউ প্রস্তুত
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+                          disabled={uploadingReceipt}
+                          onClick={() => receiptFileInputRef.current?.click()}
+                        >
+                          {uploadingReceipt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-purple-600" />}
+                          ছবি পরিবর্তন (Replace)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
+                          onClick={() => {
+                            setKycReceiptDoc("");
+                            setKycReceiptName("");
+                            if (receiptFileInputRef.current) receiptFileInputRef.current.value = "";
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          মুছে ফেলুন (Remove)
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => receiptFileInputRef.current?.click()}
+                      className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-purple-500 hover:bg-purple-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-slate-900">টোটো রসিদের ছবি নির্বাচন করুন</h5>
+                        <p className="text-[11px] text-slate-500 mt-0.5">টোটোর রসিদ বা রেজিস্ট্রেশন পেপারের ছবি সিলেক্ট করুন</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-4 text-xs font-bold rounded-xl border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 gap-1.5 shadow-xs pointer-events-none"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        টোটো রসিদ সিলেক্ট করুন
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Driving Licence Upload Card (BOTTOM - OPTIONAL) */}
+                <div className="space-y-2 pt-1">
+                  <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
+                    <span>৩. ড্রাইভিং লাইসেন্স (Driving Licence - ঐচ্ছিক / Optional)</span>
+                    {kycLicenseDoc ? (
+                      <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
+                        ঐচ্ছিক (বাধ্যতামূলক নয়)
+                      </span>
+                    )}
+                  </Label>
+
+                  {kycLicenseDoc ? (
+                    <div className="p-3.5 rounded-2xl border-2 border-blue-400 bg-blue-50/40 shadow-sm space-y-3">
+                      <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-blue-200">
+                        <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-blue-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
+                          {kycLicenseDoc.startsWith("data:image") || kycLicenseDoc.startsWith("http") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={kycLicenseDoc} alt="License Preview" className="w-full h-full object-cover" />
+                          ) : (
+                            <FileText className="w-8 h-8 text-blue-600" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 truncate">
+                            {kycLicenseName || "ড্রাইভিং লাইসেন্স (ঐচ্ছিক)"}
+                          </p>
+                          <p className="text-[11px] text-blue-600 font-semibold mt-0.5">
+                            ✓ লাইসেন্সের প্রিভিউ প্রস্তুত (ঐচ্ছিক)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
+                          disabled={uploadingLicense}
+                          onClick={() => licenseFileInputRef.current?.click()}
+                        >
+                          {uploadingLicense ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-blue-600" />}
+                          ছবি পরিবর্তন (Replace)
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
+                          onClick={() => {
+                            setKycLicenseDoc("");
+                            setKycLicenseName("");
+                            if (licenseFileInputRef.current) licenseFileInputRef.current.value = "";
+                          }}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          মুছে ফেলুন (Remove)
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => licenseFileInputRef.current?.click()}
+                      className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-500 hover:bg-blue-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
+                        <Upload className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-bold text-slate-900">ড্রাইভিং লাইসেন্সের ছবি (ঐচ্ছিক)</h5>
+                        <p className="text-[11px] text-slate-500 mt-0.5">ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন, না থাকলেও কোনো সমস্যা নেই</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-4 text-xs font-bold rounded-xl border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 gap-1.5 shadow-xs pointer-events-none"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        লাইসেন্স ছবি সিলেক্ট করুন (ঐচ্ছিক)
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* In-form submit button for accessibility when scrolled to very bottom */}
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20 cursor-pointer active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span>তথ্য যাচাই ও সাবমিট হচ্ছে...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span>আবেদন সাবমিট করুন</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
           </div>
 
-          <form onSubmit={handleKycSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">পূর্ণ নাম *</Label>
-              <Input
-                placeholder="যেমন: রাজেশ মন্ডল"
-                value={kycName}
-                onChange={(e) => setKycName(e.target.value)}
-                className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold">ইমেইল ঠিকানা (ঐচ্ছিক / অনুমোদনপত্রের জন্য)</Label>
-              <Input
-                type="email"
-                placeholder="example@gmail.com"
-                value={kycEmail}
-                onChange={(e) => setKycEmail(e.target.value)}
-                className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">জেলা *</Label>
-                <Input
-                  value={kycDistrict}
-                  onChange={(e) => setKycDistrict(e.target.value)}
-                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">ব্লক *</Label>
-                <Input
-                  value={kycBlock}
-                  onChange={(e) => setKycBlock(e.target.value)}
-                  className="h-12 bg-white border-slate-300 text-slate-900 rounded-xl shadow-sm"
-                />
-              </div>
-            </div>
-
-            {/* 1. Aadhaar Card Number (AT TOP) */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                <span>১. আধার নম্বর (Aadhaar Number) *</span>
-                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
-              </Label>
-              <Input
-                placeholder="১২ ডিজিটের আধার নম্বর (যেমন: 1234 5678 9012)"
-                value={kycAadharNumber}
-                onChange={(e) => setKycAadharNumber(e.target.value)}
-                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm"
-              />
-            </div>
-
-            {/* 2. Toto Registration Number */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                <span>২. টোটো রেজিস্ট্রেশন নম্বর (Toto Registration No) *</span>
-                <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">বাধ্যতামূলক</span>
-              </Label>
-              <Input
-                placeholder="যেমন: WB-96-T-8421"
-                value={kycTotoNumber}
-                onChange={(e) => setKycTotoNumber(e.target.value)}
-                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl uppercase shadow-sm"
-              />
-            </div>
-
-            {/* 3. Driving Licence Number (OPTIONAL) */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                <span>৩. ড্রাইভিং লাইসেন্স নম্বর (Driving Licence No)</span>
-                <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">ঐচ্ছিক (Optional)</span>
-              </Label>
-              <Input
-                placeholder="ড্রাইভিং লাইসেন্স নম্বর (যদি থাকে, যেমন: WB-01-2020-0012345)"
-                value={kycLicenseNumber}
-                onChange={(e) => setKycLicenseNumber(e.target.value)}
-                className="h-12 bg-white border-slate-300 text-slate-900 font-mono rounded-xl shadow-sm uppercase"
-              />
-            </div>
-
-            {/* Document Upload Section: Aadhaar (Top), Toto Rosit (Middle), Driving Licence (Optional Bottom) */}
-            <div className="space-y-4 pt-2">
-              <input
-                ref={aadharFileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={handleAadharFileChange}
-              />
-              <input
-                ref={receiptFileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={handleReceiptFileChange}
-              />
-              <input
-                ref={licenseFileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={handleLicenseFileChange}
-              />
-
-              {/* 1. Aadhaar Card Upload Card (TOP - Mandatory) */}
-              <div className="space-y-2">
-                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>১. আধার কার্ডের ছবি (Aadhaar Card) *</span>
-                  {kycAadharDoc ? (
-                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
-                      বাধ্যতামূলক
-                    </span>
-                  )}
-                </Label>
-
-                {kycAadharDoc ? (
-                  <div className="p-3.5 rounded-2xl border-2 border-emerald-400 bg-emerald-50/40 shadow-sm space-y-3">
-                    <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-emerald-200">
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-emerald-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
-                        {kycAadharDoc.startsWith("data:image") || kycAadharDoc.startsWith("http") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycAadharDoc} alt="Aadhar Preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <FileText className="w-8 h-8 text-emerald-600" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycAadharName || "আধার কার্ড (সংযুক্ত)"}
-                        </p>
-                        <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">
-                          ✓ আধার কার্ডের প্রিভিউ প্রস্তুত
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
-                        disabled={uploadingAadhar}
-                        onClick={() => aadharFileInputRef.current?.click()}
-                      >
-                        {uploadingAadhar ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />}
-                        ছবি পরিবর্তন (Replace)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
-                        onClick={() => {
-                          setKycAadharDoc("");
-                          setKycAadharName("");
-                          if (aadharFileInputRef.current) aadharFileInputRef.current.value = "";
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        মুছে ফেলুন (Remove)
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => aadharFileInputRef.current?.click()}
-                    className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-emerald-500 hover:bg-emerald-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
-                      <Upload className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-900">আধার কার্ডের ছবি নির্বাচন করুন</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">আধার কার্ডের সামনের পরিষ্কার ছবি বা স্ক্যান কপি আপলোড করুন</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 px-4 text-xs font-bold rounded-xl border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 gap-1.5 shadow-xs pointer-events-none"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      আধার ছবি সিলেক্ট করুন
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              {/* 2. Toto Rosit / Receipt Upload Card (MIDDLE - Mandatory) */}
-              <div className="space-y-2 pt-1">
-                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>২. টোটো রসিদ / রেজিস্ট্রেশন ডকুমেন্ট (Toto Rosit / Receipt) *</span>
-                  {kycReceiptDoc ? (
-                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full">
-                      বাধ্যতামূলক
-                    </span>
-                  )}
-                </Label>
-
-                {kycReceiptDoc ? (
-                  <div className="p-3.5 rounded-2xl border-2 border-purple-400 bg-purple-50/40 shadow-sm space-y-3">
-                    <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-purple-200">
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-purple-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
-                        {kycReceiptDoc.startsWith("data:image") || kycReceiptDoc.startsWith("http") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycReceiptDoc} alt="Toto Receipt Preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <FileText className="w-8 h-8 text-purple-600" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycReceiptName || "টোটো রসিদ (সংযুক্ত)"}
-                        </p>
-                        <p className="text-[11px] text-purple-600 font-semibold mt-0.5">
-                          ✓ রসিদের প্রিভিউ প্রস্তুত
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
-                        disabled={uploadingReceipt}
-                        onClick={() => receiptFileInputRef.current?.click()}
-                      >
-                        {uploadingReceipt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-purple-600" />}
-                        ছবি পরিবর্তন (Replace)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
-                        onClick={() => {
-                          setKycReceiptDoc("");
-                          setKycReceiptName("");
-                          if (receiptFileInputRef.current) receiptFileInputRef.current.value = "";
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        মুছে ফেলুন (Remove)
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => receiptFileInputRef.current?.click()}
-                    className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-purple-500 hover:bg-purple-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
-                      <Upload className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-900">টোটো রসিদের ছবি নির্বাচন করুন</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">টোটোর রসিদ বা রেজিস্ট্রেশন পেপারের ছবি সিলেক্ট করুন</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 px-4 text-xs font-bold rounded-xl border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 gap-1.5 shadow-xs pointer-events-none"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      টোটো রসিদ সিলেক্ট করুন
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              {/* 3. Driving Licence Upload Card (BOTTOM - OPTIONAL) */}
-              <div className="space-y-2 pt-1">
-                <Label className="text-xs text-slate-700 font-semibold flex items-center justify-between">
-                  <span>৩. ড্রাইভিং লাইসেন্স (Driving Licence - ঐচ্ছিক / Optional)</span>
-                  {kycLicenseDoc ? (
-                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> যুক্ত হয়েছে
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full">
-                      ঐচ্ছিক (বাধ্যতামূলক নয়)
-                    </span>
-                  )}
-                </Label>
-
-                {kycLicenseDoc ? (
-                  <div className="p-3.5 rounded-2xl border-2 border-blue-400 bg-blue-50/40 shadow-sm space-y-3">
-                    <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-blue-200">
-                      <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-blue-300 bg-slate-100 shrink-0 shadow-xs flex items-center justify-center">
-                        {kycLicenseDoc.startsWith("data:image") || kycLicenseDoc.startsWith("http") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={kycLicenseDoc} alt="License Preview" className="w-full h-full object-cover" />
-                        ) : (
-                          <FileText className="w-8 h-8 text-blue-600" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-900 truncate">
-                          {kycLicenseName || "ড্রাইভিং লাইসেন্স (ঐচ্ছিক)"}
-                        </p>
-                        <p className="text-[11px] text-blue-600 font-semibold mt-0.5">
-                          ✓ লাইসেন্সের প্রিভিউ প্রস্তুত (ঐচ্ছিক)
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-10 text-xs font-bold border-slate-300 text-slate-800 bg-white hover:bg-slate-100 rounded-xl gap-1.5 shadow-xs cursor-pointer"
-                        disabled={uploadingLicense}
-                        onClick={() => licenseFileInputRef.current?.click()}
-                      >
-                        {uploadingLicense ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 text-blue-600" />}
-                        ছবি পরিবর্তন (Replace)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-10 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-1.5 cursor-pointer"
-                        onClick={() => {
-                          setKycLicenseDoc("");
-                          setKycLicenseName("");
-                          if (licenseFileInputRef.current) licenseFileInputRef.current.value = "";
-                        }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        মুছে ফেলুন (Remove)
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => licenseFileInputRef.current?.click()}
-                    className="p-5 rounded-2xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-500 hover:bg-blue-50/20 transition-all cursor-pointer text-center space-y-2.5 group"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform shadow-xs">
-                      <Upload className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold text-slate-900">ড্রাইভিং লাইসেন্সের ছবি (ঐচ্ছিক)</h5>
-                      <p className="text-[11px] text-slate-500 mt-0.5">ড্রাইভিং লাইসেন্স থাকলে দিতে পারেন, না থাকলেও কোনো সমস্যা নেই</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 px-4 text-xs font-bold rounded-xl border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 gap-1.5 shadow-xs pointer-events-none"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      লাইসেন্স ছবি সিলেক্ট করুন (ঐচ্ছিক)
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-
+          {/* Sticky Bottom Action Bar with Submit Button */}
+          <div className="shrink-0 bg-white/95 backdrop-blur-md border-t border-slate-200/90 p-3 sm:p-4 shadow-xl z-20">
             <Button
               type="submit"
+              form="kyc-submit-form"
               size="lg"
-              className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20 mt-4"
+              className="w-full h-13 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/25 cursor-pointer active:scale-[0.99] transition-all flex items-center justify-center gap-2"
               disabled={loading}
             >
-              {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : "আবেদন সাবমিট করুন"}
+              {loading ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <span>তথ্য যাচাই ও সাবমিট হচ্ছে...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>আবেদন সাবমিট করুন (Submit Application)</span>
+                </>
+              )}
             </Button>
-          </form>
+            <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500 font-medium px-1">
+              <span>🔒 সম্পূর্ণ নিরাপদ ও সুরক্ষিত</span>
+              <span>* আধার ও টোটো রসিদ বাধ্যতামূলক</span>
+            </div>
+          </div>
         </div>
-      </div>
-    </MobileAppShell>
+      </MobileAppShell>
     );
   }
 
@@ -3562,6 +3659,13 @@ function MobileAppPageContent() {
               initialTab={bottomNavTab === "trips" ? "trips" : "radar"}
               initialCoords={driverLiveCoords?.[0] ? driverLiveCoords : (pickupCoords?.[0] ? pickupCoords : undefined)}
               initialLocationName={pickupText}
+              onLocationUpdate={(coords, name) => {
+                if (coords && coords[0] !== 0) {
+                  setDriverLiveCoords(coords);
+                  if (name && !pickupText) setPickupText(name);
+                }
+              }}
+              onIncomingBookingAlert={triggerIncomingRideAlert}
               onToggleOnline={handleToggleOnline}
               onLogout={handleLogout}
               onAcceptRide={async (b) => {
@@ -3633,7 +3737,10 @@ function MobileAppPageContent() {
 
         {/* Active In-Progress Ride View — Full-Screen Rapido Captain / Uber Driver HUD */}
         {activeRide && (
-          <div className="w-full flex-1 relative overflow-hidden" style={{ minHeight: "100%", height: "100%" }}>
+          <div
+            className="w-full flex-1 relative overflow-hidden"
+            style={{ minHeight: "calc(100dvh - 114px)", height: "calc(100dvh - 114px)" }}
+          >
             <AppErrorBoundary>
               <DriverActiveTripMap
                 bookingId={activeRide.id}
@@ -3760,18 +3867,19 @@ function MobileAppPageContent() {
           <div className="fixed inset-0 z-50 flex flex-col justify-end animate-in slide-in-from-bottom duration-300" style={{background:"rgba(15,23,42,0.55)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
             <div className="rounded-t-3xl p-6 space-y-5 border-t border-white/20 max-h-[90dvh] overflow-y-auto overscroll-contain pb-8" style={{background:"rgba(255,255,255,0.97)",boxShadow:"0 -8px 40px rgba(0,0,0,0.18), 0 -1px 0 rgba(255,255,255,0.6) inset"}}>
               {/* Header with Circular Countdown & Fare */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider block">
                     নতুন রাইড অনুরোধ!
                   </span>
-                  <div className="text-3xl font-black text-slate-900 mt-0.5">
-                    ₹{incomingRide.fare}.00 <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full ml-1">নগদ ভাড়া</span>
+                  <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-0.5 flex items-center flex-wrap gap-1.5">
+                    <span>₹{incomingRide.fare}.00</span>
+                    <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">নগদ ভাড়া</span>
                   </div>
                 </div>
 
                 {/* 30s Countdown Ring */}
-                <div className="relative w-14 h-14 flex items-center justify-center">
+                <div className="relative w-13 h-13 sm:w-14 sm:h-14 flex items-center justify-center shrink-0">
                   <svg className="w-full h-full transform -rotate-90">
                     <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className="text-slate-100" fill="transparent" />
                     <circle
@@ -3786,41 +3894,41 @@ function MobileAppPageContent() {
                       strokeDashoffset={150 - (150 * alertCountdown) / 30}
                     />
                   </svg>
-                  <span className="absolute font-black text-sm text-slate-900">{alertCountdown}s</span>
+                  <span className="absolute font-black text-xs sm:text-sm text-slate-900">{alertCountdown}s</span>
                 </div>
               </div>
 
               {/* Passenger Info */}
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+              <div className="flex items-center justify-between gap-2 p-3 sm:p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                  <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-base shrink-0">
                     👤
                   </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-slate-900">{incomingRide.passengerName}</h4>
-                    <span className="flex items-center text-xs text-amber-600 font-bold">
-                      <Star className="w-3 h-3 fill-amber-500 mr-1" /> {incomingRide.passengerRating}
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-bold text-sm text-slate-900 truncate">{incomingRide.passengerName}</h4>
+                    <span className="flex items-center text-xs text-amber-600 font-bold truncate">
+                      <Star className="w-3 h-3 fill-amber-500 mr-1 shrink-0" /> {incomingRide.passengerRating}
                     </span>
                   </div>
                 </div>
-                <span className="text-xs text-slate-500 font-mono font-bold">#{incomingRide.bookingNumber || incomingRide.id?.slice(0, 8)}</span>
+                <span className="text-xs text-slate-500 font-mono font-bold shrink-0">#{incomingRide.bookingNumber || incomingRide.id?.slice(0, 8)}</span>
               </div>
 
               {/* Route Preview */}
-              <div className="space-y-3 text-xs bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80">
-                <div className="flex items-start gap-3">
+              <div className="space-y-3 text-xs bg-slate-50/70 p-3.5 sm:p-4 rounded-2xl border border-slate-200/80">
+                <div className="flex items-start gap-2.5 min-w-0">
                   <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold">পিকআপ: {incomingRide.pickupDistance}</span>
-                    <p className="font-bold text-sm text-slate-900">{incomingRide.pickup}</p>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block truncate">পিকআপ: {incomingRide.pickupDistance}</span>
+                    <p className="font-bold text-xs sm:text-sm text-slate-900 break-words">{incomingRide.pickup}</p>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
                   <span className="w-3.5 h-3.5 rounded-full bg-red-500 mt-1 shrink-0" />
-                  <div>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold">গন্তব্য: {incomingRide.tripDistance}</span>
-                    <p className="font-bold text-sm text-slate-900">{incomingRide.drop}</p>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-500 uppercase font-bold block truncate">গন্তব্য: {incomingRide.tripDistance}</span>
+                    <p className="font-bold text-xs sm:text-sm text-slate-900 break-words">{incomingRide.drop}</p>
                   </div>
                 </div>
               </div>
@@ -4650,16 +4758,16 @@ function MobileAppPageContent() {
 
                   {/* Trip Details Preview */}
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 shrink-0">
                           {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
                         </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 shrink-0">
                           👥 {passengerCount} যাত্রী
                         </span>
                       </div>
-                      <span className="text-[11px] font-bold text-slate-700">
+                      <span className="text-[11px] font-bold text-slate-700 ml-auto shrink-0">
                         {tripDistance} কিমি • ₹{tripFare}.০০
                       </span>
                     </div>

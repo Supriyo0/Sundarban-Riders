@@ -738,8 +738,34 @@ export async function GET(request: Request) {
 
       const dLatStr = searchParams.get("driver_lat") || searchParams.get("lat");
       const dLngStr = searchParams.get("driver_lng") || searchParams.get("lng");
-      const dLat = dLatStr ? parseFloat(dLatStr) : null;
-      const dLng = dLngStr ? parseFloat(dLngStr) : null;
+      let dLat = dLatStr ? parseFloat(dLatStr) : null;
+      let dLng = dLngStr ? parseFloat(dLngStr) : null;
+
+      // Resilient fallback: look up driver's last known coordinates from database if client GPS was warming up
+      if ((!dLat || !dLng || isNaN(dLat) || isNaN(dLng) || dLat === 0) && (driverId || searchParams.get("driver_phone") || searchParams.get("phone"))) {
+        try {
+          const dPhoneParam = (searchParams.get("driver_phone") || searchParams.get("phone") || "").replace(/\D/g, "").slice(-10);
+          let dQuery = admin.from("drivers").select("latitude, longitude, current_location_name");
+          if (driverId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(driverId)) {
+            dQuery = dQuery.eq("id", driverId);
+          } else if (dPhoneParam) {
+            dQuery = dQuery.or(`phone.eq.${dPhoneParam},phone.eq.91${dPhoneParam},phone.ilike.%${dPhoneParam}%`);
+          }
+          const { data: dRec } = await dQuery.maybeSingle();
+          if (dRec?.latitude && dRec?.longitude) {
+            dLat = Number(dRec.latitude);
+            dLng = Number(dRec.longitude);
+          } else if (dRec?.current_location_name) {
+            try {
+              const meta = JSON.parse(dRec.current_location_name);
+              if (meta.lat && meta.lng) {
+                dLat = Number(meta.lat);
+                dLng = Number(meta.lng);
+              }
+            } catch {}
+          }
+        } catch {}
+      }
 
       if (dLat !== null && !isNaN(dLat) && dLat !== 0 && dLng !== null && !isNaN(dLng) && dLng !== 0) {
         enriched = enriched
@@ -747,7 +773,7 @@ export async function GET(request: Request) {
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
             const distKm = (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0)
-              ? calculateDistanceKm(dLat, dLng, pLat, pLng)
+              ? calculateDistanceKm(dLat!, dLng!, pLat, pLng)
               : 0.05;
             return {
               ...b,

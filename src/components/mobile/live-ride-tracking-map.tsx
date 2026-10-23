@@ -265,7 +265,7 @@ export function LiveRideTrackingMap({
         .then((r) => r.json())
         .then((data) => {
           if (cancelled) return;
-          if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+          if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2 && data.isExactRoadRoute) {
             setRouteCoords(data.coordinates);
             if (mapInstanceRef.current) {
               try {
@@ -446,44 +446,62 @@ export function LiveRideTrackingMap({
         const dMarker = L.marker(driverPos, { icon: totoIcon, zIndexOffset: 1000 }).addTo(map);
         driverMarkerRef.current = dMarker;
 
-        // Route casing
-        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, effectiveRideStep === "in_trip" ? dropCoords : pickupCoords];
-        const casing = L.polyline(pts, {
-          color: "#ffffff",
-          weight: 8,
-          opacity: 0.9,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(map);
-        routeCasingRef.current = casing;
+        // Route polylines: ONLY render when genuine street-following road coordinates (>2 points) exist
+        if (routeCoords && routeCoords.length > 2) {
+          const casing = L.polyline(routeCoords, {
+            color: "#ffffff",
+            weight: 8,
+            opacity: 0.9,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(map);
+          routeCasingRef.current = casing;
 
-        // Route polyline
-        const line = L.polyline(pts, {
-          color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7",
-          weight: 5,
-          opacity: 0.95,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(map);
-        routeLineRef.current = line;
+          const line = L.polyline(routeCoords, {
+            color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7",
+            weight: 5,
+            opacity: 0.95,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(map);
+          routeLineRef.current = line;
 
-        // Fit street zoom bounds
-        try {
-          const b = L.latLngBounds(pts);
-          map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
-        } catch {}
+          try {
+            const b = L.latLngBounds(routeCoords);
+            map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
+          } catch {}
+        }
 
         mapInstanceRef.current = map;
       } else {
         // Animate driver marker
         if (driverMarkerRef.current) driverMarkerRef.current.setLatLng(driverPos);
 
-        // Update route polyline
-        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, effectiveRideStep === "in_trip" ? dropCoords : pickupCoords];
-        if (routeCasingRef.current) routeCasingRef.current.setLatLngs(pts);
-        if (routeLineRef.current) {
-          routeLineRef.current.setLatLngs(pts);
-          routeLineRef.current.setStyle({ color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7" });
+        // Update route polyline only if real road route exists
+        if (routeCoords && routeCoords.length > 2) {
+          if (routeCasingRef.current && routeLineRef.current) {
+            routeCasingRef.current.setLatLngs(routeCoords);
+            routeLineRef.current.setLatLngs(routeCoords);
+            routeLineRef.current.setStyle({ color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7" });
+          } else if (mapInstanceRef.current) {
+            const casing = L.polyline(routeCoords, {
+              color: "#ffffff",
+              weight: 8,
+              opacity: 0.9,
+              lineCap: "round",
+              lineJoin: "round",
+            }).addTo(mapInstanceRef.current);
+            routeCasingRef.current = casing;
+
+            const line = L.polyline(routeCoords, {
+              color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7",
+              weight: 5,
+              opacity: 0.95,
+              lineCap: "round",
+              lineJoin: "round",
+            }).addTo(mapInstanceRef.current);
+            routeLineRef.current = line;
+          }
         }
 
         // Pan map smoothly to follow driver only when moved >= 15m (0.015 km)

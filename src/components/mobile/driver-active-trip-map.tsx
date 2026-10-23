@@ -381,27 +381,19 @@ export function DriverActiveTripMap({
   // Stable reference to last fetched origin and status to ensure route recalculates when OTP is verified
   const lastFetchedOriginRef = useRef<[number, number] | null>(null);
   const lastStatusRef = useRef<string>(status);
+  const isFetchingRouteRef = useRef<boolean>(false);
 
   // When status transitions (e.g. from heading_pickup to on_trip after OTP verification),
-  // immediately reset lastFetchedOrigin and trigger an instant drop route recalculation
+  // immediately reset lastFetchedOrigin and trigger road route recalculation
   useEffect(() => {
     if (lastStatusRef.current !== status) {
       lastStatusRef.current = status;
       lastFetchedOriginRef.current = null;
       setRouteLoaded(false);
-
-      const to: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
-      if (to && to[0] !== 0) {
-        // Immediately draw direct route to target so map is never blank or showing old pickup route
-        setRouteCoords([currentFrom, to]);
-        setRouteLoaded(true);
-      }
     }
-  }, [status, safePickup, safeDrop, currentFrom]);
+  }, [status]);
 
   useEffect(() => {
-    let cancelled = false;
-
     const to: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
     if (!to || to[0] === 0 || isNaN(to[0])) return;
 
@@ -419,17 +411,17 @@ export function DriverActiveTripMap({
     if (last && distMoved < 0.15 && routeCoords.length > 2 && lastStatusRef.current === status) {
       return;
     }
+    if (isFetchingRouteRef.current) return;
 
     const fetchRoute = async (origin: [number, number]) => {
+      isFetchingRouteRef.current = true;
       try {
         const res = await fetch(
           `/api/route?fromLat=${origin[0]}&fromLng=${origin[1]}&toLat=${to[0]}&toLng=${to[1]}`,
           { cache: "no-store" }
         );
-        if (cancelled) return;
         const data = await res.json();
-        if (cancelled) return;
-        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2) {
+        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2 && data.isExactRoadRoute) {
           setRouteCoords(data.coordinates);
           setRouteLoaded(true);
           lastFetchedOriginRef.current = origin;
@@ -438,21 +430,15 @@ export function DriverActiveTripMap({
         if (data?.distanceKm) setRouteDistance(data.distanceKm);
         if (data?.durationMin) setRouteDuration(data.durationMin);
       } catch {
-        // Fallback connecting route geometry
-        if (!cancelled && to && to[0] !== 0) {
-          setRouteCoords([origin, to]);
-          setRouteLoaded(true);
-        }
+        // Silently preserve existing route on network glitch without drawing straight line
+      } finally {
+        isFetchingRouteRef.current = false;
       }
     };
 
     const timer = setTimeout(() => fetchRoute(snapOrigin), 150);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [status, activeDriverCoords, safePickup, safeDrop]);
+    return () => clearTimeout(timer);
+  }, [status, Math.round((activeDriverCoords?.[0] || 0) * 1000), Math.round((activeDriverCoords?.[1] || 0) * 1000), safePickup[0], safePickup[1], safeDrop[0], safeDrop[1]]);
 
 
   // Leaflet map initialization (mounts once and remains stable without white screen)
@@ -583,8 +569,8 @@ export function DriverActiveTripMap({
   useEffect(() => {
     if (!mapInstanceRef.current || !routeLoaded) return;
     try {
-      const L = leafletRef.current;
-      const pts = routeCoords.length > 1 ? routeCoords : [currentFrom, targetCoords];
+      const L = leafletRef.current || (typeof window !== "undefined" ? (window as any).L : null);
+      const hasRoadRoute = routeCoords && routeCoords.length > 2;
 
       if (destMarkerRef.current && targetCoords?.[0]) {
         destMarkerRef.current.setLatLng(targetCoords);
@@ -604,38 +590,40 @@ export function DriverActiveTripMap({
         }
       }
 
-      if (routeCasingRef.current && routeLineRef.current) {
-        // Route polylines already exist — just update them
-        routeCasingRef.current.setLatLngs(pts);
-        routeLineRef.current.setLatLngs(pts);
-        routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
-      } else if (L && !(status === "on_trip" && isMeteredTrip)) {
-        // Create polylines fresh if they don't exist yet (first route load)
-        const casing = L.polyline(pts, {
-          color: "#ffffff",
-          weight: 8,
-          opacity: 0.9,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(mapInstanceRef.current);
-        routeCasingRef.current = casing;
+      if (hasRoadRoute) {
+        if (routeCasingRef.current && routeLineRef.current) {
+          // Route polylines already exist — just update them
+          routeCasingRef.current.setLatLngs(routeCoords);
+          routeLineRef.current.setLatLngs(routeCoords);
+          routeLineRef.current.setStyle({ color: status === "heading_pickup" ? "#0284c7" : "#059669" });
+        } else if (L && !(status === "on_trip" && isMeteredTrip)) {
+          // Create polylines fresh if they don't exist yet (first route load)
+          const casing = L.polyline(routeCoords, {
+            color: "#ffffff",
+            weight: 8,
+            opacity: 0.9,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(mapInstanceRef.current);
+          routeCasingRef.current = casing;
 
-        const line = L.polyline(pts, {
-          color: status === "heading_pickup" ? "#0284c7" : "#059669",
-          weight: 5,
-          opacity: 0.95,
-          lineCap: "round",
-          lineJoin: "round",
-        }).addTo(mapInstanceRef.current);
-        routeLineRef.current = line;
-      }
+          const line = L.polyline(routeCoords, {
+            color: status === "heading_pickup" ? "#0284c7" : "#059669",
+            weight: 5,
+            opacity: 0.95,
+            lineCap: "round",
+            lineJoin: "round",
+          }).addTo(mapInstanceRef.current);
+          routeLineRef.current = line;
+        }
 
-      // Fit bounds to show full route
-      if (L && pts.length > 1) {
-        try {
-          const b = L.latLngBounds(pts);
-          mapInstanceRef.current.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
-        } catch {}
+        // Fit bounds to show full route
+        if (L) {
+          try {
+            const b = L.latLngBounds(routeCoords);
+            mapInstanceRef.current.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
+          } catch {}
+        }
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps

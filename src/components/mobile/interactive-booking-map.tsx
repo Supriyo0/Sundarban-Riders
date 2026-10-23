@@ -977,8 +977,6 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // Immediately draw direct route line so the path is NEVER missing or blank while road network resolves
-          applyRouteGeometry([pCoords, dCoords]);
           try {
             if (routeAbortControllerRef.current) {
               routeAbortControllerRef.current.abort();
@@ -998,7 +996,8 @@ export function InteractiveBookingMap({
               if (
                 data?.coordinates &&
                 Array.isArray(data.coordinates) &&
-                data.coordinates.length >= 2
+                data.coordinates.length > 2 &&
+                data.isExactRoadRoute
               ) {
                 applyRouteGeometry(data.coordinates);
                 routeClientCache.set(cacheKey, {
@@ -1006,8 +1005,6 @@ export function InteractiveBookingMap({
                   durationMin: data.durationMin,
                   coordinates: data.coordinates,
                 });
-              } else {
-                applyRouteGeometry([pCoords, dCoords]);
               }
 
               if (data?.riverCrossing) {
@@ -1033,16 +1030,12 @@ export function InteractiveBookingMap({
                 paymentMode: "cash",
                 passengerCount,
               });
-            } else {
-              applyRouteGeometry([pCoords, dCoords]);
             }
           } catch (err: any) {
             if (err?.name === "AbortError") {
               // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
-            // Fallback connecting route line if road api fails
-            applyRouteGeometry([pCoords, dCoords]);
             setDistanceKm(baselineDist);
             setRoadDurationMin(baselineDuration);
             const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
@@ -1322,8 +1315,8 @@ export function InteractiveBookingMap({
           return;
         }
 
-        // Discard coarse cellular / IP locations (> 200m) to prevent wild location jumping
-        if (accuracy !== undefined && accuracy > 200) {
+        // Discard absurd network/IP locations (> 2500m), but accept real mobile device fixes
+        if (accuracy !== undefined && accuracy > 2500) {
           console.log("[GPS] Discarded coarse position fix with accuracy:", accuracy);
           return;
         }
@@ -1557,16 +1550,15 @@ export function InteractiveBookingMap({
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude, accuracy } = position.coords;
               if (!latitude || !longitude) return;
-              // Discard coarse cell-tower / network fixes (> 200m)
-              if (accuracy !== undefined && accuracy > 200) return;
+              if (accuracy !== undefined && accuracy > 2500) return;
 
               // Always update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
 
-              // Update pickup location if never locked or if displaced from stale cache without manual lock
+              // Only initialize pickup if it was never locked before (0, 0)
+              // Once locked, pickup pin remains firmly planted so the map doesn't violently jump on GPS drift
               const prevPickup = pickupCoordsRef.current;
-              const hasStaleFix = prevPickup[0] === 0 || calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.040;
-              if (hasStaleFix && !hasManualPickupRef.current && !isCancelled) {
+              if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
                 setPickupCoords([latitude, longitude]);
                 pickupCoordsRef.current = [latitude, longitude];
                 setHasValidPickup(true);
@@ -1585,7 +1577,7 @@ export function InteractiveBookingMap({
                   localStorage.setItem("sr_last_known_lng", longitude.toString());
                 } catch {}
                 if (mapInstanceRef.current) {
-                  mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+                  mapInstanceRef.current.setView([latitude, longitude], 17);
                 }
               }
             }
@@ -1600,16 +1592,15 @@ export function InteractiveBookingMap({
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude, accuracy } = pos.coords;
             if (!latitude || !longitude) return;
-            // Discard coarse cell-tower / network fixes (> 200m)
-            if (accuracy !== undefined && accuracy > 200) return;
+            if (accuracy !== undefined && accuracy > 2500) return;
 
             // Always update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);
 
-            // Update pickup location if never locked or displaced from stale cache without manual lock
+            // Only initialize pickup if it was never locked before (0, 0)
+            // Once locked, pickup pin remains firmly planted so the map doesn't violently jump on GPS drift
             const prevPickup = pickupCoordsRef.current;
-            const hasStaleFix = prevPickup[0] === 0 || calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.040;
-            if (hasStaleFix && !hasManualPickupRef.current && !isCancelled) {
+            if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
               const liveP: [number, number] = [latitude, longitude];
               setPickupCoords(liveP);
               pickupCoordsRef.current = liveP;
@@ -1638,7 +1629,7 @@ export function InteractiveBookingMap({
                 localStorage.setItem("sr_last_known_lng", longitude.toString());
               } catch {}
               if (mapInstanceRef.current) {
-                mapInstanceRef.current.flyTo(liveP, 17, { duration: 1.0 });
+                mapInstanceRef.current.setView(liveP, 17);
               }
             }
           },

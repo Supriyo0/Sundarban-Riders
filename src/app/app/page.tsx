@@ -4688,6 +4688,8 @@ function MobileAppPageContent() {
                     startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
                     driver_lat: passengerBooking.driver_lat,
                     driver_lng: passengerBooking.driver_lng,
+                    status: passengerBooking.status,
+                    route_coordinates: passengerBooking.route_coordinates || (passengerBooking as any)?.coordinates,
                   }}
                   rideStep={rideStep}
                   pickupText={pickupText}

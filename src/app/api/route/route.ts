@@ -118,12 +118,12 @@ export async function GET(req: Request) {
     }> = [];
     let isExactRoadRoute = false;
 
-    // 1. PRIMARY ENGINE: Mapbox Directions API (Driving + Rural Toto/Cycling Fallback)
+    // 1. PRIMARY ENGINE: Mapbox Directions API (Driving + Rural Toto/Cycling + Village Walkway Fallback)
     const mapboxToken =
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
-        const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
+        const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&continue_straight=false&access_token=${mapboxToken}`;
         let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(4000) }).catch(() => null);
 
         let route: any = null;
@@ -136,12 +136,24 @@ export async function GET(req: Request) {
 
         // Rural Toto fallback: If car driving returns NoRoute or NoSegment (e.g. narrow village brick paths), query cycling profile
         if (!route) {
-          const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
+          const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&access_token=${mapboxToken}`;
           const cycRes = await fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null);
           if (cycRes && cycRes.ok) {
             const cycData = await cycRes.json();
             if (cycData?.code === "Ok" && cycData?.routes?.length > 0) {
               route = cycData.routes[0];
+            }
+          }
+        }
+
+        // Village footpath / brick lane fallback: For isolated island & riverside settlements inaccessible by mapped car roads
+        if (!route) {
+          const walkUrl = `https://api.mapbox.com/directions/v5/mapbox/walking/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&access_token=${mapboxToken}`;
+          const walkRes = await fetch(walkUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null);
+          if (walkRes && walkRes.ok) {
+            const walkData = await walkRes.json();
+            if (walkData?.code === "Ok" && walkData?.routes?.length > 0) {
+              route = walkData.routes[0];
             }
           }
         }

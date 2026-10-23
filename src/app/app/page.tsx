@@ -517,8 +517,27 @@ function MobileAppPageContent() {
   // Permissions state
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [isGrantingPermissions, setIsGrantingPermissions] = useState(false);
+  const [locPermActive, setLocPermActive] = useState(false);
+  const [notifPermActive, setNotifPermActive] = useState(false);
+  const [audioPermActive, setAudioPermActive] = useState(true);
+  const [isRequestingSingleLoc, setIsRequestingSingleLoc] = useState(false);
+  const [isRequestingSingleNotif, setIsRequestingSingleNotif] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [selectedHistoryTrip, setSelectedHistoryTrip] = useState<any | null>(null);
+
+  // Check hardware permissions on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        setNotifPermActive(true);
+      }
+      if (navigator?.permissions?.query) {
+        navigator.permissions.query({ name: "geolocation" as any }).then((res) => {
+          if (res.state === "granted") setLocPermActive(true);
+        }).catch(() => {});
+      }
+    }
+  }, []);
 
   const handleUpdateProfile = useCallback((updates: { name?: string; photo?: string }) => {
     setSession((prev: any) => {
@@ -1872,7 +1891,8 @@ function MobileAppPageContent() {
 
   // Safe phase transition after permission or dismissal
   const proceedToNextPhase = useCallback(() => {
-    if (role === "rider") {
+    const effectiveRole = role || (typeof window !== "undefined" ? localStorage.getItem("sr_selected_role") : null) || "passenger";
+    if (effectiveRole === "rider") {
       const saved = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
       if (saved) {
         try {
@@ -1916,6 +1936,108 @@ function MobileAppPageContent() {
     }
   }, [role]);
 
+  // Handle Individual Location Click
+  const handleSingleLocationClick = async () => {
+    if (isRequestingSingleLoc) return;
+    setIsRequestingSingleLoc(true);
+    try {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const perm = await Geolocation.requestPermissions();
+          if (perm.location === "granted") {
+            setLocPermActive(true);
+            const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 5000 });
+            if (pos?.coords) {
+              const { latitude, longitude } = pos.coords;
+              setPickupCoords([latitude, longitude]);
+              setDriverLiveCoords([latitude, longitude]);
+              try {
+                localStorage.setItem("sr_last_known_lat", latitude.toString());
+                localStorage.setItem("sr_last_known_lng", longitude.toString());
+              } catch {}
+            }
+            playSuccessSound();
+            toast.success("জিপিএস লোকেশন সফলভাবে চালু হয়েছে! 📍");
+          } else {
+            toast.info("লোকেশন অনুমতি দেওয়া হয়নি। আপনি পরে সেটিংস থেকে চালু করতে পারবেন।");
+          }
+        } catch (err) {
+          console.warn("Native location error:", err);
+          toast.info("লোকেশন চালু করতে ডিভাইসের জিপিএস অন করুন।");
+        }
+      } else if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            setPickupCoords([latitude, longitude]);
+            setDriverLiveCoords([latitude, longitude]);
+            setLocPermActive(true);
+            try {
+              localStorage.setItem("sr_last_known_lat", latitude.toString());
+              localStorage.setItem("sr_last_known_lng", longitude.toString());
+            } catch {}
+            fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
+              .then((r) => r.json())
+              .then((d) => {
+                if (d?.name) {
+                  setPickupText(d.name);
+                  try { localStorage.setItem("sr_last_known_name", d.name); } catch {}
+                }
+              })
+              .catch(() => {});
+            playSuccessSound();
+            toast.success("জিপিএস লোকেশন সফলভাবে চালু হয়েছে! 📍");
+            setIsRequestingSingleLoc(false);
+          },
+          (err) => {
+            console.warn("Web geolocation error:", err);
+            toast.info("ব্রাউজার বার থেকে লোকেশন Allow করুন।");
+            setIsRequestingSingleLoc(false);
+          },
+          { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+        );
+        return;
+      }
+    } catch (e) {
+      console.warn("Location error:", e);
+    } finally {
+      setIsRequestingSingleLoc(false);
+    }
+  };
+
+  // Handle Individual Notification Click
+  const handleSingleNotificationClick = async () => {
+    if (isRequestingSingleNotif) return;
+    setIsRequestingSingleNotif(true);
+    try {
+      const granted = await requestNotificationPermission();
+      if (granted || (typeof Notification !== "undefined" && Notification.permission === "granted")) {
+        setNotifPermActive(true);
+        playSuccessSound();
+        toast.success("পুশ নোটিফিকেশন সফলভাবে সক্রিয় করা হয়েছে! 🔔");
+      } else {
+        toast.info("নোটিফিকেশন অনুমতি পাওয়া যায়নি।");
+      }
+    } catch (e) {
+      console.warn("Notification permission error:", e);
+      toast.info("নোটিফিকেশন অনুমতি পাওয়া যায়নি।");
+    } finally {
+      setIsRequestingSingleNotif(false);
+    }
+  };
+
+  // Handle Individual Audio & Vibration Test Click
+  const handleSingleAudioClick = () => {
+    try {
+      playRideAlertSound();
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate([60, 40, 60]);
+      }
+    } catch {}
+    setAudioPermActive(true);
+    toast.success("অডিও অ্যালার্ট ও ভাইব্রেশন সক্রিয় এবং সফলভাবে পরীক্ষা করা হয়েছে! 🔊");
+  };
+
   // Handle Permissions (Native Capacitor single-tap authorization & Web Geolocation)
   const handleGrantPermissions = async () => {
     if (isGrantingPermissions) return;
@@ -1924,12 +2046,18 @@ function MobileAppPageContent() {
       localStorage.setItem("sr_permissions_granted", "true");
     } catch {}
     setPermissionsGranted(true);
+    setLocPermActive(true);
+    setNotifPermActive(true);
+    setAudioPermActive(true);
 
     const isNative = Capacitor.isNativePlatform();
-    // Safety race: never block navigation for more than 2.5 seconds regardless of hardware latency
-    const safetyTimeout = new Promise((resolve) => setTimeout(resolve, 2500));
+    // Safety race: never block navigation for more than 2 seconds regardless of hardware latency
+    const safetyTimeout = new Promise((resolve) => setTimeout(resolve, 1500));
 
     try {
+      // Trigger notification request in background
+      void requestNotificationPermission().catch(() => {});
+
       if (isNative) {
         const nativeReq = async () => {
           try {
@@ -1948,15 +2076,6 @@ function MobileAppPageContent() {
                   localStorage.setItem("sr_last_known_lat", latitude.toString());
                   localStorage.setItem("sr_last_known_lng", longitude.toString());
                 } catch {}
-                fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-                  .then((r) => r.json())
-                  .then((d) => {
-                    if (d?.name) {
-                      setPickupText(d.name);
-                      try { localStorage.setItem("sr_last_known_name", d.name); } catch {}
-                    }
-                  })
-                  .catch(() => {});
               }
             }
           } catch (err) {
@@ -1974,15 +2093,6 @@ function MobileAppPageContent() {
               localStorage.setItem("sr_last_known_lat", latitude.toString());
               localStorage.setItem("sr_last_known_lng", longitude.toString());
             } catch {}
-            fetch(`/api/geocode?lat=${latitude}&lng=${longitude}`)
-              .then((r) => r.json())
-              .then((d) => {
-                if (d?.name) {
-                  setPickupText(d.name);
-                  try { localStorage.setItem("sr_last_known_name", d.name); } catch {}
-                }
-              })
-              .catch(() => {});
           },
           () => {},
           { enableHighAccuracy: true, timeout: 3000, maximumAge: 10000 }
@@ -2400,6 +2510,7 @@ function MobileAppPageContent() {
         <OnboardingCarousel
           onSelectRole={(selectedRole) => {
             setRole(selectedRole);
+            try { localStorage.setItem("sr_selected_role", selectedRole); } catch {}
             const hasPermissions = typeof window !== "undefined" && localStorage.getItem("sr_permissions_granted") === "true";
             if (!hasPermissions) {
               setPhase("permissions");
@@ -2458,99 +2569,21 @@ function MobileAppPageContent() {
   }
 
   // -------------------------------------------------------------
-  // VIEW: PERMISSIONS ONBOARDING SCREEN (Light Theme)
+  // VIEW: PERMISSIONS ONBOARDING SCREEN (Light Theme, Fully Scrollable & Interactive)
   // -------------------------------------------------------------
   if (phase === "permissions") {
     return (
       <MobileAppShell>
-        <div className="min-h-full flex-1 bg-slate-50 text-slate-900 flex flex-col justify-between p-5 select-none">
-          <div className="pt-3 space-y-5 max-w-md mx-auto w-full">
-            <div className="flex items-center justify-between">
+        <div className="h-full w-full flex flex-col bg-slate-50 text-slate-900 select-none overflow-hidden relative">
+          
+          {/* Fixed Sticky Header with Quick Skip */}
+          <div className="shrink-0 px-4 pt-3 pb-2.5 bg-white/95 backdrop-blur-md border-b border-slate-200/80 flex items-center justify-between z-20 shadow-2xs">
+            <div className="flex items-center gap-2">
               <SundarbanLogo size="sm" variant="full" />
-              <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                অনুমতি কনফিগারেশন
-              </span>
             </div>
-
-            <div>
-              <h2 className="text-2xl font-black tracking-tight text-slate-900">
-                অ্যাপের প্রয়োজনীয় অনুমতি ও সম্মতি
-              </h2>
-              <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-                সুন্দরবনের সঠিক লাইভ রুট ট্র্যাকিং ও দ্রুত স্মার্ট টোটো বুকিং পেতে নিচের সেবাগুলো চালু রাখা আবশ্যক:
-              </p>
-            </div>
-
-            {/* Google Play Compliant Prominent Disclosure Card */}
-            <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 text-slate-900 shadow-xs space-y-2">
-              <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>সুস্পষ্ট নোটিশ ও ডেটা সুরক্ষা (Prominent Disclosure)</span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed">
-                <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী সক্রিয় টোটো চালক খুঁজে পাওয়া যায়, (২) আসল সড়কের সঠিক টার্ন-বাই-টার্ন রুট ম্যাপ দেখানো যায়, এবং (৩) দূরত্বের ভিত্তিতে ন্যায্য মিটার ভাড়া গণনা করা যায়। আপনার অবস্থান ডেটা কেবল চলমান ট্রিপের সুরক্ষায় ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
-              </p>
-            </div>
-
-            <div className="space-y-2.5">
-              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 shrink-0 border border-blue-100">
-                  <MapPin className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS Location)</h4>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                    নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা, সঠিক রোড রুট ও ন্যায্য মিটার ভাড়া পরিমাপের জন্য।
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="p-2.5 rounded-xl bg-purple-50 text-purple-600 shrink-0 border border-purple-100">
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন (Notifications)</h4>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                    নতুন রাইড, চালক পৌঁছানোর অ্যালার্ট ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক নোটিফিকেশন।
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 shrink-0 border border-amber-100">
-                  <Volume2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন</h4>
-                  <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                    রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট অডিও অ্যালার্ট বাজবে।
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2">
-              <Button
-                size="lg"
-                disabled={isGrantingPermissions}
-                className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 disabled:opacity-80 text-white font-black text-sm shadow-md active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
-                onClick={handleGrantPermissions}
-              >
-                {isGrantingPermissions ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>অনুমতি যাচাই হচ্ছে...</span>
-                  </>
-                ) : (
-                  <span>সম্মতি দিয়ে অনুমতি দিন ও এগিয়ে যান (Agree &amp; Continue) →</span>
-                )}
-              </Button>
-
-              <Button
-                variant="ghost"
-                disabled={isGrantingPermissions}
-                className="w-full h-10 rounded-xl text-slate-500 hover:text-slate-700 text-xs font-semibold cursor-pointer"
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
                 onClick={() => {
                   try {
                     localStorage.setItem("sr_permissions_granted", "declined");
@@ -2558,11 +2591,187 @@ function MobileAppPageContent() {
                   setPermissionsGranted(false);
                   proceedToNextPhase();
                 }}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-full border border-slate-200 transition-all active:scale-95 cursor-pointer"
               >
-                এখন নয় (Not Now)
-              </Button>
+                এড়িয়ে যান (Skip) ✕
+              </button>
             </div>
           </div>
+
+          {/* Scrollable Main Body - Smooth Momentum Scrolling with Safe Bottom Padding */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 pb-36 touch-pan-y space-y-4">
+            <div className="max-w-md mx-auto space-y-4">
+              
+              {/* Title & Subtitle */}
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase mb-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>অনুমতি কনফিগারেশন • {role === "rider" ? "চালক পার্টনার" : "যাত্রী সেবা"}</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 leading-tight">
+                  অ্যাপের প্রয়োজনীয় অনুমতি ও সম্মতি
+                </h2>
+                <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
+                  সুন্দরবনের নির্ভরযোগ্য লাইভ ট্র্যাকিং ও দ্রুত টোটো বুকিং সেবার জন্য নিচের অনুমতিগুলো স্পর্শ করে চালু করুন:
+                </p>
+              </div>
+
+              {/* Prominent Disclosure Card (Google Play Safe) */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 text-slate-900 shadow-xs space-y-1.5">
+                <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs uppercase tracking-wider">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>সুস্পষ্ট নোটিশ ও ডেটা সুরক্ষা (Prominent Disclosure)</span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed">
+                  <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী ৫ কিমির মধ্যে সক্রিয় টোটো চালক খুঁজে পাওয়া যায়, (২) আসল সড়কের সঠিক টার্ন-বাই-টার্ন রুট ম্যাপ দেখানো যায়, এবং (৩) দূরত্বের ভিত্তিতে ন্যায্য মিটার ভাড়া গণনা করা যায়। আপনার অবস্থান ডেটা কেবল চলমান ট্রিপের সুরক্ষায় ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
+                </p>
+              </div>
+
+              {/* 3 Interactive Clickable Permission Cards */}
+              <div className="space-y-2.5">
+                
+                {/* 1. Location Card (Interactive Click) */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleSingleLocationClick}
+                  className={`flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border cursor-pointer active:scale-98 transition-all shadow-xs select-none hover:shadow-md ${
+                    locPermActive ? "border-emerald-400 bg-emerald-50/30" : "border-slate-200 hover:border-blue-300"
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-xl shrink-0 border ${
+                    locPermActive ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-600 border-blue-100"
+                  }`}>
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="text-sm font-bold text-slate-900">জিপিএস লোকেশন (GPS Location)</h4>
+                      {locPermActive ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> অনুমোদিত
+                        </span>
+                      ) : isRequestingSingleLoc ? (
+                        <span className="text-[11px] font-bold text-blue-600 animate-pulse shrink-0">যাচাই হচ্ছে...</span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 hover:bg-blue-100 shrink-0">
+                          চালু করুন 👆
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                      নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা, সঠিক রোড রুট ও ন্যায্য মিটার ভাড়া পরিমাপের জন্য স্পর্শ করুন।
+                    </p>
+                  </div>
+                </div>
+
+                {/* 2. Notification Card (Interactive Click) */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleSingleNotificationClick}
+                  className={`flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border cursor-pointer active:scale-98 transition-all shadow-xs select-none hover:shadow-md ${
+                    notifPermActive ? "border-emerald-400 bg-emerald-50/30" : "border-slate-200 hover:border-purple-300"
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-xl shrink-0 border ${
+                    notifPermActive ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-purple-50 text-purple-600 border-purple-100"
+                  }`}>
+                    <Bell className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="text-sm font-bold text-slate-900">পুশ নোটিফিকেশন (Notifications)</h4>
+                      {notifPermActive ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> সক্রিয়
+                        </span>
+                      ) : isRequestingSingleNotif ? (
+                        <span className="text-[11px] font-bold text-purple-600 animate-pulse shrink-0">যাচাই হচ্ছে...</span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200 hover:bg-purple-100 shrink-0">
+                          অনুমতি দিন 👆
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                      নতুন রাইড, চালক পৌঁছানোর অ্যালার্ট ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক নোটিফিকেশন পেতে স্পর্শ করুন।
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. Audio & Vibration Card (Interactive Click) */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={handleSingleAudioClick}
+                  className={`flex items-start gap-3.5 p-3.5 rounded-2xl bg-white border cursor-pointer active:scale-98 transition-all shadow-xs select-none hover:shadow-md ${
+                    audioPermActive ? "border-emerald-400 bg-emerald-50/30" : "border-slate-200 hover:border-amber-300"
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-xl shrink-0 border ${
+                    audioPermActive ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-600 border-amber-100"
+                  }`}>
+                    <Volume2 className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="text-sm font-bold text-slate-900">অডিও ও ভাইব্রেশন (Audio & Haptic)</h4>
+                      {audioPermActive ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> চালু আছে
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 shrink-0">
+                          পরীক্ষা করুন 👆
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
+                      রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট অডিও ও ভাইব্রেশন বাজবে। স্পর্শ করে আওয়াজ শুনুন।
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+
+          {/* Sticky Bottom Floating Bar: GUARANTEED VISIBLE ON ALL SCREENS */}
+          <div className="sticky bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 shadow-xl z-30 space-y-2 max-w-md mx-auto w-full">
+            <Button
+              size="lg"
+              disabled={isGrantingPermissions}
+              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-800 disabled:opacity-80 text-white font-black text-sm shadow-md active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+              onClick={handleGrantPermissions}
+            >
+              {isGrantingPermissions ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>অনুমতি যাচাই হচ্ছে...</span>
+                </>
+              ) : (
+                <span>সম্মতি দিয়ে এগিয়ে যান (Agree &amp; Continue) →</span>
+              )}
+            </Button>
+
+            <Button
+              variant="ghost"
+              disabled={isGrantingPermissions}
+              className="w-full h-9 rounded-xl text-slate-500 hover:text-slate-800 text-xs font-semibold cursor-pointer active:scale-95"
+              onClick={() => {
+                try {
+                  localStorage.setItem("sr_permissions_granted", "declined");
+                } catch {}
+                setPermissionsGranted(false);
+                proceedToNextPhase();
+              }}
+            >
+              এখন নয়, পরে দেব (Not Now)
+            </Button>
+          </div>
+
         </div>
       </MobileAppShell>
     );

@@ -2063,7 +2063,7 @@ export function InteractiveBookingMap({
       <div className={`absolute top-16 sm:top-18 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
         <div
           ref={searchContainerRef}
-          className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 liquid-glass-card liquid-sheen space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
+          className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 bg-white border border-slate-200 shadow-xl space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${
             topCardExpanded
               ? activeSearchField
                 ? "max-h-[82vh] overflow-y-auto"
@@ -2071,8 +2071,6 @@ export function InteractiveBookingMap({
               : "max-h-24 overflow-hidden"
           }`}
         >
-          {/* Top liquid specular glass reflection sheen */}
-          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/45 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
           {!topCardExpanded ? (
             /* Minimized Top Search Bar (Compact Peek Mode with Liquid Sheen) */
             <div
@@ -2182,10 +2180,10 @@ export function InteractiveBookingMap({
                         pickupInputFocusedRef.current = false;
                       }, 300);
                     }}
-                    className={`h-10 pl-9 pr-18 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md text-slate-900 dark:text-white rounded-2xl text-xs font-bold shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] border transition-all ${
+                    className={`h-10 pl-9 pr-18 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold border transition-all ${
                       !hasValidPickup && !pickupInputValue.trim()
-                        ? "border-amber-400 bg-amber-50/50 placeholder:text-amber-700"
-                        : "border-white/80 dark:border-white/15 focus:border-emerald-500 focus:bg-white/85"
+                        ? "border-amber-400 bg-amber-50 placeholder:text-amber-700"
+                        : "border-slate-200 focus:border-emerald-500 focus:bg-white"
                     }`}
                   />
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
@@ -2246,10 +2244,10 @@ export function InteractiveBookingMap({
                       setHasStartedTyping(false);
                       setPlaceSuggestions([]);
                     }}
-                    className={`h-10 pl-9 pr-14 bg-white/60 dark:bg-slate-800/60 backdrop-blur-md text-slate-900 dark:text-white rounded-2xl text-xs font-bold shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] border transition-all ${
+                    className={`h-10 pl-9 pr-14 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold border transition-all ${
                       isDropOutOfService
-                        ? "border-rose-400 bg-rose-50/50 text-rose-900"
-                        : "border-white/80 dark:border-white/15 focus:border-red-400 focus:bg-white/85"
+                        ? "border-rose-400 bg-rose-50 text-rose-900"
+                        : "border-slate-200 focus:border-red-400 focus:bg-white"
                     }`}
                   />
                   <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
@@ -2523,9 +2521,7 @@ export function InteractiveBookingMap({
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          <div className="relative px-6 py-7 rounded-[32px] backdrop-blur-3xl bg-white/90 dark:bg-slate-900/90 border border-white/90 dark:border-white/25 shadow-[0_32px_80px_rgba(0,0,0,0.45),inset_0_2px_4px_rgba(255,255,255,0.95)] flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-250 overflow-hidden">
-            {/* Top liquid glass reflection sheen */}
-            <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-white/40 via-white/10 to-transparent pointer-events-none rounded-t-[32px]" />
+          <div className="relative px-6 py-7 rounded-[32px] bg-white border border-slate-200 shadow-2xl flex flex-col items-center gap-4 max-w-xs w-full text-center animate-in zoom-in-95 duration-250 overflow-hidden">
 
             {/* Concentric Pulsing Radar Rings & Satellite Emblem */}
             <div className="relative w-20 h-20 flex items-center justify-center">
@@ -2633,7 +2629,7 @@ export function InteractiveBookingMap({
         }`}
       >
         <div
-          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl liquid-glass-card liquid-sheen p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
+          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl bg-white border border-slate-200 shadow-2xl p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
             sheetExpanded
               ? "max-h-[86dvh] pb-5 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
@@ -2641,8 +2637,6 @@ export function InteractiveBookingMap({
               : "max-h-[110px] overflow-hidden"
           }`}
         >
-          {/* Top specular reflection sheen */}
-          <div className="absolute top-0 inset-x-0 h-10 bg-gradient-to-b from-white/60 via-white/10 to-transparent pointer-events-none rounded-t-3xl" />
           {/* Interactive Drag / Tap Handle */}
           <div
             role="button"

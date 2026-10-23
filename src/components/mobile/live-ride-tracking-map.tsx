@@ -973,8 +973,8 @@ export function LiveRideTrackingMap({
                   <span>পরিবারের সাথে লাইভ ট্রিপ শেয়ার করুন (WhatsApp)</span>
                 </button>
 
-                {/* Cancel (only before trip starts) */}
-                {rideStep !== "in_trip" && onCancelRide && (
+                {/* Cancel (only before trip starts — strictly hidden once ride is in progress) */}
+                {rideStep !== "in_trip" && (booking as any)?.status !== "in_progress" && onCancelRide && (
                   <button
                     type="button"
                     onClick={onCancelRide}

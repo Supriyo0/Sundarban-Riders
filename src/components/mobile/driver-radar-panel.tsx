@@ -722,9 +722,9 @@ export function DriverRadarPanel({
         validPending.forEach((b: any) => knownPendingRideIdsRef.current.add(b.id));
         setPendingBookings(validPending);
 
-        // Instantly notify parent page so the incoming ride modal displays with 0ms delay!
-        if (validPending.length > 0 && onIncomingBookingAlert) {
-          onIncomingBookingAlert(validPending[0]);
+        // Instantly notify parent page ONLY when a new ride appears, preventing 30s timer reset loops
+        if (newlyArrivedRides.length > 0 && onIncomingBookingAlert) {
+          onIncomingBookingAlert(newlyArrivedRides[0]);
         }
       } catch (err) {
         console.warn("Radar fetch error:", err);

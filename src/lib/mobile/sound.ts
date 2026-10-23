@@ -20,10 +20,18 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
+let lastAlertSoundTime = 0;
+
 /**
  * Loud smart incoming ride alert chime for Sundarban Riders
  */
 export function playRideAlertSound() {
+  const nowMs = Date.now();
+  if (nowMs - lastAlertSoundTime < 3500) {
+    return; // Prevent glitchy continuous 4-5 rings when multiple pollers fire
+  }
+  lastAlertSoundTime = nowMs;
+
   const ctx = getAudioContext();
   if (!ctx) return;
 

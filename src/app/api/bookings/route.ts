@@ -1121,8 +1121,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const pickupLocation = body.pickupLocation || body.pickup;
-    const dropLocation = body.dropLocation || body.drop;
+    const pickupLocation = body.pickupLocation || body.pickup || body.pickup_location;
+    const dropLocation = body.dropLocation || body.drop || body.drop_location;
     const customerPhone = body.customerPhone || body.customer_phone;
     const customerName = body.customerName || body.customer_name;
     const pickupCoords = body.pickupCoords || body.pickup_coords;
@@ -1292,7 +1292,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 100): P
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { action, bookingId, driverId, driverName, driverPhone, totoNumber, phone } = body;
+    const action = body.action;
+    const bookingId = body.bookingId || body.booking_id || body.id;
+    const driverId = body.driverId || body.driver_id;
+    const driverName = body.driverName || body.driver_name;
+    const driverPhone = body.driverPhone || body.driver_phone || body.phone;
+    const totoNumber = body.totoNumber || body.toto_number;
+    const phone = body.phone || body.customer_phone || body.customerPhone;
 
     const admin = supabaseAdmin();
 
@@ -1874,8 +1880,19 @@ export async function PATCH(request: Request) {
         });
       }
 
-      const isCancelledByDriver = Boolean(driverId);
+      const isCancelledByDriver = Boolean(driverId || body.cancelledBy === "driver" || body.cancelled_by === "driver");
       const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
+
+      // STRICT RULE: Once trip has started (in_progress), customer CANNOT cancel!
+      if (!isCancelledByDriver && !isSystemTimeout && (booking.status === "in_progress" || booking.status === "completed")) {
+        return NextResponse.json(
+          {
+            error: "trip_already_started",
+            message: "যাত্রা ইতিমধ্যে শুরু হয়ে গেছে, এখন যাত্রী কর্তৃক রাইড বাতিল করা সম্ভব নয়। জরুরি সহায়তার জন্য SOS বা হেল্পলাইনে যোগাযোগ করুন।",
+          },
+          { status: 400 }
+        );
+      }
 
       // Authorization guard against IDOR / BOLA mass-cancellation attacks
       if (!isSystemTimeout) {
@@ -1942,13 +1959,23 @@ export async function PATCH(request: Request) {
         }
       }
 
-      // Free driver back to available
-      if (booking.driver_id) {
+      // Free driver back to available immediately (both ID and Phone match)
+      const freedDriverId = booking.driver_id || driverId;
+      if (freedDriverId) {
         void Promise.resolve(
           admin
             .from("drivers")
-            .update({ is_available: true, is_active: true })
-            .eq("id", booking.driver_id)
+            .update({ is_available: true, is_active: true, updated_at: new Date().toISOString() })
+            .eq("id", freedDriverId)
+        ).catch(() => {});
+      }
+      const cleanDPhone = (driverPhone || "").replace(/\D/g, "").slice(-10);
+      if (cleanDPhone.length === 10) {
+        void Promise.resolve(
+          admin
+            .from("drivers")
+            .update({ is_available: true, is_active: true, updated_at: new Date().toISOString() })
+            .ilike("phone", `%${cleanDPhone}%`)
         ).catch(() => {});
       }
 

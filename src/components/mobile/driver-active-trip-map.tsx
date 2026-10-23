@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Navigation, ExternalLink, Phone, MessageCircle, KeyRound, CheckCircle2, ShieldAlert, Clock, MapPin } from "lucide-react";
+import { Navigation, ExternalLink, Phone, MessageCircle, KeyRound, CheckCircle2, ShieldAlert, Clock, MapPin, X } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
@@ -42,6 +42,8 @@ interface DriverActiveTripMapProps {
   onRequestOtpModal?: () => void;
   onCompleteTrip?: (finalOdometerKm?: number) => Promise<void>;
   onOdometerUpdate?: (reading: LiveMeterReading) => void;
+  onCancelRide?: (reason?: string) => Promise<void> | void;
+  onCancelledByCustomer?: () => void;
 }
 
 export function DriverActiveTripMap({
@@ -49,8 +51,8 @@ export function DriverActiveTripMap({
   bookingNumber,
   pickup,
   drop,
-  pickupCoords = [21.5698, 88.2518],
-  dropCoords = [21.5650, 88.2550],
+  pickupCoords = [21.8760, 88.1920],
+  dropCoords = [21.8680, 88.1630],
   driverCoords,
   status,
   passengerName = "যাত্রী",
@@ -62,7 +64,12 @@ export function DriverActiveTripMap({
   onRequestOtpModal,
   onCompleteTrip,
   onOdometerUpdate,
+  onCancelRide,
+  onCancelledByCustomer,
 }: DriverActiveTripMapProps) {
+  const [showDriverCancelModal, setShowDriverCancelModal] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState("যাত্রী পাওয়া যায়নি / ফোনে সাড়া নেই");
+  const [isCancellingRide, setIsCancellingRide] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const driverMarkerRef = useRef<any>(null);
@@ -142,7 +149,7 @@ export function DriverActiveTripMap({
     if (pickupCoords && pickupCoords[0] && pickupCoords[0] !== 0) {
       return [pickupCoords[0] + 0.005, pickupCoords[1] + 0.005];
     }
-    return [21.5698, 88.2518];
+    return [21.8760, 88.1920];
   });
 
   useEffect(() => {
@@ -278,6 +285,33 @@ export function DriverActiveTripMap({
       }
     };
   }, [bookingId, status]);
+
+  // Proactive real-time cancellation poller: Instantly dismisses map if customer cancels
+  useEffect(() => {
+    if (!bookingId) return;
+    let isMounted = true;
+    let pollTimer: NodeJS.Timeout | null = null;
+
+    const checkCancellation = async () => {
+      try {
+        const res = await fetch(`/api/bookings?id=${encodeURIComponent(bookingId)}&_t=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        });
+        const data = await res.json();
+        if (!isMounted) return;
+        if (data?.booking && data.booking.status === "cancelled") {
+          onCancelledByCustomer?.();
+        }
+      } catch {}
+    };
+
+    pollTimer = setInterval(checkCancellation, 1500);
+    return () => {
+      isMounted = false;
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [bookingId, onCancelledByCustomer]);
 
   const isMeteredTrip = !dropCoords || !dropCoords[0] || dropCoords[0] === 0 || (typeof drop === "string" && (drop.includes("মিটার") || drop.includes("বিনা গন্তব্য")));
 
@@ -789,6 +823,18 @@ export function DriverActiveTripMap({
                     যাত্রা শুরু ওটিপি / পিন লিখুন (Enter Ride PIN)
                   </button>
                 )}
+
+                {/* Rider cancel ride button: available until trip is started */}
+                {onCancelRide && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDriverCancelModal(true)}
+                    className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-600 text-xs font-bold border border-slate-200 hover:border-red-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+                  >
+                    <X className="w-3.5 h-3.5 text-slate-400" />
+                    <span>রাইড বাতিল করুন (Cancel Ride)</span>
+                  </button>
+                )}
               </div>
             ) : (
               /* ON TRIP: Swipe to complete */
@@ -805,6 +851,77 @@ export function DriverActiveTripMap({
           </div>
         </div>
       </div>
+
+      {/* Driver Cancel Confirmation Modal */}
+      {showDriverCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center text-xl mx-auto mb-2">
+                ⚠️
+              </div>
+              <h3 className="text-base font-black text-slate-900">রাইডটি বাতিল করতে চান?</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                বাতিলের কারণ নির্বাচন করুন। রাইড বাতিল হলে আপনি পুনরায় অনলাইনে নতুন রাইড পাওয়ার জন্য প্রস্তুত হবেন।
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              {[
+                "যাত্রী পাওয়া যায়নি / ফোনে সাড়া নেই",
+                "যানবাহন / টোটো যান্ত্রিক সমস্যা",
+                "ভুলবশত বুকিং গৃহীত হয়েছিল",
+                "জরুরি ব্যক্তিগত সমস্যা",
+              ].map((reason) => (
+                <label
+                  key={reason}
+                  className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                    selectedCancelReason === reason
+                      ? "bg-red-50 border-red-300 text-red-900"
+                      : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="driverCancelReason"
+                    checked={selectedCancelReason === reason}
+                    onChange={() => setSelectedCancelReason(reason)}
+                    className="accent-red-600"
+                  />
+                  <span>{reason}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDriverCancelModal(false)}
+                disabled={isCancellingRide}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200 transition-all cursor-pointer"
+              >
+                ফিরে যান
+              </button>
+              <button
+                type="button"
+                disabled={isCancellingRide}
+                onClick={async () => {
+                  try {
+                    setIsCancellingRide(true);
+                    await onCancelRide?.(selectedCancelReason);
+                    setShowDriverCancelModal(false);
+                  } finally {
+                    setIsCancellingRide(false);
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-black text-xs hover:bg-red-700 shadow-md active:scale-98 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isCancellingRide ? "বাতিল হচ্ছে..." : "বাতিল নিশ্চিত করুন"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

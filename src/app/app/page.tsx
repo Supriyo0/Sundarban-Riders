@@ -492,6 +492,7 @@ function MobileAppPageContent() {
     return null;
   });
   const hasCompletedNotifiedRef = useRef<string | null>(null);
+  const activeAlertBookingIdRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const alertedBookingIdsRef = useRef<Set<string>>(new Set());
   const isAcceptingRef = useRef<string | null>(null);
@@ -830,9 +831,9 @@ function MobileAppPageContent() {
       return;
     }
     if (searchStatus === "searching") {
-      if (searchCountdown > 1) {
+      if (searchCountdown > 0) {
         timer = setTimeout(() => {
-          setSearchCountdown((prev) => prev - 1);
+          setSearchCountdown((prev) => Math.max(0, prev - 1));
         }, 1000);
       } else {
         // Countdown reached 0 (time is up):
@@ -1558,6 +1559,7 @@ function MobileAppPageContent() {
             // 30 seconds finished: stop loud alarm and dismiss modal so it doesn't block screen,
             // but do NOT permanently blacklist the ride so driver can still see and accept it!
             setIncomingRide(null);
+            activeAlertBookingIdRef.current = null;
             toast.info("রাইড অনুরোধটি নিচের স্লাইডারে উপলব্ধ রয়েছে। আপনি চাইলে গ্রহণ করতে পারেন।");
             return 30;
           }
@@ -1662,7 +1664,8 @@ function MobileAppPageContent() {
     if (declinedBookingIdsRef.current.has(b.id)) return;
     if (acceptedRideIdsRef.current.has(b.id)) return;
     if (b.booking_number && acceptedRideIdsRef.current.has(b.booking_number)) return;
-    if (incomingRide && incomingRide.id === b.id) return;
+    if (activeAlertBookingIdRef.current === b.id) return;
+    activeAlertBookingIdRef.current = b.id;
 
     const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
     const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
@@ -1724,8 +1727,7 @@ function MobileAppPageContent() {
     if (phase === "rider_home" && isOnline && !activeRide) {
       const checkPendingBookings = async () => {
         try {
-          if (activeRide || isAcceptingRef.current) {
-            setIncomingRide(null);
+          if (activeRide || isAcceptingRef.current || incomingRide || activeAlertBookingIdRef.current) {
             return;
           }
 
@@ -3761,6 +3763,68 @@ function MobileAppPageContent() {
                   setStartOtpInput("");
                   setShowStartOtpModal(true);
                 }}
+                onCancelRide={async (reason) => {
+                  try {
+                    const bId = activeRide.id || activeRide.bookingNumber;
+                    await fetch("/api/bookings", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "cancel",
+                        bookingId: bId,
+                        cancelledBy: "driver",
+                        cancelReason: reason || "চালক রাইড বাতিল করেছেন",
+                      }),
+                    });
+                    const dId = session?.driverId;
+                    const dPhone = session?.phone;
+                    if (dId || dPhone) {
+                      fetch("/api/drivers", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          id: dId,
+                          phone: dPhone,
+                          is_active: true,
+                          is_available: true,
+                        }),
+                      }).catch(() => {});
+                    }
+                    setActiveRide(null);
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("sr_active_ride");
+                      localStorage.removeItem("sr_live_driver_loc");
+                    }
+                    toast.info("আপনি রাইড বাতিল করেছেন। নতুন বুকিং গ্রহণ করতে প্রস্তুত।");
+                  } catch {
+                    setActiveRide(null);
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("sr_active_ride");
+                    }
+                  }
+                }}
+                onCancelledByCustomer={() => {
+                  setActiveRide(null);
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("sr_active_ride");
+                    localStorage.removeItem("sr_live_driver_loc");
+                  }
+                  const dId = session?.driverId;
+                  const dPhone = session?.phone;
+                  if (dId || dPhone) {
+                    fetch("/api/drivers", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        id: dId,
+                        phone: dPhone,
+                        is_active: true,
+                        is_available: true,
+                      }),
+                    }).catch(() => {});
+                  }
+                  toast.warning("যাত্রী রাইড বাতিল করেছেন।");
+                }}
                 onCompleteTrip={async (finalKm) => {
                   try {
                     const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
@@ -3957,6 +4021,7 @@ function MobileAppPageContent() {
                     };
                     setActiveRide(optimisticRide);
                     setIncomingRide(null);
+                    activeAlertBookingIdRef.current = null;
                     if (typeof window !== "undefined") {
                       localStorage.setItem("sr_active_ride", JSON.stringify(optimisticRide));
                     }
@@ -4032,6 +4097,7 @@ function MobileAppPageContent() {
                       alertedBookingIdsRef.current.add(incomingRide.id);
                     }
                     setIncomingRide(null);
+                    activeAlertBookingIdRef.current = null;
                     toast.info("রাইড প্রত্যাখ্যান করা হয়েছে");
                   }}
                 >

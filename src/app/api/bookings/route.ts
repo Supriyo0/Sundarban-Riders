@@ -1244,7 +1244,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 60): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 100): Promise<T> {
   let lastError: any;
   for (let i = 0; i <= retries; i++) {
     try {
@@ -1252,7 +1252,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 60): Pr
     } catch (err: any) {
       lastError = err;
       const msg = err?.message || err?.toString() || "";
-      const isTransient = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT");
+      const isTransient = msg.includes("fetch failed") || msg.includes("socket") || msg.includes("ECONNRESET") || msg.includes("ETIMEDOUT") || msg.includes("network");
       if (!isTransient || i === retries) throw err;
       await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
     }
@@ -1439,19 +1439,43 @@ export async function PATCH(request: Request) {
         updateData.driver_id = validDriverId;
       }
 
-      const { data: assigned, error: assignErr } = await withRetry(async () => {
-        return admin
-          .from("bookings")
-          .update(updateData)
-          .eq("id", booking.id)
-          .in("status", ["pending", "searching"])
-          .select()
-          .maybeSingle();
-      });
+      let assigned: any = null;
+      let assignErr: any = null;
+      try {
+        const res = await withRetry(async () => {
+          return admin
+            .from("bookings")
+            .update(updateData)
+            .eq("id", booking.id)
+            .in("status", ["pending", "searching"])
+            .select()
+            .maybeSingle();
+        });
+        assigned = res.data;
+        assignErr = res.error;
+      } catch (err: any) {
+        assignErr = err;
+      }
 
       if (assignErr) {
+        try {
+          const { data: latestB } = await admin
+            .from("bookings")
+            .select("status, driver_id")
+            .eq("id", booking.id)
+            .maybeSingle();
+          if (latestB && latestB.status !== "pending" && latestB.status !== "searching") {
+            return NextResponse.json(
+              {
+                error: "booking_already_taken",
+                message: "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন।",
+              },
+              { status: 409 }
+            );
+          }
+        } catch {}
         console.error("[bookings accept] Database update error:", assignErr);
-        return NextResponse.json({ error: assignErr.message }, { status: 500 });
+        return NextResponse.json({ error: assignErr.message || String(assignErr) }, { status: 500 });
       }
 
       if (!assigned) {

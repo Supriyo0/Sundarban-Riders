@@ -123,40 +123,13 @@ export async function GET(req: Request) {
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
-        const directDistKm = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
         const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
+        const mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(4000) }).catch(() => null);
 
-        // Only query cycling for short local trips (< 10km) where village galis matter; for longer trips highway driving is faster and always valid
-        const queries: Promise<Response | null>[] = [
-          fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null),
-        ];
-
-        if (directDistKm <= 10) {
-          const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
-          queries.push(fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null));
-        }
-
-        const [mbDriveRes, mbCycleRes] = await Promise.all(queries);
-
-        let driveRoute: any = null;
-        let cycleRoute: any = null;
-
-        if (mbDriveRes && mbDriveRes.ok) {
-          const dData = await mbDriveRes.json();
-          driveRoute = dData?.routes?.[0];
-        }
-        if (mbCycleRes && mbCycleRes.ok) {
-          const cData = await mbCycleRes.json();
-          cycleRoute = cData?.routes?.[0];
-        }
-
-        let route = driveRoute;
-        if (cycleRoute) {
-          if (!driveRoute) {
-            route = cycleRoute;
-          } else if (cycleRoute.distance <= driveRoute.distance * 1.15) {
-            route = cycleRoute;
-          }
+        let route: any = null;
+        if (mbRes && mbRes.ok) {
+          const dData = await mbRes.json();
+          route = dData?.routes?.[0];
         }
 
         if (

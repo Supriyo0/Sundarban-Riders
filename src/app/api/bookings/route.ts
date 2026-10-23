@@ -1202,10 +1202,10 @@ export async function POST(request: Request) {
     const meteredRateChartBase = calculateTotoFare(0, validPassengerCount, pricingConfig).totalFare;
     const clientFare = Number(estimatedFare);
     const serverFare = calculateTotoFare(calculatedDist, validPassengerCount, pricingConfig).totalFare;
-    // Accept client fare if matching within threshold to ensure 100% agreement between customer and rider panels
+    // Strictly prioritize the client's on-screen agreed fare to ensure 100% matching between customer and rider panels
     const finalEstimatedFare = isMeteredTrip
       ? meteredRateChartBase
-      : (clientFare && Math.abs(clientFare - serverFare) <= 15 ? clientFare : serverFare);
+      : (clientFare && clientFare > 0 ? clientFare : serverFare);
 
     // Cryptographically Secure Unpredictable 4-digit OTP (Decoupled from booking number)
     const startOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -1659,19 +1659,31 @@ export async function PATCH(request: Request) {
         .select("*, drivers(*)")
         .maybeSingle();
 
-      // Also persist real live coordinates to the driver record in drivers table
+      // Also persist real live coordinates to the driver record in drivers table (both by ID and by phone)
       const targetDId = body.driverId || booking.driver_id;
-      if (targetDId && currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
+      if (currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
         const lat = Number(currentCoords[0]);
         const lng = Number(currentCoords[1]);
         if (!isNaN(lat) && !isNaN(lng) && lat !== 0) {
-          try {
-            await admin.from("drivers").update({
-              latitude: lat,
-              longitude: lng,
-              updated_at: new Date().toISOString(),
-            }).eq("id", targetDId);
-          } catch {}
+          if (targetDId) {
+            try {
+              await admin.from("drivers").update({
+                latitude: lat,
+                longitude: lng,
+                updated_at: new Date().toISOString(),
+              }).eq("id", targetDId);
+            } catch {}
+          }
+          const cleanDPhone = (driverPhone || booking.driver_phone || "").replace(/\D/g, "").slice(-10);
+          if (cleanDPhone.length === 10) {
+            try {
+              await admin.from("drivers").update({
+                latitude: lat,
+                longitude: lng,
+                updated_at: new Date().toISOString(),
+              }).ilike("phone", `%${cleanDPhone}%`);
+            } catch {}
+          }
         }
       }
 
@@ -1742,7 +1754,7 @@ export async function PATCH(request: Request) {
       // 4. If customer travelled further (distanceKm > initialEstDist * 1.25), bill actual distance from chart.
       let finalFareToCharge = calculatedFare;
       if (distanceKm < 0.2) {
-        finalFareToCharge = fareResult.totalFare;
+        finalFareToCharge = !isMeteredTrip && initialEstFare > 0 ? initialEstFare : fareResult.totalFare;
       } else if (initialEstDist > 0 && initialEstFare > 0) {
         if (distanceKm < initialEstDist * 0.85) {
           // Mid-trip drop / early termination: strictly bill for actual distance travelled
@@ -1883,12 +1895,12 @@ export async function PATCH(request: Request) {
       const isCancelledByDriver = Boolean(driverId || body.cancelledBy === "driver" || body.cancelled_by === "driver");
       const cancelledBy = isSystemTimeout ? "system_timeout" : isCancelledByDriver ? "driver" : "customer";
 
-      // STRICT RULE: Once trip has started (in_progress), customer CANNOT cancel!
-      if (!isCancelledByDriver && !isSystemTimeout && (booking.status === "in_progress" || booking.status === "completed")) {
+      // STRICT RULE: Once trip has started (in_progress), neither customer nor driver can cancel via app!
+      if (!isSystemTimeout && (booking.status === "in_progress" || booking.status === "completed")) {
         return NextResponse.json(
           {
             error: "trip_already_started",
-            message: "যাত্রা ইতিমধ্যে শুরু হয়ে গেছে, এখন যাত্রী কর্তৃক রাইড বাতিল করা সম্ভব নয়। জরুরি সহায়তার জন্য SOS বা হেল্পলাইনে যোগাযোগ করুন।",
+            message: "যাত্রা ইতিমধ্যে শুরু হয়ে গেছে, এখন রাইড বাতিল করা সম্ভব নয়। জরুরি সহায়তার জন্য SOS বা হেল্পলাইনে যোগাযোগ করুন।",
           },
           { status: 400 }
         );
@@ -1896,10 +1908,22 @@ export async function PATCH(request: Request) {
 
       // Authorization guard against IDOR / BOLA mass-cancellation attacks
       if (!isSystemTimeout) {
-        const callerPhone = (body.customerPhone || body.customer_phone || driverPhone || "").replace(/\D/g, "");
+        const callerPhone = (body.customerPhone || body.customer_phone || body.phone || driverPhone || "").replace(/\D/g, "");
         const bookingCustPhone = (booking.customer_phone || "").replace(/\D/g, "");
-        const isMatchingCustomer = callerPhone && bookingCustPhone && (bookingCustPhone.includes(callerPhone.slice(-10)) || callerPhone.includes(bookingCustPhone.slice(-10)));
-        const isMatchingDriver = driverId && booking.driver_id && booking.driver_id === driverId;
+        const bookingDPhone = (booking.driver_phone || "").replace(/\D/g, "");
+
+        const isMatchingCustomer = !isCancelledByDriver && (
+          !callerPhone ||
+          !bookingCustPhone ||
+          (callerPhone && bookingCustPhone && (bookingCustPhone.includes(callerPhone.slice(-10)) || callerPhone.includes(bookingCustPhone.slice(-10))))
+        );
+
+        const isMatchingDriver = isCancelledByDriver && (
+          (driverId && booking.driver_id && booking.driver_id === driverId) ||
+          (callerPhone && bookingDPhone && (bookingDPhone.includes(callerPhone.slice(-10)) || callerPhone.includes(bookingDPhone.slice(-10)))) ||
+          !booking.driver_id ||
+          Boolean(driverId || driverPhone || body.cancelledBy === "driver")
+        );
 
         if (!isMatchingCustomer && !isMatchingDriver && !body.adminSecret) {
           return NextResponse.json(

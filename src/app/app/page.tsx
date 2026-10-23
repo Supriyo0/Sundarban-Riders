@@ -795,11 +795,14 @@ function MobileAppPageContent() {
         body: JSON.stringify({
           action: "cancel",
           bookingId: bId,
+          customerPhone: session?.phone,
+          phone: session?.phone,
+          cancelledBy: "customer",
           cancelReason: "যাত্রী খোঁজার সময় রিকোয়েস্ট বাতিল করেছেন",
         }),
       }).catch(() => {});
     }
-  }, [activeBookingId]);
+  }, [activeBookingId, session?.phone]);
 
   // Memoized route handler to eliminate parent re-render loops
   const handleRouteSelected = useCallback((route: any) => {
@@ -1149,11 +1152,16 @@ function MobileAppPageContent() {
           if (pollInterval) clearInterval(pollInterval);
           setPassengerBooking(null);
           setActiveBookingId(null);
+          setRideStep("assigned");
+          setSearchStatus("idle");
+          setSearchCountdown(0);
+          setPhase("passenger_home");
           if (typeof window !== "undefined") {
             localStorage.removeItem("sr_passenger_booking");
             localStorage.removeItem("sr_active_booking_id");
             localStorage.removeItem("sr_search_status");
           }
+          toast.warning("রাইডটি বাতিল করা হয়েছে। নতুন রাইড বুক করতে পারেন।", { duration: 5000 });
           showLocalRideAlertNotification(
             "⚠️ রাইড বাতিল হয়েছে",
             "আপনার রাইড বুকিংটি বাতিল করা হয়েছে।",
@@ -3772,6 +3780,9 @@ function MobileAppPageContent() {
                       body: JSON.stringify({
                         action: "cancel",
                         bookingId: bId,
+                        driverId: session?.driverId || activeRide?.driverId,
+                        driverPhone: session?.phone || activeRide?.driverPhone,
+                        phone: session?.phone,
                         cancelledBy: "driver",
                         cancelReason: reason || "চালক রাইড বাতিল করেছেন",
                       }),
@@ -4724,6 +4735,21 @@ function MobileAppPageContent() {
                   onSosClick={() => setShowSosModal(true)}
                   onTripFinished={(completedServerBooking?: any) => {
                     const b = completedServerBooking;
+                    if (b?.status === "cancelled") {
+                      setPassengerBooking(null);
+                      setActiveBookingId(null);
+                      setRideStep("assigned");
+                      setSearchStatus("idle");
+                      setSearchCountdown(0);
+                      setPhase("passenger_home");
+                      if (typeof window !== "undefined") {
+                        localStorage.removeItem("sr_passenger_booking");
+                        localStorage.removeItem("sr_active_booking_id");
+                        localStorage.removeItem("sr_search_status");
+                      }
+                      toast.warning("চালক রাইড বাতিল করেছেন। অন্য রাইড বুক করতে পারেন।", { duration: 5000 });
+                      return;
+                    }
                     const finalFare = b?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
                     const finalKm = b?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
                     const completedData = {
@@ -5104,6 +5130,9 @@ function MobileAppPageContent() {
                         body: JSON.stringify({
                           action: "cancel",
                           bookingId: bId,
+                          customerPhone: session?.phone || passengerBooking?.customerPhone,
+                          phone: session?.phone || passengerBooking?.customerPhone,
+                          cancelledBy: "customer",
                           cancelReason: reason,
                         }),
                       })

@@ -231,11 +231,13 @@ export function LiveRideTrackingMap({
     // Metered trip without preset drop — do not attempt route to [0,0]
     if (!target || target[0] === 0 || isNaN(target[0])) return;
 
-    // Snapshot driver position at the moment rideStep changes (best current known location)
+    // Origin is pickupCoords during in_trip (heading to destination), or driverPos when arriving to pickup
     const snapFrom: [number, number] =
-      driverPos[0] && driverPos[0] !== 0
-        ? driverPos
-        : [pickupCoords[0] + 0.003, pickupCoords[1] + 0.003];
+      rideStep === "in_trip"
+        ? pickupCoords
+        : (driverPos[0] && driverPos[0] !== 0
+          ? driverPos
+          : [pickupCoords[0] + 0.003, pickupCoords[1] + 0.003]);
     routeOriginSnapshotRef.current = snapFrom;
 
     // Small delay to get first GPS fix before fetching
@@ -304,9 +306,21 @@ export function LiveRideTrackingMap({
         }
 
         let dLat: number | null = null, dLng: number | null = null;
-        if (b.driver_lat && b.driver_lng) { dLat = Number(b.driver_lat); dLng = Number(b.driver_lng); }
-        else if (b.drivers?.latitude && b.drivers?.longitude) { dLat = Number(b.drivers.latitude); dLng = Number(b.drivers.longitude); }
-        if (dLat && dLng) {
+        if (b.driver_lat && b.driver_lng) {
+          dLat = Number(b.driver_lat);
+          dLng = Number(b.driver_lng);
+        } else if (b.driver_coords && Array.isArray(b.driver_coords) && b.driver_coords.length === 2) {
+          dLat = Number(b.driver_coords[0]);
+          dLng = Number(b.driver_coords[1]);
+        } else if (b.feedback?.live_coords && Array.isArray(b.feedback.live_coords) && b.feedback.live_coords.length === 2) {
+          dLat = Number(b.feedback.live_coords[0]);
+          dLng = Number(b.feedback.live_coords[1]);
+        } else if (b.drivers?.latitude && b.drivers?.longitude) {
+          dLat = Number(b.drivers.latitude);
+          dLng = Number(b.drivers.longitude);
+        }
+
+        if (dLat && dLng && dLat !== 0 && dLng !== 0) {
           setDriverPos([dLat, dLng]);
           const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
           const distLeft = haversineKm([dLat, dLng], target);
@@ -323,28 +337,6 @@ export function LiveRideTrackingMap({
             progress = Math.max(20, Math.min(95, Math.round((1 - Math.min(distLeft, 3) / 3) * 100)));
           }
           setRideProgressPct(progress);
-
-          // Push Progress Notification at 25%, 50%, 75%, 90% milestones AT MOST ONCE
-          let milestoneKey: string | null = null;
-          if (progress >= 90) milestoneKey = "milestone_90";
-          else if (progress >= 75) milestoneKey = "milestone_75";
-          else if (progress >= 50) milestoneKey = "milestone_50";
-          else if (progress >= 25) milestoneKey = "milestone_25";
-
-          if (computedEta <= 2 && !notifiedMilestonesRef.current.has("eta_arriving")) {
-            milestoneKey = "eta_arriving";
-          }
-
-          if (milestoneKey && !notifiedMilestonesRef.current.has(milestoneKey)) {
-            notifiedMilestonesRef.current.add(milestoneKey);
-            const blockCount = Math.min(10, Math.max(1, Math.round(progress / 10)));
-            const bar = "█".repeat(blockCount) + "░".repeat(10 - blockCount);
-            const title = rideStep === "in_trip" ? `🏁 গন্তব্যের পথে (${progress}%)` : `📍 চালক পৌঁছাচ্ছেন (${progress}%)`;
-            const body = rideStep === "in_trip"
-              ? `[${bar}] ${progress}% • পৌঁছাতে আর ~${computedEta} মিনিট`
-              : `[${bar}] ${progress}% • পিকআপে আসতে আর ~${computedEta} মিনিট`;
-            showLocalRideAlertNotification(title, body, b.id || b.booking_number);
-          }
 
           if (rideStep === "in_trip") {
             const upd = meterRef.current.addGpsReading(dLat, dLng);

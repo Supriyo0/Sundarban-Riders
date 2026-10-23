@@ -1403,11 +1403,11 @@ export function InteractiveBookingMap({
         return;
       }
 
-      // If passive/auto-check on web, only query if browser permission is already granted
+      // If passive/auto-check on web, only abort if permission is explicitly denied
       if (!userInitiated && (navigator as any).permissions?.query) {
         try {
           const permStatus = await (navigator as any).permissions.query({ name: "geolocation" });
-          if (permStatus.state !== "granted") {
+          if (permStatus.state === "denied") {
             setIsLocatingInitialLock(false);
             isLocatingRef.current = false;
             setIsLocating(false);

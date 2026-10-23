@@ -183,10 +183,10 @@ export function DriverActiveTripMap({
           }
         } catch {}
 
-        // When heading to pickup, sync location to backend at most once every 4 seconds
+        // When heading to pickup, sync location to backend every 2.5s for real-time customer tracking
         if (status === "heading_pickup" && bookingId) {
           const now = Date.now();
-          if (now - lastSyncRef.current.ts >= 4000) {
+          if (now - lastSyncRef.current.ts >= 2500) {
             lastSyncRef.current.ts = now;
             fetch("/api/bookings", {
               method: "PATCH",

@@ -146,18 +146,6 @@ export async function GET(req: Request) {
           }
         }
 
-        // Village footpath / brick lane fallback: For isolated island & riverside settlements inaccessible by mapped car roads
-        if (!route) {
-          const walkUrl = `https://api.mapbox.com/directions/v5/mapbox/walking/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&access_token=${mapboxToken}`;
-          const walkRes = await fetch(walkUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null);
-          if (walkRes && walkRes.ok) {
-            const walkData = await walkRes.json();
-            if (walkData?.code === "Ok" && walkData?.routes?.length > 0) {
-              route = walkData.routes[0];
-            }
-          }
-        }
-
         if (
           route &&
           Array.isArray(route.geometry?.coordinates) &&

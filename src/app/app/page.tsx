@@ -1881,35 +1881,43 @@ function MobileAppPageContent() {
 
     const applyLocationFix = (lat: number, lng: number, accuracy?: number) => {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
-      // Filter coarse cell-tower / IP location (> 200m) to stop location jumping
-      if (accuracy !== undefined && accuracy > 200) {
+      // Filter coarse cell-tower / IP location (> 150m) to stop location jumping
+      if (accuracy !== undefined && accuracy > 150) {
         return;
       }
       if (accuracy !== undefined && accuracy < bestAccuracy) {
         bestAccuracy = accuracy;
       }
 
-      setPickupCoords([lat, lng]);
       setDriverLiveCoords([lat, lng]);
+      // Only set pickup coordinates if not already locked by the interactive booking map
+      setPickupCoords((prev) => (prev[0] === 0 ? [lat, lng] : prev));
       try {
         localStorage.setItem("sr_last_known_lat", lat.toString());
         localStorage.setItem("sr_last_known_lng", lng.toString());
       } catch {}
-      fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (d && d.name) {
-            setPickupText(d.name);
-            try {
-              localStorage.setItem("sr_last_known_name", d.name);
-            } catch {}
-          }
-        })
-        .catch(() => {});
+
+      // Only reverse geocode if pickup text was empty to prevent overwriting user input
+      setPickupText((prevText) => {
+        if (!prevText) {
+          fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d && d.name) {
+                setPickupText((cur) => (cur ? cur : d.name));
+                try {
+                  localStorage.setItem("sr_last_known_name", d.name);
+                } catch {}
+              }
+            })
+            .catch(() => {});
+        }
+        return prevText;
+      });
     };
 
     if (isNative) {
-      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 })
+      Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 6000, maximumAge: 3000 })
         .then((pos) => {
           if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
         })
@@ -1925,7 +1933,7 @@ function MobileAppPageContent() {
           }
         },
         () => {},
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 3000 }
       );
     }
   }, []);

@@ -213,6 +213,7 @@ export function InteractiveBookingMap({
   const driverMarkersRef = useRef<{ id: string; marker: any }[]>([]);
   // Separate live-user-location pulsing dot marker (doesn't interfere with pickup pin)
   const liveUserDotRef = useRef<any>(null);
+  const bestAccuracyRef = useRef<number>(Infinity);
   const onRouteSelectedRef = useRef(onRouteSelected);
   onRouteSelectedRef.current = onRouteSelected;
 
@@ -277,6 +278,11 @@ export function InteractiveBookingMap({
     if (initialPickupCoords && initialPickupCoords[0] !== 0 && initialPickupCoords[1] !== 0) {
       setPickupCoords((prev) => {
         if (prev[0] === initialPickupCoords[0] && prev[1] === initialPickupCoords[1]) return prev;
+        // If map has already locked a live satellite fix (prev[0] !== 0), do not let parent bounce it back
+        // unless parent coordinate change is deliberate and large (> 500m)
+        if (prev[0] !== 0 && calculateDistanceKm(prev[0], prev[1], initialPickupCoords[0], initialPickupCoords[1]) < 0.5) {
+          return prev;
+        }
         return initialPickupCoords;
       });
       setHasValidPickup(true);
@@ -977,6 +983,20 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
+          // Immediately dispatch coordinates so parent page.tsx never loses dropCoords while route is fetching
+          const initialComputedFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
+          onRouteSelectedRef.current?.({
+            pickup: pText || "Current Location",
+            drop: dText || "Drop Location",
+            distanceKm: baselineDist,
+            estimatedFare: initialComputedFare.totalFare,
+            rideTier: "standard",
+            pickupCoords: pCoords,
+            dropCoords: dCoords,
+            paymentMode: "cash",
+            passengerCount,
+          });
+
           try {
             if (routeAbortControllerRef.current) {
               routeAbortControllerRef.current.abort();
@@ -1060,6 +1080,16 @@ export function InteractiveBookingMap({
         if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
         setDistanceKm(0);
         setRiverCrossingAlert(null);
+
+        // Notify parent page that destination is cleared so booking is not submitted with stale drop
+        onRouteSelectedRef.current?.({
+          pickup: pText || "Current Location",
+          drop: "",
+          distanceKm: 0,
+          estimatedFare: 0,
+          pickupCoords: pCoords,
+          dropCoords: [0, 0],
+        });
 
         if (options?.fitBounds !== false) {
           if (hasValidP) {
@@ -1315,10 +1345,14 @@ export function InteractiveBookingMap({
           return;
         }
 
-        // Discard absurd network/IP locations (> 2500m), but accept real mobile device fixes
-        if (accuracy !== undefined && accuracy > 2500) {
+        // Discard coarse cellular and IP fixes (> 150m)
+        if (accuracy !== undefined && accuracy > 150) {
           console.log("[GPS] Discarded coarse position fix with accuracy:", accuracy);
           return;
+        }
+
+        if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
+          bestAccuracyRef.current = accuracy;
         }
 
         const newPickup: [number, number] = [latitude, longitude];
@@ -1530,10 +1564,6 @@ export function InteractiveBookingMap({
   }, [fetchCurrentLocation]);
 
   // Continuous Live GPS Watcher on Mount
-  // Rules:
-  //   - Only updates pickup text/coords when user is NOT actively typing in the pickup field
-  //   - Always updates the live-user-dot marker smoothly (separate from pickup pin)
-  //   - Never causes map flyTo if user has already set a manual pickup
   useEffect(() => {
     let watchId: number | null = null;
     let capWatchId: string | null = null;
@@ -1550,13 +1580,24 @@ export function InteractiveBookingMap({
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude, accuracy } = position.coords;
               if (!latitude || !longitude) return;
-              if (accuracy !== undefined && accuracy > 2500) return;
+              // Discard coarse cellular and IP fixes (> 150m)
+              if (accuracy !== undefined && accuracy > 150) return;
+              // Monotonic guard: do not degrade existing solid fix (<= 45m) with jumpy cellular update
+              if (bestAccuracyRef.current <= 45 && accuracy !== undefined && accuracy > 75) return;
+              if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
+                bestAccuracyRef.current = accuracy;
+              }
+              // Stationary jitter filter (< 6m)
+              const prevLive = liveUserDotRef.current?.getLatLng();
+              if (prevLive && prevLive.lat !== 0) {
+                const jumpKm = calculateDistanceKm(prevLive.lat, prevLive.lng, latitude, longitude);
+                if (jumpKm < 0.006) return;
+              }
 
-              // Always update the live user dot on the map without touching React state
+              // Update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
 
               // Only initialize pickup if it was never locked before (0, 0)
-              // Once locked, pickup pin remains firmly planted so the map doesn't violently jump on GPS drift
               const prevPickup = pickupCoordsRef.current;
               if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
                 setPickupCoords([latitude, longitude]);
@@ -1592,13 +1633,24 @@ export function InteractiveBookingMap({
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude, accuracy } = pos.coords;
             if (!latitude || !longitude) return;
-            if (accuracy !== undefined && accuracy > 2500) return;
+            // Discard coarse cellular and IP fixes (> 150m)
+            if (accuracy !== undefined && accuracy > 150) return;
+            // Monotonic guard: do not degrade existing solid fix (<= 45m) with jumpy cellular update
+            if (bestAccuracyRef.current <= 45 && accuracy !== undefined && accuracy > 75) return;
+            if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
+              bestAccuracyRef.current = accuracy;
+            }
+            // Stationary jitter filter (< 6m)
+            const prevLive = liveUserDotRef.current?.getLatLng();
+            if (prevLive && prevLive.lat !== 0) {
+              const jumpKm = calculateDistanceKm(prevLive.lat, prevLive.lng, latitude, longitude);
+              if (jumpKm < 0.006) return;
+            }
 
-            // Always update the live user dot on the map without touching React state
+            // Update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);
 
             // Only initialize pickup if it was never locked before (0, 0)
-            // Once locked, pickup pin remains firmly planted so the map doesn't violently jump on GPS drift
             const prevPickup = pickupCoordsRef.current;
             if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
               const liveP: [number, number] = [latitude, longitude];
@@ -2324,9 +2376,20 @@ export function InteractiveBookingMap({
                         type="button"
                         onClick={() => {
                           setDropInputValue("");
+                          dropInputRef.current = "";
+                          setDropCoords([0, 0]);
+                          dropCoordsRef.current = [0, 0];
                           setIsDropOutOfService(false);
                           setHasStartedTyping(false);
                           setPlaceSuggestions([]);
+                          onRouteSelectedRef.current?.({
+                            pickup: pickupInputValue || "Current Location",
+                            drop: "",
+                            distanceKm: 0,
+                            estimatedFare: 0,
+                            pickupCoords,
+                            dropCoords: [0, 0],
+                          });
                           syncMapRouteAndPins(pickupCoords, [0, 0], pickupInputValue, "", { fitBounds: false });
                         }}
                         className="w-6 h-6 rounded-full hover:bg-slate-200/60 flex items-center justify-center text-slate-400 cursor-pointer"

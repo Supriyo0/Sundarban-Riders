@@ -53,7 +53,7 @@ export function LiveRideTrackingMap({
   pickupText,
   dropText,
   pickupCoords = [21.876, 88.192],
-  dropCoords = [21.868, 88.163],
+  dropCoords,
   tripDistance,
   tripFare,
   passengerCount = 3,
@@ -284,7 +284,7 @@ export function LiveRideTrackingMap({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [effectiveRideStep, dropCoords[0], dropCoords[1], pickupCoords[0], pickupCoords[1]]);
+  }, [effectiveRideStep, dropCoords?.[0], dropCoords?.[1], pickupCoords[0], pickupCoords[1]]);
 
   // 2. Poll driver location, trip start time & booking status every 2.5s
   useEffect(() => {
@@ -351,7 +351,7 @@ export function LiveRideTrackingMap({
         if (dLat && dLng && dLat !== 0 && dLng !== 0) {
           setDriverPos([dLat, dLng]);
           const isTrip = effectiveRideStep === "in_trip" || b.status === "in_progress";
-          const target = isTrip ? dropCoords : pickupCoords;
+          const target = (isTrip && dropCoords && dropCoords[0] !== 0) ? dropCoords : pickupCoords;
           const distLeft = haversineKm([dLat, dLng], target);
           const computedEta = Math.max(1, Math.round(distLeft / 0.25)); // ~15 km/h toto speed
           setEtaMinutes(computedEta);
@@ -359,7 +359,7 @@ export function LiveRideTrackingMap({
           // Dynamic Progress Calculation
           let progress = 35;
           if (isTrip) {
-            const totalTrip = Math.max(0.5, haversineKm(pickupCoords, dropCoords));
+            const totalTrip = Math.max(0.5, dropCoords ? haversineKm(pickupCoords, dropCoords) : (tripDistance || 2));
             progress = Math.max(15, Math.min(98, Math.round(((totalTrip - distLeft) / totalTrip) * 100)));
           } else {
             // Arriving to pickup
@@ -421,17 +421,19 @@ export function LiveRideTrackingMap({
           }),
         }).addTo(map);
 
-        // Drop pin
-        L.marker(dropCoords, {
-          icon: L.divIcon({
-            className: "",
-            html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
-              <div style="background:#dc2626;color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;white-space:nowrap;border:2px solid white;margin-bottom:3px;box-shadow:0 3px 8px rgba(0,0,0,0.3);">🏁 গন্তব্য</div>
-              <div style="width:20px;height:20px;background:#ef4444;border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(239,68,68,0.6);"></div>
-            </div>`,
-            iconSize: [0, 0],
-          }),
-        }).addTo(map);
+        // Drop pin (only if valid drop destination was selected)
+        if (dropCoords && dropCoords[0] && dropCoords[0] !== 0 && !isNaN(dropCoords[0])) {
+          L.marker(dropCoords, {
+            icon: L.divIcon({
+              className: "",
+              html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
+                <div style="background:#dc2626;color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;white-space:nowrap;border:2px solid white;margin-bottom:3px;box-shadow:0 3px 8px rgba(0,0,0,0.3);">🏁 গন্তব্য</div>
+                <div style="width:20px;height:20px;background:#ef4444;border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(239,68,68,0.6);"></div>
+              </div>`,
+              iconSize: [0, 0],
+            }),
+          }).addTo(map);
+        }
 
         // Moving toto driver marker with Uber-style radar pulse ring
         const totoIcon = L.divIcon({

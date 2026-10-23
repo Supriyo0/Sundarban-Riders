@@ -303,9 +303,36 @@ export function DriverActiveTripMap({
     ? [Number(pickupCoords[0]), Number(pickupCoords[1])]
     : [21.8760, 88.1920];
 
-  const safeDrop: [number, number] = (Array.isArray(dropCoords) && dropCoords.length === 2 && !isNaN(Number(dropCoords[0])) && Number(dropCoords[0]) !== 0)
-    ? [Number(dropCoords[0]), Number(dropCoords[1])]
-    : safePickup;
+  const REGIONAL_FALLBACK_COORDS: Record<string, [number, number]> = {
+    "কাকদ্বীপ": [21.8760, 88.1920],
+    "kakdwip": [21.8760, 88.1920],
+    "লট ৮": [21.8680, 88.1630],
+    "lot 8": [21.8680, 88.1630],
+    "নামখানা": [21.7674, 88.2325],
+    "namkhana": [21.7674, 88.2325],
+    "হাতানিয়া": [21.7640, 88.2350],
+    "বকখালি": [21.5645, 88.2570],
+    "bakkhali": [21.5645, 88.2570],
+    "ফ্রেজারগঞ্জ": [21.5850, 88.2510],
+    "ডায়মন্ড": [22.1912, 88.1903],
+    "diamond": [22.1912, 88.1903],
+    "কুলপি": [22.0830, 88.2430],
+  };
+
+  const resolveDropCoords = (): [number, number] => {
+    if (Array.isArray(dropCoords) && dropCoords.length === 2 && !isNaN(Number(dropCoords[0])) && Number(dropCoords[0]) !== 0) {
+      return [Number(dropCoords[0]), Number(dropCoords[1])];
+    }
+    if (typeof drop === "string" && drop.trim()) {
+      const lower = drop.toLowerCase();
+      for (const [key, coords] of Object.entries(REGIONAL_FALLBACK_COORDS)) {
+        if (lower.includes(key)) return coords;
+      }
+    }
+    return [safePickup[0] + 0.015, safePickup[1] + 0.015];
+  };
+
+  const safeDrop: [number, number] = resolveDropCoords();
 
   const targetCoords: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
 
@@ -565,30 +592,35 @@ export function DriverActiveTripMap({
     } catch {}
   }, [currentFrom?.[0], currentFrom?.[1]]);
 
+  // Immediate Destination Marker update on status or destination change (Zero wait for route API)
+  useEffect(() => {
+    if (!mapInstanceRef.current || !destMarkerRef.current || !targetCoords?.[0]) return;
+    try {
+      const L = leafletRef.current || (typeof window !== "undefined" ? (window as any).L : null);
+      destMarkerRef.current.setLatLng(targetCoords);
+      if (L) {
+        destMarkerRef.current.setIcon(
+          L.divIcon({
+            className: "",
+            html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
+              <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
+                ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
+              </div>
+              <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
+            </div>`,
+            iconSize: [0, 0],
+          })
+        );
+      }
+    } catch {}
+  }, [status, targetCoords[0], targetCoords[1]]);
+
   // Update route polyline and fit bounds ONLY when route data actually loads
   useEffect(() => {
     if (!mapInstanceRef.current || !routeLoaded) return;
     try {
       const L = leafletRef.current || (typeof window !== "undefined" ? (window as any).L : null);
       const hasRoadRoute = routeCoords && routeCoords.length > 2;
-
-      if (destMarkerRef.current && targetCoords?.[0]) {
-        destMarkerRef.current.setLatLng(targetCoords);
-        if (L) {
-          destMarkerRef.current.setIcon(
-            L.divIcon({
-              className: "",
-              html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
-                <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
-                  ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
-                </div>
-                <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
-              </div>`,
-              iconSize: [0, 0],
-            })
-          );
-        }
-      }
 
       if (hasRoadRoute) {
         if (routeCasingRef.current && routeLineRef.current) {

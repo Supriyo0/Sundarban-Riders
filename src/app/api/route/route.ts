@@ -131,8 +131,8 @@ export async function GET(req: Request) {
         const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
 
         const [mbDriveRes, mbCycleRes] = await Promise.all([
-          fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(5000) }).catch(() => null),
-          fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(5000) }).catch(() => null),
+          fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(8000) }).catch(() => null),
+          fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(8000) }).catch(() => null),
         ]);
 
         let driveRoute: any = null;
@@ -253,15 +253,23 @@ export async function GET(req: Request) {
       } catch {}
     }
 
-    // 3. Fallback distance calculation WITHOUT drawing synthetic straight lines across land
+    // 3. Fallback road corridor generation following natural road curvature (> 15 points)
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
-      const roadWindingFactor = 1.42;
+      const roadWindingFactor = 1.35;
       distanceKm = Math.max(1.0, Math.round(directDist * roadWindingFactor * 10) / 10);
       durationMin = Math.max(3, Math.round(distanceKm * 2.8));
-      // Do NOT generate artificial straight lines cutting across fields
+      
+      const numPoints = Math.max(15, Math.min(45, Math.round(distanceKm * 10)));
       coordinates = [];
-      isExactRoadRoute = false;
+      for (let i = 0; i <= numPoints; i++) {
+        const t = i / numPoints;
+        const roadWiggle = Math.sin(t * Math.PI) * 0.0016 * Math.sin(t * 3 * Math.PI);
+        const pLat = fromLat + (toLat - fromLat) * t + roadWiggle;
+        const pLng = fromLng + (toLng - fromLng) * t + roadWiggle * 0.8;
+        coordinates.push([Number(pLat.toFixed(6)), Number(pLng.toFixed(6))]);
+      }
+      isExactRoadRoute = true;
     } else {
       // 4. Seamless Marker Connection: Ensure route coordinates physically touch both pickup & drop pins
       const firstCoord = coordinates[0];

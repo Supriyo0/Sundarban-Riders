@@ -1711,6 +1711,7 @@ export async function PATCH(request: Request) {
       // Strip out ephemeral live coordinates, continuous odometer ticks, temporary OTP codes, and polling timestamps.
       // Store ONLY essential audit data required for administrative records and trip history.
       const cleanHistoryMeta = {
+        start_otp: meta.start_otp || null,
         actual_distance_km: distanceKm,
         calculated_fare: finalFareToCharge,
         final_fare: finalFareToCharge,

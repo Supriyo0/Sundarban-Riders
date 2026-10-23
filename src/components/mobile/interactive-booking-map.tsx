@@ -1553,9 +1553,12 @@ export function InteractiveBookingMap({
               // Always update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
 
-              // Only initialize pickup if it was never set before (0, 0), avoiding constant camera jitter/flicker
-              if (pickupCoordsRef.current[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+              // Update pickup location if never locked or if displaced from stale cache without manual lock
+              const prevPickup = pickupCoordsRef.current;
+              const hasStaleFix = prevPickup[0] === 0 || calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.040;
+              if (hasStaleFix && !hasManualPickupRef.current && !isCancelled) {
                 setPickupCoords([latitude, longitude]);
+                pickupCoordsRef.current = [latitude, longitude];
                 setHasValidPickup(true);
                 setGpsDetected(true);
                 setIsLocatingInitialLock(false);
@@ -1591,8 +1594,10 @@ export function InteractiveBookingMap({
             // Always update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);
 
-            // Only initialize pickup if it was never set before (0, 0), avoiding constant camera jitter/flicker
-            if (pickupCoordsRef.current[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+            // Update pickup location if never locked or displaced from stale cache without manual lock
+            const prevPickup = pickupCoordsRef.current;
+            const hasStaleFix = prevPickup[0] === 0 || calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.040;
+            if (hasStaleFix && !hasManualPickupRef.current && !isCancelled) {
               const liveP: [number, number] = [latitude, longitude];
               setPickupCoords(liveP);
               pickupCoordsRef.current = liveP;
@@ -1972,15 +1977,9 @@ export function InteractiveBookingMap({
           setHasValidPickup(true);
         }
         await syncMapRouteAndPins(effectivePickupCoords, coords, effectivePickupName, place.name, {
-          fitBounds: false,
+          fitBounds: true,
           flyDuration: 1.0,
         });
-        // Immediately zoom in close to the destination location so user can fine-tune / drag the drop pin
-        if (mapInstanceRef.current) {
-          try {
-            mapInstanceRef.current.flyTo(coords, 17, { duration: 1.0 });
-          } catch {}
-        }
       }
     }
   };

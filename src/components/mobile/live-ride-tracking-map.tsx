@@ -220,27 +220,29 @@ export function LiveRideTrackingMap({
     return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
   };
 
+  const [effectiveRideStep, setEffectiveRideStep] = useState(rideStep);
+  useEffect(() => {
+    setEffectiveRideStep(rideStep);
+  }, [rideStep]);
+
   // 1. Fetch real street-following road route from /api/route
-  // IMPORTANT: Do NOT include driverPos in deps — re-fetching on every GPS tick causes
-  // straight fallback lines to appear. Fetch once per rideStep change using a stable snapshot.
   const routeOriginSnapshotRef = useRef<[number, number] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
+    const target = effectiveRideStep === "in_trip" ? dropCoords : pickupCoords;
 
     // Metered trip without preset drop — do not attempt route to [0,0]
     if (!target || target[0] === 0 || isNaN(target[0])) return;
 
-    // Origin is pickupCoords during in_trip (heading to destination), or driverPos when arriving to pickup
+    // Origin is driver position or pickup during in_trip (heading to destination), or driverPos when arriving to pickup
     const snapFrom: [number, number] =
-      rideStep === "in_trip"
-        ? pickupCoords
+      effectiveRideStep === "in_trip"
+        ? (driverPos[0] && driverPos[0] !== 0 ? driverPos : pickupCoords)
         : (driverPos[0] && driverPos[0] !== 0
           ? driverPos
           : [pickupCoords[0] + 0.003, pickupCoords[1] + 0.003]);
     routeOriginSnapshotRef.current = snapFrom;
 
-    // Small delay to get first GPS fix before fetching
     const timer = setTimeout(() => {
       const from = routeOriginSnapshotRef.current ?? snapFrom;
       fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${target[0]}&toLng=${target[1]}`, {
@@ -251,17 +253,24 @@ export function LiveRideTrackingMap({
           if (cancelled) return;
           if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
             setRouteCoords(data.coordinates);
+            if (mapInstanceRef.current) {
+              try {
+                const L = (window as any).L;
+                if (L) {
+                  mapInstanceRef.current.fitBounds(L.latLngBounds(data.coordinates), { padding: [60, 60], maxZoom: 17 });
+                }
+              } catch {}
+            }
           }
         })
         .catch(() => {});
-    }, 600);
+    }, 300);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rideStep]);
+  }, [effectiveRideStep, dropCoords[0], dropCoords[1], pickupCoords[0], pickupCoords[1]]);
 
   // 2. Poll driver location, trip start time & booking status every 2.5s
   useEffect(() => {
@@ -305,6 +314,11 @@ export function LiveRideTrackingMap({
           setLiveMeterFare(Number(b.feedback.live_fare));
         }
 
+        // Detect ride start from backend booking status
+        if (b.status === "in_progress") {
+          setEffectiveRideStep("in_trip");
+        }
+
         let dLat: number | null = null, dLng: number | null = null;
         if (b.driver_lat && b.driver_lng) {
           dLat = Number(b.driver_lat);
@@ -322,14 +336,15 @@ export function LiveRideTrackingMap({
 
         if (dLat && dLng && dLat !== 0 && dLng !== 0) {
           setDriverPos([dLat, dLng]);
-          const target = rideStep === "in_trip" ? dropCoords : pickupCoords;
+          const isTrip = effectiveRideStep === "in_trip" || b.status === "in_progress";
+          const target = isTrip ? dropCoords : pickupCoords;
           const distLeft = haversineKm([dLat, dLng], target);
           const computedEta = Math.max(1, Math.round(distLeft / 0.25)); // ~15 km/h toto speed
           setEtaMinutes(computedEta);
 
           // Dynamic Progress Calculation
           let progress = 35;
-          if (rideStep === "in_trip") {
+          if (isTrip) {
             const totalTrip = Math.max(0.5, haversineKm(pickupCoords, dropCoords));
             progress = Math.max(15, Math.min(98, Math.round(((totalTrip - distLeft) / totalTrip) * 100)));
           } else {
@@ -338,7 +353,7 @@ export function LiveRideTrackingMap({
           }
           setRideProgressPct(progress);
 
-          if (rideStep === "in_trip") {
+          if (isTrip) {
             const upd = meterRef.current.addGpsReading(dLat, dLng);
             if (upd.totalKm > 0) {
               setLiveMeterKm((prev) => Math.max(prev, upd.totalKm));
@@ -418,7 +433,7 @@ export function LiveRideTrackingMap({
         driverMarkerRef.current = dMarker;
 
         // Route casing
-        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, rideStep === "in_trip" ? dropCoords : pickupCoords];
+        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, effectiveRideStep === "in_trip" ? dropCoords : pickupCoords];
         const casing = L.polyline(pts, {
           color: "#ffffff",
           weight: 8,
@@ -430,7 +445,7 @@ export function LiveRideTrackingMap({
 
         // Route polyline
         const line = L.polyline(pts, {
-          color: rideStep === "in_trip" ? "#059669" : "#0284c7",
+          color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7",
           weight: 5,
           opacity: 0.95,
           lineCap: "round",
@@ -450,11 +465,11 @@ export function LiveRideTrackingMap({
         if (driverMarkerRef.current) driverMarkerRef.current.setLatLng(driverPos);
 
         // Update route polyline
-        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, rideStep === "in_trip" ? dropCoords : pickupCoords];
+        const pts = routeCoords.length > 1 ? routeCoords : [driverPos, effectiveRideStep === "in_trip" ? dropCoords : pickupCoords];
         if (routeCasingRef.current) routeCasingRef.current.setLatLngs(pts);
         if (routeLineRef.current) {
           routeLineRef.current.setLatLngs(pts);
-          routeLineRef.current.setStyle({ color: rideStep === "in_trip" ? "#059669" : "#0284c7" });
+          routeLineRef.current.setStyle({ color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7" });
         }
 
         // Pan map smoothly to follow driver only when moved >= 15m (0.015 km)
@@ -470,7 +485,7 @@ export function LiveRideTrackingMap({
     };
     initMap();
     return () => { mounted = false; };
-  }, [driverPos, pickupCoords, dropCoords, rideStep, routeCoords]);
+  }, [driverPos, pickupCoords, dropCoords, effectiveRideStep, routeCoords]);
 
   useEffect(() => {
     return () => {
@@ -482,8 +497,8 @@ export function LiveRideTrackingMap({
   const otp = booking?.start_otp || booking?.startOtp || "";
   const totoNum = booking?.toto_number || booking?.totoNumber || booking?.uniqueId || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
-  const displayFare = rideStep === "in_trip" && liveMeterFare > 0 ? Math.round(liveMeterFare) : tripFare;
-  const displayKm = rideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
+  const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : tripFare;
+  const displayKm = effectiveRideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
 
   // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement
   if (rideStep === "arrived") {

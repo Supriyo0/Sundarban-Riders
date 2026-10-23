@@ -488,13 +488,25 @@ function enrichBookingCoords(booking: any) {
   let lat: number | null = null;
   let lng: number | null = null;
 
+  // 0. Database columns first
+  if (booking.pickup_lat && booking.pickup_lng) {
+    const b0 = Number(booking.pickup_lat);
+    const b1 = Number(booking.pickup_lng);
+    if (!isNaN(b0) && !isNaN(b1) && b0 !== 0 && b1 !== 0) {
+      lat = b0;
+      lng = b1;
+    }
+  }
+
   // 1. Highest accuracy: meta.start_coords from map pin
-  if (meta.start_coords && Array.isArray(meta.start_coords) && meta.start_coords.length === 2) {
-    const p0 = Number(meta.start_coords[0]);
-    const p1 = Number(meta.start_coords[1]);
-    if (!isNaN(p0) && !isNaN(p1) && p0 !== 0 && p1 !== 0) {
-      lat = p0;
-      lng = p1;
+  if (!lat || !lng) {
+    if (meta.start_coords && Array.isArray(meta.start_coords) && meta.start_coords.length === 2) {
+      const p0 = Number(meta.start_coords[0]);
+      const p1 = Number(meta.start_coords[1]);
+      if (!isNaN(p0) && !isNaN(p1) && p0 !== 0 && p1 !== 0) {
+        lat = p0;
+        lng = p1;
+      }
     }
   }
 
@@ -529,13 +541,25 @@ function enrichBookingCoords(booking: any) {
   let dropLat: number | null = null;
   let dropLng: number | null = null;
 
-  // 1. Highest accuracy: meta.end_coords from map pin
-  if (meta.end_coords && Array.isArray(meta.end_coords) && meta.end_coords.length === 2) {
-    const d0 = Number(meta.end_coords[0]);
-    const d1 = Number(meta.end_coords[1]);
+  // 0. Database columns first
+  if (booking.drop_lat && booking.drop_lng) {
+    const d0 = Number(booking.drop_lat);
+    const d1 = Number(booking.drop_lng);
     if (!isNaN(d0) && !isNaN(d1) && d0 !== 0 && d1 !== 0) {
       dropLat = d0;
       dropLng = d1;
+    }
+  }
+
+  // 1. Highest accuracy: meta.end_coords from map pin
+  if (!dropLat || !dropLng) {
+    if (meta.end_coords && Array.isArray(meta.end_coords) && meta.end_coords.length === 2) {
+      const d0 = Number(meta.end_coords[0]);
+      const d1 = Number(meta.end_coords[1]);
+      if (!isNaN(d0) && !isNaN(d1) && d0 !== 0 && d1 !== 0) {
+        dropLat = d0;
+        dropLng = d1;
+      }
     }
   }
 
@@ -1234,6 +1258,11 @@ export async function POST(request: Request) {
       ? `${dropLocation} (GPS: ${dropCoords[0].toFixed(5)},${dropCoords[1].toFixed(5)})`
       : dropLocation;
 
+    const pLatVal = hasValidPickup ? Number(pickupCoords[0]) : null;
+    const pLngVal = hasValidPickup ? Number(pickupCoords[1]) : null;
+    const dLatVal = hasValidDrop ? Number(dropCoords[0]) : null;
+    const dLngVal = hasValidDrop ? Number(dropCoords[1]) : null;
+
     const { data: booking, error: insertErr } = await admin
       .from("bookings")
       .insert({
@@ -1242,6 +1271,10 @@ export async function POST(request: Request) {
         customer_phone: cleanPhone,
         pickup_location: pickupLocString,
         drop_location: dropLocString,
+        pickup_lat: pLatVal,
+        pickup_lng: pLngVal,
+        drop_lat: dLatVal,
+        drop_lng: dLngVal,
         estimated_fare: finalEstimatedFare,
         feedback: initialMeta,
         status: "pending",
@@ -1745,16 +1778,18 @@ export async function PATCH(request: Request) {
       const initialEstFare = Number(booking.estimated_fare) || Number(meta.estimated_fare) || Number(meta.initial_fare) || calculatedFare;
 
       // Exact Odometer-Based Dynamic Fare Calculation:
-      // 1. If driver didn't move after pickup (distanceKm < 0.2 km), charge official minimum base fare:
-      //    calculateTotoFare(0, ...) -> Slab 1 (0-10 km) booking charge ₹10 + 1 km min ride charge ₹12 = ₹22 base
-      // 2. If ride finished early / mid-way (distanceKm < initialEstDist * 0.85), dynamically recalculate fare
-      //    for actual distance travelled using official fare chart (calculateTotoFare).
-      // 3. If ride reached intended destination area normally (distanceKm >= initialEstDist * 0.85 && distanceKm <= initialEstDist * 1.25),
-      //    charge initialEstFare (upfront agreed fare).
-      // 4. If customer travelled further (distanceKm > initialEstDist * 1.25), bill actual distance from chart.
+      // 1. If driver didn't move after pickup (distanceKm < 0.3 km):
+      //    Charge official minimum base fare from rate chart (Slab 1 base fare = ₹22, e.g. 1 km min ride charge + booking charge)
+      // 2. If ride finished early / mid-way (distanceKm < initialEstDist * 0.85):
+      //    Dynamically recalculate fare for actual distance travelled using official fare chart (calculateTotoFare).
+      // 3. If ride reached intended destination area normally (distanceKm >= initialEstDist * 0.85 && distanceKm <= initialEstDist * 1.25):
+      //    Charge initialEstFare (upfront agreed fare).
+      // 4. If customer travelled further (distanceKm > initialEstDist * 1.25):
+      //    Bill actual distance from rate chart.
       let finalFareToCharge = calculatedFare;
-      if (distanceKm < 0.2) {
-        finalFareToCharge = !isMeteredTrip && initialEstFare > 0 ? initialEstFare : fareResult.totalFare;
+      if (distanceKm < 0.3) {
+        // Driver did not move: charge rate chart minimum base fare (never full estimate)
+        finalFareToCharge = fareResult.totalFare;
       } else if (initialEstDist > 0 && initialEstFare > 0) {
         if (distanceKm < initialEstDist * 0.85) {
           // Mid-trip drop / early termination: strictly bill for actual distance travelled
@@ -1775,10 +1810,15 @@ export async function PATCH(request: Request) {
         ? body.durationMinutes
         : Math.max(1, Math.round((Date.now() - acceptStartMs) / 60000));
 
-      // PURGE TRANSIENT TELEMETRY:
-      // Strip out ephemeral live coordinates, continuous odometer ticks, temporary OTP codes, and polling timestamps.
-      // Store ONLY essential audit data required for administrative records and trip history.
+      const enrichedBooking = enrichBookingCoords(booking);
+
+      // Preserve full trip coordinates, route names and audit data so /track/[id] and history never lose locations
       const cleanHistoryMeta = {
+        ...meta,
+        start_coords: meta.start_coords || (enrichedBooking.pickup_lat && enrichedBooking.pickup_lng ? [enrichedBooking.pickup_lat, enrichedBooking.pickup_lng] : null),
+        end_coords: meta.end_coords || (enrichedBooking.drop_lat && enrichedBooking.drop_lng ? [enrichedBooking.drop_lat, enrichedBooking.drop_lng] : null),
+        pickup_name: meta.pickup_name || enrichedBooking.pickup_location,
+        drop_name: meta.drop_name || enrichedBooking.drop_location,
         start_otp: meta.start_otp || null,
         actual_distance_km: distanceKm,
         calculated_fare: finalFareToCharge,
@@ -1800,6 +1840,11 @@ export async function PATCH(request: Request) {
         .update({
           status: "completed",
           final_fare: finalFareToCharge,
+          actual_distance_km: distanceKm,
+          pickup_lat: enrichedBooking.pickup_lat,
+          pickup_lng: enrichedBooking.pickup_lng,
+          drop_lat: enrichedBooking.drop_lat,
+          drop_lng: enrichedBooking.drop_lng,
           feedback: JSON.stringify(cleanHistoryMeta),
           updated_at: new Date().toISOString(),
         })

@@ -61,6 +61,8 @@ export default function TrackRidePage() {
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const pickupMarkerRef = useRef<any>(null);
+  const dropMarkerRef = useRef<any>(null);
   const driverMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
@@ -174,7 +176,7 @@ export default function TrackRidePage() {
         }).addTo(map);
 
         // Green Pickup Pin
-        L.marker(pickupCoord, {
+        pickupMarkerRef.current = L.marker(pickupCoord, {
           icon: L.divIcon({
             className: "",
             html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
@@ -186,7 +188,7 @@ export default function TrackRidePage() {
         }).addTo(map);
 
         // Red Destination Pin
-        L.marker(dropCoord, {
+        dropMarkerRef.current = L.marker(dropCoord, {
           icon: L.divIcon({
             className: "",
             html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
@@ -238,14 +240,28 @@ export default function TrackRidePage() {
 
         mapInstanceRef.current = map;
       } else {
+        // Update pickup and drop markers if coordinates refreshed
+        if (pickupMarkerRef.current) pickupMarkerRef.current.setLatLng(pickupCoord);
+        if (dropMarkerRef.current) dropMarkerRef.current.setLatLng(dropCoord);
+
         // Move live driver marker smoothly
         if (driverMarkerRef.current && activeDriverCoord) {
           driverMarkerRef.current.setLatLng(activeDriverCoord);
-          mapInstanceRef.current.panTo(activeDriverCoord, { animate: true, duration: 1.0 });
+          if (booking.status !== "completed") {
+            mapInstanceRef.current.panTo(activeDriverCoord, { animate: true, duration: 1.0 });
+          }
         }
         if (routeLineRef.current && routeCoords && routeCoords.length > 1) {
           routeLineRef.current.setLatLngs(routeCoords);
           if (routeCasingRef.current) routeCasingRef.current.setLatLngs(routeCoords);
+        }
+
+        // On ride completed: frame the completed trip route between pickup and destination
+        if (booking.status === "completed") {
+          try {
+            const bounds = L.latLngBounds([pickupCoord, dropCoord]);
+            mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+          } catch {}
         }
       }
     }

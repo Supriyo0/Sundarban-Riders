@@ -79,18 +79,21 @@ export class LiveFareMeter {
     const d = calculateHaversineKm(this.lastAccumPoint.lat, this.lastAccumPoint.lng, lat, lng);
     const dtHrs = (now - this.lastAccumPoint.ts) / 3600000;
 
-    // Movement threshold: 7 meters (0.007 km)
-    if (d >= 0.007) {
+    // Strict Deadband Filter for Stationary GPS Jitter:
+    // 1. Minimum distance: 18 meters (0.018 km) to avoid table/pocket sensor drift
+    // 2. Minimum speed: 3.0 km/h (a moving Toto moves >= 4 km/h; stationary drift is < 2.5 km/h)
+    // 3. Maximum speed: 75 km/h (filters impossible GPS teleport jumps)
+    if (d >= 0.018) {
       const speedKmh = dtHrs > 0 ? d / dtHrs : 0;
-      // Allow accumulation if speed <= 90 km/h OR if points arrived in rapid mobile network burst (< 0.8s) with reasonable distance (< 35m)
-      const isBurstPacket = dtHrs < (0.8 / 3600) && d <= 0.035;
-      if (speedKmh <= 90 || isBurstPacket) {
+      const isBurstPacket = dtHrs < (1.2 / 3600) && d <= 0.040;
+      if ((speedKmh >= 3.0 && speedKmh <= 75) || isBurstPacket) {
         this.totalKm += d;
         this.lastAccumPoint = { lat, lng, ts: now };
-      } else {
-        // Teleport anomaly: advance reference without accumulating fake distance
+      } else if (speedKmh > 75) {
+        // Teleport anomaly: re-anchor without accumulating
         this.lastAccumPoint = { lat, lng, ts: now };
       }
+      // If speedKmh < 3.0: driver is stationary / sitting in place, do NOT accumulate distance!
     }
 
     this.gpsPath.push({ lat, lng, ts: now });

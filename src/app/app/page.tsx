@@ -3761,6 +3761,8 @@ function MobileAppPageContent() {
                 pickupCoords={activeRide.pickupCoords || [21.8760, 88.1920]}
                 dropCoords={activeRide.dropCoords || [21.8680, 88.1630]}
                 driverCoords={driverLiveCoords || undefined}
+                fare={activeRide.fare}
+                distanceKm={activeRide.distanceKm}
                 status={activeRide.status === "heading_pickup" ? "heading_pickup" : "on_trip"}
                 passengerName={activeRide.passengerName}
                 passengerPhone={activeRide.passengerPhone}

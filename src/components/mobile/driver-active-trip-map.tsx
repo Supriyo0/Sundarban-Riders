@@ -32,6 +32,8 @@ interface DriverActiveTripMapProps {
   pickupCoords?: [number, number];
   dropCoords?: [number, number];
   driverCoords?: [number, number];
+  fare?: number;
+  distanceKm?: number;
   status: "heading_pickup" | "on_trip";
   passengerName?: string;
   passengerPhone?: string;
@@ -54,6 +56,8 @@ export function DriverActiveTripMap({
   pickupCoords = [21.8760, 88.1920],
   dropCoords = [21.8680, 88.1630],
   driverCoords,
+  fare,
+  distanceKm,
   status,
   passengerName = "যাত্রী",
   passengerPhone = "",
@@ -314,6 +318,10 @@ export function DriverActiveTripMap({
   }, [bookingId, onCancelledByCustomer]);
 
   const isMeteredTrip = !dropCoords || !dropCoords[0] || dropCoords[0] === 0 || (typeof drop === "string" && (drop.includes("মিটার") || drop.includes("বিনা গন্তব্য")));
+  const baseAgreedFare = Number(fare) || 0;
+  const displayedFare = isMeteredTrip
+    ? meterReading.liveFare
+    : (baseAgreedFare > 0 ? Math.max(baseAgreedFare, meterReading.liveFare) : meterReading.liveFare);
 
   // Safe coordinate normalization
   const safePickup: [number, number] = (Array.isArray(pickupCoords) && pickupCoords.length === 2 && !isNaN(Number(pickupCoords[0])) && Number(pickupCoords[0]) !== 0)
@@ -669,7 +677,7 @@ export function DriverActiveTripMap({
               </p>
               {status === "on_trip" && (
                 <span className="text-[10px] font-semibold text-slate-300 block truncate mt-0.5">
-                  ⏱️ {formatDuration(elapsedSeconds)} • 📏 {meterReading.totalKm.toFixed(2)} কিমি • 💰 ₹{meterReading.liveFare}
+                  ⏱️ {formatDuration(elapsedSeconds)} • 📏 {meterReading.totalKm.toFixed(2)} কিমি • 💰 ₹{displayedFare}
                 </span>
               )}
             </div>
@@ -743,7 +751,7 @@ export function DriverActiveTripMap({
                 <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-amber-500/25 min-w-0">
                   <span className="text-[8px] sm:text-[8.5px] text-amber-400 font-black uppercase tracking-tight block truncate">ভাড়া</span>
                   <p className="text-xs sm:text-base font-black text-amber-400 font-mono tabular-nums leading-tight mt-0.5 truncate">
-                    ₹{meterReading.liveFare}
+                    ₹{displayedFare}
                   </p>
                   <span className="text-[7.5px] sm:text-[8px] text-slate-400 block font-bold">টাকা</span>
                 </div>

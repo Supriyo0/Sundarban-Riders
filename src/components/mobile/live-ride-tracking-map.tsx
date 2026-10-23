@@ -84,6 +84,7 @@ export function LiveRideTrackingMap({
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [rating, setRating] = useState(5);
   const [rated, setRated] = useState(false);
+  const [isFollowMode, setIsFollowMode] = useState<boolean>(true);
 
   // Live timer states: Real-time duration & clock synchronized to server trip_start_time
   const [syncedTripStartTime, setSyncedTripStartTime] = useState<string | null>(
@@ -226,6 +227,10 @@ export function LiveRideTrackingMap({
   useEffect(() => {
     if (rideStep === "in_trip" || booking?.status === "in_progress") {
       setEffectiveRideStep("in_trip");
+      setIsFollowMode(true);
+      if (mapInstanceRef.current && driverPos?.[0] && driverPos[0] !== 0) {
+        mapInstanceRef.current.setView(driverPos, 18, { animate: true });
+      }
     } else {
       setEffectiveRideStep(rideStep);
     }
@@ -267,7 +272,7 @@ export function LiveRideTrackingMap({
           if (cancelled) return;
           if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2 && data.isExactRoadRoute) {
             setRouteCoords(data.coordinates);
-            if (mapInstanceRef.current) {
+            if (mapInstanceRef.current && effectiveRideStep !== "in_trip") {
               try {
                 const L = (window as any).L;
                 if (L) {
@@ -394,11 +399,16 @@ export function LiveRideTrackingMap({
         (mapContainerRef.current as any)._leaflet_id = null;
         const map = L.map(mapContainerRef.current, {
           center: driverPos,
-          zoom: 17,
+          zoom: effectiveRideStep === "in_trip" ? 18 : 17,
           zoomControl: false,
           attributionControl: false,
           scrollWheelZoom: true,
           dragging: true,
+        });
+
+        // Disable auto-follow when user manually drags/pans map
+        map.on("dragstart", () => {
+          setIsFollowMode(false);
         });
 
         // Google Maps street layer with multi-subdomain crisp street tiles
@@ -468,10 +478,12 @@ export function LiveRideTrackingMap({
           }).addTo(map);
           routeLineRef.current = line;
 
-          try {
-            const b = L.latLngBounds(routeCoords);
-            map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
-          } catch {}
+          if (effectiveRideStep !== "in_trip") {
+            try {
+              const b = L.latLngBounds(routeCoords);
+              map.fitBounds(b, { padding: [80, 80], maxZoom: 17 });
+            } catch {}
+          }
         }
 
         mapInstanceRef.current = map;
@@ -506,13 +518,17 @@ export function LiveRideTrackingMap({
           }
         }
 
-        // Pan map smoothly to follow driver only when moved >= 15m (0.015 km)
+        // Pan map smoothly to follow driver in Google Maps style navigation
         if (mapInstanceRef.current) {
-          const prev = lastPannedPosRef.current;
-          const moved = prev ? haversineKm(prev, driverPos) : 999;
-          if (moved >= 0.015) {
-            lastPannedPosRef.current = driverPos;
-            mapInstanceRef.current.panTo(driverPos, { animate: true, duration: 1.0 });
+          if (isFollowMode && effectiveRideStep === "in_trip") {
+            mapInstanceRef.current.panTo(driverPos, { animate: true, duration: 0.8 });
+          } else {
+            const prev = lastPannedPosRef.current;
+            const moved = prev ? haversineKm(prev, driverPos) : 999;
+            if (moved >= 0.015) {
+              lastPannedPosRef.current = driverPos;
+              mapInstanceRef.current.panTo(driverPos, { animate: true, duration: 1.0 });
+            }
           }
         }
       }
@@ -698,6 +714,23 @@ export function LiveRideTrackingMap({
     <div className="relative w-full h-[calc(100dvh-58px)] overflow-hidden bg-slate-900 select-none">
       {/* ── 1. FULL SCREEN MAP ── */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
+
+      {/* ── 1.5 GOOGLE MAPS STYLE RE-CENTER BUTTON ── */}
+      {!isFollowMode && effectiveRideStep === "in_trip" && (
+        <button
+          type="button"
+          onClick={() => {
+            if (mapInstanceRef.current && driverPos?.[0] && driverPos[0] !== 0) {
+              mapInstanceRef.current.setView(driverPos, 18, { animate: true });
+              setIsFollowMode(true);
+            }
+          }}
+          className="absolute bottom-56 sm:bottom-60 right-3.5 z-30 bg-white/95 hover:bg-white text-emerald-800 font-extrabold text-xs px-3.5 py-2.5 rounded-full shadow-2xl border border-emerald-300 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer backdrop-blur-md"
+        >
+          <Navigation className="w-4 h-4 fill-emerald-600 text-emerald-600 animate-pulse" />
+          <span>গাড়ি ট্র্যাক করুন (Re-center)</span>
+        </button>
+      )}
 
       {/* ── 2. TOP FLOATING STATUS HUD PILL ── */}
       <div className="absolute top-0 left-0 right-0 z-20 p-3 flex items-center justify-between pointer-events-none">

@@ -657,12 +657,12 @@ function enrichBookingCoords(booking: any) {
     driver_lng: driverLng,
     driver_coords: driverLat && driverLng ? [driverLat, driverLng] : undefined,
     start_otp: startOtp,
-    passenger_count: meta.passenger_count || 3,
     trip_distance_km: resolvedTripDist,
-    estimated_distance_km: resolvedTripDist,
-    actual_distance_km: meta.actual_distance_km || meta.live_distance_km || booking.actual_distance_km || null,
-    estimated_fare: booking.estimated_fare,
-    final_fare: booking.final_fare || meta.calculated_fare || meta.live_fare || booking.estimated_fare,
+    estimated_distance_km: Number(meta.estimated_distance_km || booking.estimated_distance_km || resolvedTripDist || 1.0),
+    actual_distance_km: Number(meta.actual_distance_km ?? meta.live_distance_km ?? booking.actual_distance_km ?? 0),
+    estimated_fare: Number(meta.estimated_fare || booking.estimated_fare || 0),
+    final_fare: Number(booking.final_fare || meta.calculated_fare || meta.final_fare || meta.live_fare || booking.estimated_fare || 0),
+    duration_minutes: Number(meta.duration_minutes || meta.trip_duration_minutes || 0),
     trip_start_time: meta.trip_start_time || null,
     tripStartTime: meta.trip_start_time || null,
     is_metered: isMeteredTrip,
@@ -1266,6 +1266,11 @@ export async function POST(request: Request) {
         customer_phone: cleanPhone,
         pickup_location: pickupLocString,
         drop_location: dropLocString,
+        pickup_lat: hasValidPickup ? Number(pickupCoords[0]) : null,
+        pickup_lng: hasValidPickup ? Number(pickupCoords[1]) : null,
+        drop_lat: hasValidDrop ? Number(dropCoords[0]) : null,
+        drop_lng: hasValidDrop ? Number(dropCoords[1]) : null,
+        trip_distance_km: calculatedDist || null,
         estimated_fare: finalEstimatedFare,
         feedback: initialMeta,
         status: "pending",
@@ -1475,6 +1480,10 @@ export async function PATCH(request: Request) {
       const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
       const startOtp = existingMeta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821");
       const acceptTimestamp = new Date().toISOString();
+
+      const dCoords = body.driverCoords || body.currentCoords || (body.driver_lat && body.driver_lng ? [Number(body.driver_lat), Number(body.driver_lng)] : null);
+      const hasDriverCoords = dCoords && Array.isArray(dCoords) && dCoords.length === 2 && dCoords[0] !== 0 && !isNaN(dCoords[0]);
+
       const updatedFeedback = updateBookingMeta(booking.feedback, {
         start_otp: startOtp,
         driver_id: validDriverId || driverId || "",
@@ -1483,7 +1492,34 @@ export async function PATCH(request: Request) {
         toto_number: totoNumber || "WB-96-T-8421",
         accepted_at: acceptTimestamp,
         trip_accepted_time: Date.now(),
+        ...(hasDriverCoords ? {
+          live_coords: dCoords,
+          driver_lat: dCoords[0],
+          driver_lng: dCoords[1],
+        } : {}),
       });
+
+      // Update driver coordinates immediately in drivers table so enrichBookingCoords finds them
+      if (hasDriverCoords) {
+        if (validDriverId) {
+          void Promise.resolve(
+            admin.from("drivers").update({
+              latitude: dCoords[0],
+              longitude: dCoords[1],
+              updated_at: new Date().toISOString(),
+            }).eq("id", validDriverId)
+          ).catch(() => {});
+        }
+        if (cleanPhone.length === 10) {
+          void Promise.resolve(
+            admin.from("drivers").update({
+              latitude: dCoords[0],
+              longitude: dCoords[1],
+              updated_at: new Date().toISOString(),
+            }).ilike("phone", `%${cleanPhone}%`)
+          ).catch(() => {});
+        }
+      }
 
       // Assign ride atomically - ONLY updating columns that exist in bookings schema
       const updateData: Record<string, any> = {
@@ -1835,11 +1871,12 @@ export async function PATCH(request: Request) {
         .update({
           status: "completed",
           final_fare: finalFareToCharge,
+          actual_distance_km: distanceKm,
           feedback: JSON.stringify(cleanHistoryMeta),
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
-        .select("*")
+        .select("*, drivers(*)")
         .single();
 
       if (compErr) {
@@ -1880,8 +1917,13 @@ export async function PATCH(request: Request) {
           actual_distance_km: distanceKm,
           fare: finalFareToCharge,
           final_fare: finalFareToCharge,
-          fareBreakdown: fareResult,
+          estimatedDistanceKm: initialEstDist,
+          estimated_distance_km: initialEstDist,
+          estimatedFare: initialEstFare,
+          estimated_fare: initialEstFare,
           durationMinutes: durationMinutes,
+          duration_minutes: durationMinutes,
+          fareBreakdown: fareResult,
           passengerName: enrichedUpdated.customer_name,
           passengerPhone: enrichedUpdated.customer_phone,
           driverName: enrichedUpdated.drivers?.name || enrichedUpdated.driver_name || "টোটো চালক",

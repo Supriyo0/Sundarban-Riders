@@ -3719,6 +3719,7 @@ function MobileAppPageContent() {
                       driverName: effectiveName,
                       driverPhone: effectivePhone,
                       totoNumber: effectiveToto,
+                      driverCoords: driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : undefined,
                     }),
                   });
                   const data = await res.json();
@@ -3853,7 +3854,9 @@ function MobileAppPageContent() {
                     durationMinutes: actualDurationMinutes,
                     duration_minutes: actualDurationMinutes,
                     estimatedDistanceKm: activeRide.distanceKm || distKm,
+                    estimated_distance_km: activeRide.distanceKm || distKm,
                     estimatedFare: activeRide.fare || finalFare,
+                    estimated_fare: activeRide.fare || finalFare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
                     status: "completed",
@@ -3896,14 +3899,24 @@ function MobileAppPageContent() {
                     .then((res) => res.json())
                     .then((data) => {
                       if (data?.booking) {
-                        const sFare = data.booking.final_fare || finalFare;
-                        const sDist = data.booking.actual_distance_km || distKm;
+                        const b = data.booking;
+                        const sFare = b.final_fare || finalFare;
+                        const sDist = b.actual_distance_km || distKm;
+                        const sEstDist = b.estimated_distance_km || completedData.estimatedDistanceKm;
+                        const sEstFare = b.estimated_fare || completedData.estimatedFare;
+                        const sDur = b.duration_minutes || actualDurationMinutes;
                         const refreshed = {
                           ...completedData,
                           fare: sFare,
                           final_fare: sFare,
                           distanceKm: sDist,
                           actual_distance_km: sDist,
+                          estimatedDistanceKm: sEstDist,
+                          estimated_distance_km: sEstDist,
+                          estimatedFare: sEstFare,
+                          estimated_fare: sEstFare,
+                          durationMinutes: sDur,
+                          duration_minutes: sDur,
                         };
                         setDriverCompletedRide(refreshed);
                         try {
@@ -4039,6 +4052,7 @@ function MobileAppPageContent() {
                           driverName: effectiveName,
                           driverPhone: effectivePhone,
                           totoNumber: effectiveToto,
+                          driverCoords: driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : undefined,
                         }),
                       });
                       const data = await res.json();
@@ -4737,6 +4751,9 @@ function MobileAppPageContent() {
                     }
                     const finalFare = b?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
                     const finalKm = b?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
+                    const estDist = b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
+                    const estFare = b?.estimated_fare || passengerBooking?.fare || tripFare;
+                    const durMin = b?.duration_minutes || passengerBooking?.durationMinutes || 1;
                     const completedData = {
                       ...b,
                       id: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
@@ -4744,7 +4761,15 @@ function MobileAppPageContent() {
                       pickup: b?.pickup_location || passengerBooking?.pickup || pickupText,
                       drop: b?.drop_location || passengerBooking?.drop || dropText,
                       fare: finalFare,
+                      final_fare: finalFare,
                       distanceKm: finalKm,
+                      actual_distance_km: finalKm,
+                      estimatedDistanceKm: estDist,
+                      estimated_distance_km: estDist,
+                      estimatedFare: estFare,
+                      estimated_fare: estFare,
+                      durationMinutes: durMin,
+                      duration_minutes: durMin,
                       driverName: b?.driver_name || passengerBooking?.driverName || "টোটো চালক",
                       driverPhone: b?.driver_phone || passengerBooking?.driverPhone || "",
                       totoNumber: b?.toto_number || passengerBooking?.totoNumber || "SR-DRV",

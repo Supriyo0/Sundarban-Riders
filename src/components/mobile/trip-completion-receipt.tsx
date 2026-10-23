@@ -120,12 +120,14 @@ export function TripCompletionReceipt({
     }
   };
 
+  const safeEstDist = Number(estimatedDistanceKm || distanceKm || 1.0);
+  const safeEstFare = Number(estimatedFare || fare || 30);
+  const safeActualDist = Number(distanceKm || safeEstDist);
+  const safeDuration = Number(durationMinutes || 1);
+  const safeFinalFare = Number(fare || safeEstFare);
+
   // WhatsApp Receipt Share
   const handleShareReceiptOnWhatsApp = () => {
-    const estNote = estimatedDistanceKm && estimatedDistanceKm !== distanceKm
-      ? `\n📌 *প্রাথমিক বুকিং:* ${estimatedDistanceKm} কিমি (আনুমানিক ₹${estimatedFare || fare}.০০)`
-      : "";
-
     const receiptMsg = `🧾 *সুন্দরবন রাইডার্স — ডিজিটাল রসিদ ও ট্রিপ সারাংশ*
 ==============================
 🆔 রাইড নং: #${tripId}
@@ -136,12 +138,13 @@ export function TripCompletionReceipt({
 📞 চালকের ফোন: ${driverPhone}
 
 📍 *পিকআপ:* ${pickup}
-🏁 *গন্তব্য:* ${drop}${estNote}
-📏 *প্রকৃত ভ্রমণ দূরত্ব:* ${distanceKm} কিমি
-⏱️ *মোট ভ্রমণের সময় (Accept to Finish):* ~${durationMinutes} মিনিট
+🏁 *গন্তব্য:* ${drop}
+📌 *প্রাথমিক বুকিং অনুমান:* ${safeEstDist} কিমি (আনুমানিক ₹${safeEstFare}.০০)
+📏 *প্রকৃত ভ্রমণ দূরত্ব (ওডোমিটার):* ${safeActualDist} কিমি
+⏱️ *মোট ভ্রমণের সময়:* ~${safeDuration} মিনিট
 
 💵 *ভাড়ার বিবরণ:*
-- প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹${fare}.০০ (সংগৃহীত)
+- প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹${safeFinalFare}.০০ (সংগৃহীত)
 ==============================
 সুন্দরবন রাইডার্সের সাথে ভ্রমণ করার জন্য ধন্যবাদ! নিরাপদ ও আরামদায়ক যাত্রা।`;
 
@@ -347,33 +350,37 @@ export function TripCompletionReceipt({
                 </div>
               )}
 
-              {/* Initial vs Actual Realized Comparison (For early drop-off or extended distance) */}
-              {estimatedDistanceKm !== undefined && estimatedFare !== undefined && (
-                <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs space-y-1.5">
-                  <div className="flex items-center justify-between text-slate-600 font-semibold">
-                    <span>📌 প্রাথমিক বুকিং অনুমান:</span>
-                    <span className="font-mono text-slate-700">{estimatedDistanceKm} কিমি • ₹{estimatedFare}</span>
-                  </div>
-                  <div className="flex items-center justify-between font-black text-amber-950 pt-1 border-t border-amber-200">
-                    <span>🏁 প্রকৃত ভ্রমণ ও স্থায়িত্ব:</span>
-                    <span className="text-emerald-700 font-mono">{distanceKm} কিমি • ~{durationMinutes} মিনিট</span>
-                  </div>
+              {/* Initial vs Actual Realized Comparison (Synchronized with Live Odometer) */}
+              <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs space-y-2">
+                <div className="flex items-center justify-between text-slate-700 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <span>📌</span>
+                    <span>প্রাথমিক বুকিং অনুমান:</span>
+                  </span>
+                  <span className="font-mono font-bold text-slate-800">{safeEstDist} কিমি • ₹{safeEstFare}</span>
                 </div>
-              )}
+                <div className="flex items-center justify-between font-black text-amber-950 pt-1.5 border-t border-amber-200">
+                  <span className="flex items-center gap-1.5">
+                    <span>🏁</span>
+                    <span>প্রকৃত ভ্রমণ (ওডোমিটার):</span>
+                  </span>
+                  <span className="text-emerald-700 font-mono text-sm">{safeActualDist} কিমি • ~{safeDuration} মিনিট</span>
+                </div>
+              </div>
 
               {/* Fare Breakdown */}
               <div className="space-y-1.5 pt-1 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
-                  <span>ভ্রমণ দূরত্ব (Travel Distance):</span>
-                  <span className="font-bold text-slate-900">{distanceKm} কিমি</span>
+                  <span>প্রকৃত ভ্রমণ দূরত্ব (Travel Distance):</span>
+                  <span className="font-bold text-slate-900">{safeActualDist} কিমি</span>
                 </div>
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>মোট ভ্রমণের সময় (Accept to Finish):</span>
-                  <span className="font-bold text-slate-900">~{durationMinutes} মিনিট</span>
+                  <span className="font-bold text-slate-900">~{safeDuration} মিনিট</span>
                 </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
                   <span>চূড়ান্ত প্রদেয় নগদ ভাড়া (Final Cash Fare):</span>
-                  <span className="text-emerald-600 text-lg">₹{fare}.০০</span>
+                  <span className="text-emerald-600 text-lg">₹{safeFinalFare}.০০</span>
                 </div>
               </div>
             </div>

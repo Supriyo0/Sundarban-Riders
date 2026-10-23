@@ -97,6 +97,7 @@ export function DriverActiveTripMap({
     currentSpeedKmh: 0,
   });
   const [hasArrived, setHasArrived] = useState(false);
+  const [isFollowMode, setIsFollowMode] = useState<boolean>(true);
 
   // Live timer states: Real-time duration & clock
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -411,14 +412,20 @@ export function DriverActiveTripMap({
   const isFetchingRouteRef = useRef<boolean>(false);
 
   // When status transitions (e.g. from heading_pickup to on_trip after OTP verification),
-  // immediately reset lastFetchedOrigin and trigger road route recalculation
+  // immediately reset lastFetchedOrigin, zoom in to street level 18, and trigger road route recalculation
   useEffect(() => {
     if (lastStatusRef.current !== status) {
       lastStatusRef.current = status;
       lastFetchedOriginRef.current = null;
       setRouteLoaded(false);
+      if (status === "on_trip") {
+        setIsFollowMode(true);
+        if (mapInstanceRef.current && currentFrom?.[0]) {
+          mapInstanceRef.current.setView(currentFrom, 18, { animate: true });
+        }
+      }
     }
-  }, [status]);
+  }, [status, currentFrom]);
 
   useEffect(() => {
     const to: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
@@ -486,11 +493,16 @@ export function DriverActiveTripMap({
 
           const map = L.map(mapContainerRef.current, {
             center: currentFrom,
-            zoom: 17,
+            zoom: status === "on_trip" ? 18 : 17,
             zoomControl: false,
             attributionControl: false,
             scrollWheelZoom: true,
             dragging: true,
+          });
+
+          // Disable auto-follow when driver pans/drags map manually
+          map.on("dragstart", () => {
+            setIsFollowMode(false);
           });
 
           // Google Maps street layer with multi-subdomain rotation and pre-buffering
@@ -537,8 +549,9 @@ export function DriverActiveTripMap({
           // NOTE: Route polylines are NOT drawn here at init time.
           // They are drawn by the `routeLoaded` effect once the road route API responds.
           // This prevents a straight fallback line appearing before the real route loads.
-          if (status === "on_trip" && isMeteredTrip) {
-            map.setView(currentFrom, 16);
+          // When ride is active, zoom in to street-level 18 for Google Maps style turn-by-turn navigation
+          if (status === "on_trip") {
+            map.setView(currentFrom, 18);
           } else {
             // Center map between driver and destination; route will be fitted once loaded
             try {
@@ -583,14 +596,17 @@ export function DriverActiveTripMap({
     };
   }, []);
 
-  // Update driver marker position on every GPS update (smooth tracking)
+  // Update driver marker position on every GPS update (smooth tracking like Google Maps)
   useEffect(() => {
     if (!mapInstanceRef.current || !driverMarkerRef.current || !currentFrom?.[0]) return;
     try {
       driverMarkerRef.current.setLatLng(currentFrom);
+      if (isFollowMode && status === "on_trip") {
+        mapInstanceRef.current.panTo(currentFrom, { animate: true, duration: 0.8 });
+      }
       mapInstanceRef.current.invalidateSize();
     } catch {}
-  }, [currentFrom?.[0], currentFrom?.[1]]);
+  }, [currentFrom?.[0], currentFrom?.[1], isFollowMode, status]);
 
   // Immediate Destination Marker update on status or destination change (Zero wait for route API)
   useEffect(() => {
@@ -649,8 +665,8 @@ export function DriverActiveTripMap({
           routeLineRef.current = line;
         }
 
-        // Fit bounds to show full route
-        if (L) {
+        // Fit bounds to show full route ONLY when heading to pickup (never zoom out during on_trip navigation)
+        if (L && status !== "on_trip") {
           try {
             const b = L.latLngBounds(routeCoords);
             mapInstanceRef.current.fitBounds(b, { padding: [70, 70], maxZoom: 17 });
@@ -678,6 +694,23 @@ export function DriverActiveTripMap({
 
       {/* ── 1. FULL-SCREEN LEAFLET NAVIGATION MAP ── */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
+
+      {/* ── 1.5 GOOGLE MAPS STYLE RE-CENTER BUTTON ── */}
+      {!isFollowMode && status === "on_trip" && (
+        <button
+          type="button"
+          onClick={() => {
+            if (mapInstanceRef.current && currentFrom?.[0]) {
+              mapInstanceRef.current.setView(currentFrom, 18, { animate: true });
+              setIsFollowMode(true);
+            }
+          }}
+          className="absolute bottom-56 sm:bottom-60 right-3.5 z-30 bg-white/95 hover:bg-white text-emerald-800 font-extrabold text-xs px-3.5 py-2.5 rounded-full shadow-2xl border border-emerald-300 flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer backdrop-blur-md"
+        >
+          <Navigation className="w-4 h-4 fill-emerald-600 text-emerald-600 animate-pulse" />
+          <span>গাড়ি ট্র্যাক করুন (Re-center)</span>
+        </button>
+      )}
 
       {/* ── 2. TOP FLOATING NAVIGATION HUD (Rapido Captain Style) ── */}
       <div className="absolute top-0 sm:top-2 left-0 right-0 z-30 p-3 pt-3 sm:pt-4 pointer-events-none space-y-2">

@@ -30,6 +30,8 @@ interface LiveRideTrackingMapProps {
     driver_lng?: number | string;
     trip_start_time?: string;
     tripStartTime?: string;
+    status?: string;
+    route_coordinates?: [number, number][];
   };
   rideStep: "assigned" | "arriving" | "in_trip" | "arrived";
   pickupText: string;
@@ -222,27 +224,39 @@ export function LiveRideTrackingMap({
 
   const [effectiveRideStep, setEffectiveRideStep] = useState(rideStep);
   useEffect(() => {
-    setEffectiveRideStep(rideStep);
-  }, [rideStep]);
+    if (rideStep === "in_trip" || booking?.status === "in_progress") {
+      setEffectiveRideStep("in_trip");
+    } else {
+      setEffectiveRideStep(rideStep);
+    }
+  }, [rideStep, booking?.status]);
 
   // 1. Fetch real street-following road route from /api/route
   const routeOriginSnapshotRef = useRef<[number, number] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const target = effectiveRideStep === "in_trip" ? dropCoords : pickupCoords;
+    const isTrip = effectiveRideStep === "in_trip";
+    const target = isTrip ? dropCoords : pickupCoords;
 
     // Metered trip without preset drop — do not attempt route to [0,0]
     if (!target || target[0] === 0 || isNaN(target[0])) return;
 
     // Origin is driver position or pickup during in_trip (heading to destination), or driverPos when arriving to pickup
     const snapFrom: [number, number] =
-      effectiveRideStep === "in_trip"
+      isTrip
         ? (driverPos[0] && driverPos[0] !== 0 ? driverPos : pickupCoords)
         : (driverPos[0] && driverPos[0] !== 0
           ? driverPos
           : [pickupCoords[0] + 0.003, pickupCoords[1] + 0.003]);
     routeOriginSnapshotRef.current = snapFrom;
 
+    // Pre-populate with booking's saved road coordinates if available
+    const savedCoords = (booking as any)?.route_coordinates || (booking as any)?.coordinates;
+    if (isTrip && Array.isArray(savedCoords) && savedCoords.length > 2) {
+      setRouteCoords(savedCoords);
+    }
+
+    // Immediately fetch road route with 0ms delay
     const timer = setTimeout(() => {
       const from = routeOriginSnapshotRef.current ?? snapFrom;
       fetch(`/api/route?fromLat=${from[0]}&fromLng=${from[1]}&toLat=${target[0]}&toLng=${target[1]}`, {
@@ -264,7 +278,7 @@ export function LiveRideTrackingMap({
           }
         })
         .catch(() => {});
-    }, 300);
+    }, 50);
 
     return () => {
       cancelled = true;

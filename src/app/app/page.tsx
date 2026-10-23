@@ -3828,98 +3828,82 @@ function MobileAppPageContent() {
                   toast.warning("যাত্রী রাইড বাতিল করেছেন।");
                 }}
                 onCompleteTrip={async (finalKm) => {
-                  try {
-                    const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
-                    const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+                  const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
+                  const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
+                  const distKm = typeof finalKm === "number" && finalKm > 0 ? finalKm : (activeRide.distanceKm || 1.0);
+                  const finalFare = activeRide.fare || 25;
 
-                    const res = await fetch("/api/bookings", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        action: "complete",
-                        bookingId: activeRide.id,
-                        driverId: session?.driverId,
-                        endCoords: driverLiveCoords || null,
-                        finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
-                        durationMinutes: actualDurationMinutes,
-                      }),
-                    });
-                    const data = await res.json();
-                    const finalFare = data.booking?.final_fare || activeRide.fare || 50;
-                    const distKm = data.booking?.actual_distance_km || finalKm || 1.0;
-                    const estDist = activeRide.distanceKm || distKm;
-                    const estFare = activeRide.fare || finalFare;
+                  const completedData = {
+                    id: activeRide.bookingNumber || activeRide.id,
+                    bookingNumber: activeRide.bookingNumber || activeRide.id,
+                    pickup: activeRide.pickup,
+                    drop: activeRide.drop,
+                    fare: finalFare,
+                    final_fare: finalFare,
+                    distanceKm: distKm,
+                    actual_distance_km: distKm,
+                    durationMinutes: actualDurationMinutes,
+                    duration_minutes: actualDurationMinutes,
+                    estimatedDistanceKm: activeRide.distanceKm || distKm,
+                    estimatedFare: activeRide.fare || finalFare,
+                    passengerName: activeRide.passengerName,
+                    passengerPhone: activeRide.passengerPhone,
+                    status: "completed",
+                    completedAt: new Date().toISOString(),
+                    created_at: activeRide.created_at || new Date().toISOString(),
+                  };
 
-                    playSuccessSound();
-                    const completedData = {
-                      id: activeRide.bookingNumber || activeRide.id,
-                      bookingNumber: activeRide.bookingNumber,
-                      pickup: activeRide.pickup,
-                      drop: activeRide.drop,
-                      fare: finalFare,
-                      final_fare: finalFare,
-                      distanceKm: distKm,
-                      actual_distance_km: distKm,
-                      durationMinutes: actualDurationMinutes,
-                      duration_minutes: actualDurationMinutes,
-                      estimatedDistanceKm: estDist,
-                      estimatedFare: estFare,
-                      passengerName: activeRide.passengerName,
-                      passengerPhone: activeRide.passengerPhone,
-                      status: "completed",
-                      completedAt: new Date().toISOString(),
-                      created_at: activeRide.created_at || new Date().toISOString(),
-                    };
-                    setDriverCompletedRide(completedData);
-                    if (typeof window !== "undefined") {
-                      localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                      localStorage.removeItem("sr_active_ride");
-                      localStorage.removeItem("sr_live_driver_loc");
+                  // 1. INSTANT 0ms OPTIMISTIC UI TRANSITION
+                  playSuccessSound();
+                  setDriverCompletedRide(completedData);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
+                    localStorage.removeItem("sr_active_ride");
+                    localStorage.removeItem("sr_live_driver_loc");
 
-                      // Persist full ride history locally on driver's device
-                      try {
-                        const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
-                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
-                        localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
-                      } catch {}
-                    }
-                    setActiveRide(null);
-                    setPhase("rider_trip_completed");
-                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
-                  } catch {
-                    playSuccessSound();
-                    const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
-                    const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-                    const completedData = {
-                      id: activeRide.bookingNumber || activeRide.id,
-                      pickup: activeRide.pickup,
-                      drop: activeRide.drop,
-                      fare: activeRide.fare || 50,
-                      distanceKm: finalKm || 1.0,
-                      durationMinutes: actualDurationMinutes,
-                      duration_minutes: actualDurationMinutes,
-                      estimatedDistanceKm: activeRide.distanceKm,
-                      estimatedFare: activeRide.fare,
-                      passengerName: activeRide.passengerName,
-                      passengerPhone: activeRide.passengerPhone,
-                      completedAt: new Date().toISOString(),
-                    };
-                    setDriverCompletedRide(completedData);
-                    if (typeof window !== "undefined") {
-                      localStorage.setItem("sr_driver_completed_ride", JSON.stringify(completedData));
-                      localStorage.removeItem("sr_active_ride");
-                      localStorage.removeItem("sr_live_driver_loc");
-
-                      try {
-                        const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
-                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
-                        localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
-                      } catch {}
-                    }
-                    setActiveRide(null);
-                    setPhase("rider_trip_completed");
-                    toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ সংগ্রহ করুন।`);
+                    // Persist full ride history locally on driver's device
+                    try {
+                      const hist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
+                      const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                      localStorage.setItem("sr_driver_trip_history", JSON.stringify(updatedHist));
+                    } catch {}
                   }
+                  setActiveRide(null);
+                  setPhase("rider_trip_completed");
+                  toast.success(`ট্রিপ সফলভাবে সমাপ্ত! নগদ ₹${finalFare}.00 সংগ্রহ করুন।`);
+
+                  // 2. Background server synchronization without blocking UI
+                  fetch("/api/bookings", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "complete",
+                      bookingId: activeRide.id,
+                      driverId: session?.driverId,
+                      endCoords: driverLiveCoords || null,
+                      finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
+                      durationMinutes: actualDurationMinutes,
+                    }),
+                  })
+                    .then((res) => res.json())
+                    .then((data) => {
+                      if (data?.booking) {
+                        const sFare = data.booking.final_fare || finalFare;
+                        const sDist = data.booking.actual_distance_km || distKm;
+                        const refreshed = {
+                          ...completedData,
+                          fare: sFare,
+                          final_fare: sFare,
+                          distanceKm: sDist,
+                          actual_distance_km: sDist,
+                        };
+                        setDriverCompletedRide(refreshed);
+                        try {
+                          localStorage.setItem("sr_driver_completed_ride", JSON.stringify(refreshed));
+                        } catch {}
+                      }
+                    })
+                    .catch(() => {});
                 }}
               />
             </AppErrorBoundary>

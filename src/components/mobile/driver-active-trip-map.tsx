@@ -378,8 +378,26 @@ export function DriverActiveTripMap({
     }
   }, [activeDriverCoords, status, bookingId, onOdometerUpdate]);
 
-  // Stable reference to last fetched origin to prevent infinite fetching while ensuring road route updates
+  // Stable reference to last fetched origin and status to ensure route recalculates when OTP is verified
   const lastFetchedOriginRef = useRef<[number, number] | null>(null);
+  const lastStatusRef = useRef<string>(status);
+
+  // When status transitions (e.g. from heading_pickup to on_trip after OTP verification),
+  // immediately reset lastFetchedOrigin and trigger an instant drop route recalculation
+  useEffect(() => {
+    if (lastStatusRef.current !== status) {
+      lastStatusRef.current = status;
+      lastFetchedOriginRef.current = null;
+      setRouteLoaded(false);
+
+      const to: [number, number] = status === "heading_pickup" ? safePickup : safeDrop;
+      if (to && to[0] !== 0) {
+        // Immediately draw direct route to target so map is never blank or showing old pickup route
+        setRouteCoords([currentFrom, to]);
+        setRouteLoaded(true);
+      }
+    }
+  }, [status, safePickup, safeDrop, currentFrom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -397,8 +415,8 @@ export function DriverActiveTripMap({
       ? calculateDistanceKm(last[0], last[1], snapOrigin[0], snapOrigin[1])
       : 999;
 
-    // If already have road route and haven't moved > 150m, skip re-fetching
-    if (last && distMoved < 0.15 && routeCoords.length > 2) {
+    // If already have road route for this status and haven't moved > 150m, skip re-fetching
+    if (last && distMoved < 0.15 && routeCoords.length > 2 && lastStatusRef.current === status) {
       return;
     }
 
@@ -415,15 +433,20 @@ export function DriverActiveTripMap({
           setRouteCoords(data.coordinates);
           setRouteLoaded(true);
           lastFetchedOriginRef.current = origin;
+          lastStatusRef.current = status;
         }
         if (data?.distanceKm) setRouteDistance(data.distanceKm);
         if (data?.durationMin) setRouteDuration(data.durationMin);
       } catch {
-        // Silently preserve existing route on transient network glitch without drawing straight line
+        // Fallback connecting route geometry
+        if (!cancelled && to && to[0] !== 0) {
+          setRouteCoords([origin, to]);
+          setRouteLoaded(true);
+        }
       }
     };
 
-    const timer = setTimeout(() => fetchRoute(snapOrigin), 350);
+    const timer = setTimeout(() => fetchRoute(snapOrigin), 150);
 
     return () => {
       cancelled = true;
@@ -565,6 +588,20 @@ export function DriverActiveTripMap({
 
       if (destMarkerRef.current && targetCoords?.[0]) {
         destMarkerRef.current.setLatLng(targetCoords);
+        if (L) {
+          destMarkerRef.current.setIcon(
+            L.divIcon({
+              className: "",
+              html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
+                <div style="background:${status === "heading_pickup" ? "#059669" : "#dc2626"};color:white;font-size:10px;font-weight:800;padding:3px 8px;border-radius:9999px;box-shadow:0 3px 8px rgba(0,0,0,0.3);white-space:nowrap;border:2px solid white;margin-bottom:3px;">
+                  ${status === "heading_pickup" ? "📍 পিকআপ" : "🏁 গন্তব্য"}
+                </div>
+                <div style="width:22px;height:22px;background:${status === "heading_pickup" ? "#10b981" : "#ef4444"};border:3px solid white;border-radius:50%;box-shadow:0 3px 10px rgba(0,0,0,0.4);"></div>
+              </div>`,
+              iconSize: [0, 0],
+            })
+          );
+        }
       }
 
       if (routeCasingRef.current && routeLineRef.current) {

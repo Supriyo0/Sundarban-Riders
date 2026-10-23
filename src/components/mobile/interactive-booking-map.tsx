@@ -1782,7 +1782,7 @@ export function InteractiveBookingMap({
               fitBounds: Boolean(dropInputRef.current),
               flyDuration: 1.0,
             });
-          } else {
+          } else if (curSearch === "drop") {
             const inService = isLocationInServiceArea(clickedCoords[0], clickedCoords[1]);
             setIsDropOutOfService(!inService);
             if (!inService) {

@@ -1738,8 +1738,12 @@ export async function PATCH(request: Request) {
 
       let distanceKm = 0.0;
       let calculatedRoadDist = 1.0;
-      if (!isMeteredTrip && sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
-        calculatedRoadDist = await calculateAccurateRoadDistance(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
+      const cachedBookingDist = Number(booking.estimated_distance_km) || Number(meta.estimated_distance_km) || Number(booking.actual_distance_km);
+      if (cachedBookingDist && cachedBookingDist > 0) {
+        calculatedRoadDist = cachedBookingDist;
+      } else if (!isMeteredTrip && sCoords && eCoords && sCoords[0] && sCoords[1] && eCoords[0] && eCoords[1]) {
+        const directKm = calculateDistanceKm(sCoords[0], sCoords[1], eCoords[0], eCoords[1]);
+        calculatedRoadDist = Math.max(0.5, Math.round(directKm * 1.25 * 10) / 10);
       }
       if (calculatedRoadDist <= 0) calculatedRoadDist = 1.0;
 
@@ -1835,7 +1839,7 @@ export async function PATCH(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
-        .select("*, drivers(*)")
+        .select("*")
         .single();
 
       if (compErr) {

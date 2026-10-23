@@ -118,18 +118,32 @@ export async function GET(req: Request) {
     }> = [];
     let isExactRoadRoute = false;
 
-    // 1. PRIMARY ENGINE: Mapbox Directions API (100,000 requests/month free forever)
+    // 1. PRIMARY ENGINE: Mapbox Directions API (Driving + Rural Toto/Cycling Fallback)
     const mapboxToken =
       process.env.MAPBOX_ACCESS_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
     if (mapboxToken) {
       try {
         const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&continue_straight=false&access_token=${mapboxToken}`;
-        const mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(4000) }).catch(() => null);
+        let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(4000) }).catch(() => null);
 
         let route: any = null;
         if (mbRes && mbRes.ok) {
           const dData = await mbRes.json();
-          route = dData?.routes?.[0];
+          if (dData?.code === "Ok" && dData?.routes?.length > 0) {
+            route = dData.routes[0];
+          }
+        }
+
+        // Rural Toto fallback: If car driving returns NoRoute or NoSegment (e.g. narrow village brick paths), query cycling profile
+        if (!route) {
+          const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&access_token=${mapboxToken}`;
+          const cycRes = await fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null);
+          if (cycRes && cycRes.ok) {
+            const cycData = await cycRes.json();
+            if (cycData?.code === "Ok" && cycData?.routes?.length > 0) {
+              route = cycData.routes[0];
+            }
+          }
         }
 
         if (
@@ -163,11 +177,12 @@ export async function GET(req: Request) {
       }
     }
 
-    // 2. SECONDARY FALLBACK: Query OSRM Driving Mirrors if Mapbox returned nothing
+    // 2. SECONDARY FALLBACK: Query OSRM Driving & Bike Mirrors if Mapbox returned nothing
     if (coordinates.length === 0) {
       const osrmEndpoints = [
         `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
         `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
+        `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       ];
 
       const queryEndpoint = async (url: string) => {
@@ -222,36 +237,30 @@ export async function GET(req: Request) {
       } catch {}
     }
 
-    // 3. Fallback road corridor generation following natural road curvature (> 15 points)
+    // 3. Clean Direct Line Fallback (NEVER synthesize jagged sine-wave zigzags)
     if (coordinates.length === 0) {
       const directDist = calculateDistanceKm(fromLat, fromLng, toLat, toLng);
-      const roadWindingFactor = 1.35;
-      distanceKm = Math.max(1.0, Math.round(directDist * roadWindingFactor * 10) / 10);
-      durationMin = Math.max(3, Math.round(distanceKm * 2.8));
-      
-      const numPoints = Math.max(15, Math.min(45, Math.round(distanceKm * 10)));
-      coordinates = [];
-      for (let i = 0; i <= numPoints; i++) {
-        const t = i / numPoints;
-        const roadWiggle = Math.sin(t * Math.PI) * 0.0016 * Math.sin(t * 3 * Math.PI);
-        const pLat = fromLat + (toLat - fromLat) * t + roadWiggle;
-        const pLng = fromLng + (toLng - fromLng) * t + roadWiggle * 0.8;
-        coordinates.push([Number(pLat.toFixed(6)), Number(pLng.toFixed(6))]);
-      }
-      isExactRoadRoute = true;
+      const roadWindingFactor = 1.25;
+      distanceKm = Math.max(0.8, Math.round(directDist * roadWindingFactor * 10) / 10);
+      durationMin = Math.max(2, Math.round(distanceKm * 2.5));
+      coordinates = [
+        [fromLat, fromLng],
+        [toLat, toLng],
+      ];
+      isExactRoadRoute = false;
     } else {
-      // 4. Seamless Marker Connection: Ensure route coordinates physically touch both pickup & drop pins
+      // 4. Seamless Marker Connection: Ensure route coordinates smoothly touch both pins without duplicates
       const firstCoord = coordinates[0];
       const lastCoord = coordinates[coordinates.length - 1];
       const connected: [number, number][] = [];
 
-      // Prepend exact origin if road snap had an offset
-      if (Math.hypot(firstCoord[0] - fromLat, firstCoord[1] - fromLng) > 0.00005) {
+      // Only prepend origin if road snap is more than 15 meters away
+      if (Math.hypot(firstCoord[0] - fromLat, firstCoord[1] - fromLng) > 0.00015) {
         connected.push([fromLat, fromLng]);
       }
       connected.push(...coordinates);
-      // Append exact destination so polyline ends right inside the red drop marker
-      if (Math.hypot(lastCoord[0] - toLat, lastCoord[1] - toLng) > 0.00005) {
+      // Only append destination if road snap is more than 15 meters away
+      if (Math.hypot(lastCoord[0] - toLat, lastCoord[1] - toLng) > 0.00015) {
         connected.push([toLat, toLng]);
       }
       coordinates = connected;

@@ -14,12 +14,16 @@ export async function GET(request: Request) {
       .select("*")
       .order("created_at", { ascending: false });
 
+    const showAll = url.searchParams.get("all") === "true";
+
     if (filterId) {
       query = query.eq("id", filterId);
     } else if (filterPhone) {
       const cleanPhone = filterPhone.replace(/\D/g, "");
       const last10 = cleanPhone.slice(-10);
       query = query.or(`phone.eq.${filterPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`);
+    } else if (!showAll) {
+      query = query.eq("is_active", true);
     }
 
     const { data, error } = await query;

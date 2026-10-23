@@ -146,10 +146,10 @@ interface InteractiveBookingMapProps {
   initialPickupCoords?: [number, number];
   initialDropCoords?: [number, number];
   onRouteSelected?: (route: {
-    pickup: string;
-    drop: string;
-    distanceKm: number;
-    estimatedFare: number;
+    pickup?: string;
+    drop?: string;
+    distanceKm?: number;
+    estimatedFare?: number;
     rideTier?: RideTier;
     pickupCoords?: [number, number];
     dropCoords?: [number, number];
@@ -775,17 +775,11 @@ export function InteractiveBookingMap({
             draggable: true,
           }).addTo(map);
 
-          pMarker.on("drag", (e: any) => {
-            const newPos = e.target.getLatLng();
-            // Keep green/black line physically attached to pickup pin during drag
+          pMarker.on("drag", () => {
+            // Softly dim route lines while dragging pickup pin to indicate pending route recalculation
             if (routeLineRef.current && routeLineBorderRef.current) {
-              const currentLatLngs = routeLineRef.current.getLatLngs();
-              if (currentLatLngs && currentLatLngs.length > 1) {
-                const updated = [...currentLatLngs];
-                updated[0] = newPos;
-                routeLineBorderRef.current.setLatLngs(updated);
-                routeLineRef.current.setLatLngs(updated);
-              }
+              routeLineBorderRef.current.setStyle({ opacity: 0.35 });
+              routeLineRef.current.setStyle({ opacity: 0.4 });
             }
           });
 
@@ -793,9 +787,14 @@ export function InteractiveBookingMap({
             const newPos = e.target.getLatLng();
             const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
             setPickupCoords(newPosCoords);
+            pickupCoordsRef.current = newPosCoords;
             setHasValidPickup(true);
             setLocationError(null);
             setIsCalculatingRoute(true);
+
+            if (routeAbortControllerRef.current) {
+              routeAbortControllerRef.current.abort();
+            }
 
             syncMapRouteAndPins(newPosCoords, dropCoordsRef.current, pickupInputRef.current || "Current Location", dropInputRef.current || "Drop Location", {
               fitBounds: false,
@@ -803,6 +802,11 @@ export function InteractiveBookingMap({
 
             resolveLocationAddress(newPosCoords[0], newPosCoords[1]).then((resolved) => {
               setPickupInputValue(resolved);
+              pickupInputRef.current = resolved;
+              onRouteSelectedRef.current?.({
+                pickup: resolved,
+                pickupCoords: newPosCoords,
+              });
             });
           });
 
@@ -823,17 +827,11 @@ export function InteractiveBookingMap({
             draggable: true,
           }).addTo(map);
 
-          dMarker.on("drag", (e: any) => {
-            const newPos = e.target.getLatLng();
-            // Keep green/black line physically attached to red drop pin during drag
+          dMarker.on("drag", () => {
+            // Softly dim route lines while dragging drop pin so user sees new destination being picked
             if (routeLineRef.current && routeLineBorderRef.current) {
-              const currentLatLngs = routeLineRef.current.getLatLngs();
-              if (currentLatLngs && currentLatLngs.length > 1) {
-                const updated = [...currentLatLngs];
-                updated[updated.length - 1] = newPos;
-                routeLineBorderRef.current.setLatLngs(updated);
-                routeLineRef.current.setLatLngs(updated);
-              }
+              routeLineBorderRef.current.setStyle({ opacity: 0.35 });
+              routeLineRef.current.setStyle({ opacity: 0.4 });
             }
           });
 
@@ -841,7 +839,12 @@ export function InteractiveBookingMap({
             const newPos = e.target.getLatLng();
             const newPosCoords: [number, number] = [newPos.lat, newPos.lng];
             setDropCoords(newPosCoords);
+            dropCoordsRef.current = newPosCoords;
             setIsCalculatingRoute(true);
+
+            if (routeAbortControllerRef.current) {
+              routeAbortControllerRef.current.abort();
+            }
 
             syncMapRouteAndPins(pickupCoordsRef.current, newPosCoords, pickupInputRef.current || "Current Location", dropInputRef.current || "Drop Location", {
               fitBounds: false,
@@ -849,6 +852,7 @@ export function InteractiveBookingMap({
 
             resolveLocationAddress(newPosCoords[0], newPosCoords[1]).then((resolved) => {
               setDropInputValue(resolved);
+              dropInputRef.current = resolved;
             });
           });
 
@@ -887,17 +891,24 @@ export function InteractiveBookingMap({
         const applyRouteGeometry = (coords: [number, number][]) => {
           if (!map || !coords || coords.length === 0) return;
 
-          // Always ensure the route line touches both pickup and drop pins seamlessly
-          const fullPath: [number, number][] = [
-            pCoords,
-            ...coords.filter((c) => {
-              return (
-                (c[0] !== pCoords[0] || c[1] !== pCoords[1]) &&
-                (c[0] !== dCoords[0] || c[1] !== dCoords[1])
-              );
-            }),
-            dCoords,
-          ];
+          let fullPath: [number, number][] = [...coords];
+          if (fullPath.length === 0) {
+            fullPath = [pCoords, dCoords];
+          } else {
+            // Smoothly anchor first point to pickup marker without hairpin loop
+            if (Math.hypot(fullPath[0][0] - pCoords[0], fullPath[0][1] - pCoords[1]) < 0.0003) {
+              fullPath[0] = pCoords;
+            } else {
+              fullPath.unshift(pCoords);
+            }
+            // Smoothly anchor last point to drop marker without hairpin loop
+            const lastIdx = fullPath.length - 1;
+            if (Math.hypot(fullPath[lastIdx][0] - dCoords[0], fullPath[lastIdx][1] - dCoords[1]) < 0.0003) {
+              fullPath[lastIdx] = dCoords;
+            } else {
+              fullPath.push(dCoords);
+            }
+          }
 
           if (!routeLineBorderRef.current || !map.hasLayer(routeLineBorderRef.current)) {
             routeLineBorderRef.current = L.polyline(fullPath, {
@@ -909,6 +920,7 @@ export function InteractiveBookingMap({
             }).addTo(map);
           } else {
             routeLineBorderRef.current.setLatLngs(fullPath);
+            routeLineBorderRef.current.setStyle({ opacity: 0.95 });
           }
 
           if (!routeLineRef.current || !map.hasLayer(routeLineRef.current)) {
@@ -922,6 +934,7 @@ export function InteractiveBookingMap({
             }).addTo(map);
           } else {
             routeLineRef.current.setLatLngs(fullPath);
+            routeLineRef.current.setStyle({ opacity: 1.0 });
           }
 
           try {
@@ -965,6 +978,9 @@ export function InteractiveBookingMap({
           });
         } else {
           try {
+            if (routeAbortControllerRef.current) {
+              routeAbortControllerRef.current.abort();
+            }
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
             const safetyTimer = setTimeout(() => controller.abort(), 8000);
@@ -980,7 +996,7 @@ export function InteractiveBookingMap({
               if (
                 data?.coordinates &&
                 Array.isArray(data.coordinates) &&
-                data.coordinates.length > 2
+                data.coordinates.length >= 2
               ) {
                 applyRouteGeometry(data.coordinates);
                 routeClientCache.set(cacheKey, {
@@ -988,6 +1004,8 @@ export function InteractiveBookingMap({
                   durationMin: data.durationMin,
                   coordinates: data.coordinates,
                 });
+              } else {
+                applyRouteGeometry([pCoords, dCoords]);
               }
 
               if (data?.riverCrossing) {
@@ -1013,6 +1031,8 @@ export function InteractiveBookingMap({
                 paymentMode: "cash",
                 passengerCount,
               });
+            } else {
+              applyRouteGeometry([pCoords, dCoords]);
             }
           } catch (err: any) {
             if (err?.name === "AbortError") {
@@ -1336,6 +1356,13 @@ export function InteractiveBookingMap({
           if (initialName) localStorage.setItem("sr_last_known_name", initialName);
         } catch {}
 
+        pickupCoordsRef.current = newPickup;
+        pickupInputRef.current = initialName;
+        onRouteSelectedRef.current?.({
+          pickup: initialName,
+          pickupCoords: newPickup,
+        });
+
         // 5. Sync route immediately with current coordinates
         await syncMapRouteAndPins(newPickup, dropCoordsRef.current, initialName, dropInputRef.current, {
           fitBounds: Boolean(dropInputRef.current && dropCoordsRef.current[0] !== 0),
@@ -1346,7 +1373,12 @@ export function InteractiveBookingMap({
         resolveLocationAddress(latitude, longitude).then((addr) => {
           if (addr && addr !== initialName) {
             setPickupInputValue(addr);
+            pickupInputRef.current = addr;
             try { localStorage.setItem("sr_last_known_name", addr); } catch {}
+            onRouteSelectedRef.current?.({
+              pickup: addr,
+              pickupCoords: newPickup,
+            });
           }
         });
       };
@@ -1561,16 +1593,27 @@ export function InteractiveBookingMap({
 
             // Only initialize pickup if it was never set before (0, 0), avoiding constant camera jitter/flicker
             if (pickupCoordsRef.current[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
-              setPickupCoords([latitude, longitude]);
+              const liveP: [number, number] = [latitude, longitude];
+              setPickupCoords(liveP);
+              pickupCoordsRef.current = liveP;
               setHasValidPickup(true);
               setGpsDetected(true);
               setIsLocatingInitialLock(false);
+              onRouteSelectedRef.current?.({
+                pickup: "Current Location",
+                pickupCoords: liveP,
+              });
               resolveLocationAddress(latitude, longitude).then((resolved) => {
                 if (!isCancelled && resolved) {
                   setPickupInputValue(resolved);
+                  pickupInputRef.current = resolved;
                   try {
                     localStorage.setItem("sr_last_known_name", resolved);
                   } catch {}
+                  onRouteSelectedRef.current?.({
+                    pickup: resolved,
+                    pickupCoords: liveP,
+                  });
                 }
               });
               try {
@@ -1578,7 +1621,7 @@ export function InteractiveBookingMap({
                 localStorage.setItem("sr_last_known_lng", longitude.toString());
               } catch {}
               if (mapInstanceRef.current) {
-                mapInstanceRef.current.flyTo([latitude, longitude], 17, { duration: 1.0 });
+                mapInstanceRef.current.flyTo(liveP, 17, { duration: 1.0 });
               }
             }
           },
@@ -1998,6 +2041,18 @@ export function InteractiveBookingMap({
       setActiveSearchField("drop");
       return;
     }
+
+    onRouteSelectedRef.current?.({
+      pickup: pickupInputValue,
+      drop: dropInputValue,
+      pickupCoords: currentPCoords,
+      dropCoords: dropCoords,
+      distanceKm: distanceKm || 1.0,
+      estimatedFare: fareResult.totalFare,
+      passengerCount,
+      rideTier: "standard",
+      paymentMode: "cash",
+    });
 
     onConfirmBooking?.();
   };

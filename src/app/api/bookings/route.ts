@@ -80,7 +80,7 @@ async function notifyOnlineDriversViaWhatsApp(
       }
       if (pLat && pLng && dLat && dLng) {
         const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-        return dKm <= 5.0; // Strictly within 5.0 km radius
+        return dKm <= 15.0; // Nearby regional radius
       }
       // If driver is online/active, still notify even if exact GPS is resolving
       return true;
@@ -780,7 +780,7 @@ export async function GET(request: Request) {
               driver_distance_km: distKm,
             };
           })
-          .filter((b) => b.driver_distance_km <= 5.0)
+          .filter((b) => b.driver_distance_km <= 15.0)
           .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
       }
 

@@ -1686,7 +1686,7 @@ function MobileAppPageContent() {
     const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : (hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920]);
     const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 0.8;
 
-    if (dKm > 5.0) return; // Strictly enforce 5.0 km radius
+    if (dKm > 15.0) return; // Nearby regional radius
 
     const isMetered = !hasValidDrop || (typeof b.drop_location === "string" && (b.drop_location.includes("মিটার") || b.drop_location.includes("বিনা গন্তব্য")));
     const tripDistKm = isMetered
@@ -1815,8 +1815,8 @@ function MobileAppPageContent() {
             const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
             if (coords && coords[0] !== 0 && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
               const dKm = calculateDistanceKm(coords[0], coords[1], pLat, pLng);
-              if (dKm > 5.0) {
-                // Strictly skip out of 5.0 km radius
+              if (dKm > 15.0) {
+                // Skip out of regional radius
                 return false;
               }
             }

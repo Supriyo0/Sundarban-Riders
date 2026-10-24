@@ -87,7 +87,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, access_token, status, display_phone_number')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -141,11 +141,12 @@ export async function GET() {
       console.warn('[whatsapp/config GET] Meta API verification call notice:', message)
       // If network/timeout fails on VPS outbound request to Graph API,
       // fallback to stored credentials so the UI stays connected.
+      const cfg = config as { phone_number_id: string; display_phone_number?: string | null }
       return NextResponse.json({
         connected: true,
         phone_info: {
-          id: config.phone_number_id,
-          display_phone_number: config.display_phone_number || '+91 83481 22122',
+          id: cfg.phone_number_id,
+          display_phone_number: cfg.display_phone_number || '+91 83481 22122',
           verified_name: 'Sundarban Rider',
         },
       })

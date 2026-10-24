@@ -3839,8 +3839,19 @@ function MobileAppPageContent() {
                 onCompleteTrip={async (finalKm) => {
                   const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
                   const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-                  const distKm = typeof finalKm === "number" && finalKm > 0 ? finalKm : (activeRide.distanceKm || 1.0);
-                  const finalFare = activeRide.fare || 25;
+                  const distKm = typeof finalKm === "number" ? Math.max(0, Math.round(finalKm * 10) / 10) : 0;
+                  
+                  // Odometer-based fare calculation:
+                  // If toto did not move (< 0.3 km), charge minimum base fare (₹25), NEVER the full beginning estimate!
+                  let calculatedFare = activeRide.fare || 25;
+                  if (distKm < 0.3) {
+                    calculatedFare = 25;
+                  } else if (distKm > 0 && activeRide.distanceKm && activeRide.distanceKm > 0) {
+                    if (distKm < activeRide.distanceKm * 0.85) {
+                      calculatedFare = Math.max(25, Math.round((activeRide.fare || 25) * (distKm / activeRide.distanceKm)));
+                    }
+                  }
+                  const finalFare = calculatedFare;
 
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,

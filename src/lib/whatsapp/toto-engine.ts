@@ -706,15 +706,15 @@ async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>):
 
 export const RIDER_DISCLAIMER_PDF_URL =
   process.env.RIDER_DISCLAIMER_PDF_URL ||
-  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/rider-disclaimer.pdf";
+  "https://sundarbanrider.in/rider-disclaimer.pdf";
 
 export const CUSTOMER_DISCLAIMER_PDF_URL =
   process.env.CUSTOMER_DISCLAIMER_PDF_URL ||
-  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/customer-disclaimer.pdf";
+  "https://sundarbanrider.in/customer-disclaimer.pdf";
 
 export const CUSTOMER_DISCLAIMER_IMAGE_URL =
   process.env.CUSTOMER_DISCLAIMER_IMAGE_URL ||
-  "https://tnxkeoctcwhyacuhklkg.supabase.co/storage/v1/object/public/documents/customer-disclaimer.pdf";
+  "https://sundarbanrider.in/customer-disclaimer.pdf";
 
 export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্টব্য: ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী
 "সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। এই প্ল্যাটফর্মটি স্থানীয় টোটো চালক ও যাত্রীদের সরাসরি যোগাযোগের মাধ্যম। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:

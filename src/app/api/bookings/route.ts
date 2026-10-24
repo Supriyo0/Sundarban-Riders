@@ -271,30 +271,43 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
     const phoneNumberId = config.phone_number_id;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
-    const distText = booking.actual_distance_km ? `\n📍 মোট অতিক্রান্ত দূরত্ব: ${booking.actual_distance_km} কিমি` : "";
+    const meta = typeof booking.feedback === "string" ? (() => { try { return JSON.parse(booking.feedback); } catch { return {}; } })() : (booking.feedback || {});
+    const actualDist = booking.actual_distance_km !== undefined ? booking.actual_distance_km : (meta.actual_distance_km !== undefined ? meta.actual_distance_km : "0.0");
+    const finalFare = booking.final_fare || meta.final_fare || meta.calculated_fare || booking.estimated_fare || 25;
+    const driverName = booking.driver_name || booking.drivers?.name || meta.driver_name || "সুন্দরবন চালক";
 
     const bodyText = await getCustomWhatsAppMessage(admin, "passenger_trip_completed", {
-      booking_number: booking.booking_number,
-      distance_km: booking.actual_distance_km || "1.0",
-      final_fare: booking.final_fare || 50,
-      driver_name: booking.driver_name || "সুন্দরবন চালক",
+      booking_number: booking.booking_number || booking.id,
+      distance_km: actualDist,
+      final_fare: finalFare,
+      driver_name: driverName,
     });
 
-    await sendInteractiveButtons({
-      phoneNumberId,
-      accessToken,
-      to: custPhone,
-      bodyText,
-      buttons: [
-        { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
-        { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
-      ],
-    }).catch(() => {});
+    try {
+      await sendInteractiveButtons({
+        phoneNumberId,
+        accessToken,
+        to: custPhone,
+        bodyText,
+        buttons: [
+          { id: "customer_complaint", title: "অভিযোগ জানান" },
+          { id: "customer_feedback", title: "মতামত দিন" },
+        ],
+      });
+      console.log(`[notifyTripCompleted] Customer receipt sent to ${custPhone}`);
+    } catch (btnErr) {
+      console.warn("[notifyTripCompleted] Interactive buttons failed, sending text fallback:", btnErr);
+      await sendTextMessage({
+        phoneNumberId,
+        accessToken,
+        to: custPhone,
+        text: bodyText,
+      }).catch((txtErr) => console.error("[notifyTripCompleted] Text fallback error:", txtErr));
+    }
 
     // Notify Driver with digital cash receipt on WhatsApp
     if (booking.driver_phone) {
       const dPhone = formatWhatsAppPhone(booking.driver_phone);
-      const driverFare = booking.final_fare || booking.estimated_fare || 50;
       const cleanCustPhone = (booking.customer_phone || "").replace(/\D/g, "").slice(-10);
       const driverReceiptText = `🏁 *ট্রিপ সমাপ্ত হয়েছে! (ডিজিটাল ক্যাশ রসিদ)*
 =======================
@@ -303,8 +316,8 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
 📱 ফোন: +91 ${cleanCustPhone}
 📍 পিকআপ: ${booking.pickup_location || "পিকআপ পয়েন্ট"}
 📍 গন্তব্য: ${booking.drop_location || "গন্তব্য পয়েন্ট"}
-${booking.actual_distance_km ? `📏 মোট দূরত্ব: ${booking.actual_distance_km} কিমি\n` : ""}=======================
-💰 *যাত্রীর থেকে সংগৃহীত নগদ ভাড়া: ₹${driverFare}.০০*
+${actualDist ? `📏 মোট দূরত্ব: ${actualDist} কিমি\n` : ""}=======================
+💰 *যাত্রীর থেকে সংগৃহীত নগদ ভাড়া: ₹${finalFare}.০০*
 =======================
 টোটো চালক দাদা, আপনার সার্ভিসের জন্য ধন্যবাদ! পরবর্তী রাইড পেতে অ্যাপে অনলাইন থাকুন। 🛺`;
 
@@ -1866,21 +1879,32 @@ export async function PATCH(request: Request) {
         duration_minutes: durationMinutes,
       };
 
-      const { data: updated, error: compErr } = await admin
+      // Update booking status and final fare (distance is preserved in feedback JSON metadata)
+      let { data: updated, error: compErr } = await admin
         .from("bookings")
         .update({
           status: "completed",
           final_fare: finalFareToCharge,
-          actual_distance_km: distanceKm,
           feedback: JSON.stringify(cleanHistoryMeta),
           updated_at: new Date().toISOString(),
         })
         .eq("id", booking.id)
         .select("*, drivers(*)")
-        .single();
+        .maybeSingle();
 
       if (compErr) {
-        return NextResponse.json({ error: compErr.message }, { status: 500 });
+        console.warn("[bookings complete] Extended update error, falling back:", compErr.message);
+        const fb = await admin
+          .from("bookings")
+          .update({
+            status: "completed",
+            final_fare: finalFareToCharge,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", booking.id)
+          .select("*, drivers(*)")
+          .maybeSingle();
+        updated = fb.data;
       }
 
       // Free driver back to available immediately by ID and Phone
@@ -1903,9 +1927,19 @@ export async function PATCH(request: Request) {
         ).catch(() => {});
       }
 
-      if (updated) {
-        const enrichedUpdated = enrichBookingCoords(updated);
-        void notifyTripCompleted(admin, enrichedUpdated);
+      const finalBookingObj = updated || {
+        ...booking,
+        status: "completed",
+        final_fare: finalFareToCharge,
+      };
+      const enrichedUpdated = enrichBookingCoords({
+        ...finalBookingObj,
+        actual_distance_km: distanceKm,
+        final_fare: finalFareToCharge,
+      });
+
+      // Send WhatsApp completion receipt to customer and driver
+      void notifyTripCompleted(admin, enrichedUpdated);
 
         // Rich payload containing full trip details for local device storage
         const localTripRecord = {

@@ -91,7 +91,7 @@ export function WhatsAppConfig() {
   // in the row). When false, the saved config is metadata-only and
   // Meta will silently drop every inbound event — that's the
   // multi-number bug that prompted this work.
-  const isRegistered = Boolean(config?.registered_at);
+  const isRegistered = Boolean(config?.registered_at || config?.status === 'connected');
   const lastRegistrationError = config?.last_registration_error ?? null;
 
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);

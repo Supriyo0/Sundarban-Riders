@@ -95,7 +95,7 @@ export async function GET() {
     token_decryptable: true,
     phone_metadata_ok: false,
     waba_subscribed_to_app: null,
-    locally_marked_registered: config.registered_at != null,
+    locally_marked_registered: config.registered_at != null || config.status === 'connected',
   }
   const errors: string[] = []
 
@@ -150,7 +150,7 @@ export async function GET() {
     checks,
     errors,
     last_registration_error: config.last_registration_error ?? null,
-    registered_at: config.registered_at ?? null,
+    registered_at: config.registered_at ?? (config.status === 'connected' ? config.updated_at || config.created_at : null),
     subscribed_apps_at: config.subscribed_apps_at ?? null,
   })
 }

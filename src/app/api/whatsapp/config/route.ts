@@ -356,24 +356,37 @@ export async function POST(request: Request) {
     // Persist everything in one shot. If /register failed we still
     // store the credentials and the error so the UI can guide the
     // user through a retry.
-    const baseRow = {
+    const coreRow = {
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
       verify_token: encryptedVerifyToken,
       status: registrationError ? 'disconnected' : 'connected',
       connected_at: registrationError ? null : new Date().toISOString(),
-      registered_at: registrationError ? null : registeredAt,
-      subscribed_apps_at: subscribedAppsAt ?? null,
-      last_registration_error: registrationError,
       updated_at: new Date().toISOString(),
     }
 
+    const extendedRow = {
+      ...coreRow,
+      registered_at: registrationError ? null : registeredAt,
+      subscribed_apps_at: subscribedAppsAt ?? null,
+      last_registration_error: registrationError,
+    }
+
     if (existing) {
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from('whatsapp_config')
-        .update(baseRow)
+        .update(extendedRow)
         .eq('account_id', accountId)
+
+      if (updateError) {
+        console.warn('Updating extended whatsapp_config failed, falling back to core row:', updateError.message)
+        const fallback = await supabase
+          .from('whatsapp_config')
+          .update(coreRow)
+          .eq('account_id', accountId)
+        updateError = fallback.error
+      }
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -383,17 +396,25 @@ export async function POST(request: Request) {
         )
       }
     } else {
-      // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
-      // up-front), `user_id` is the audit column identifying which
-      // member of the account saved the config.
-      const { error: insertError } = await supabase
+      let { error: insertError } = await supabase
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
           user_id: user.id,
-          ...baseRow,
+          ...extendedRow,
         })
+
+      if (insertError) {
+        console.warn('Inserting extended whatsapp_config failed, falling back to core row:', insertError.message)
+        const fallback = await supabase
+          .from('whatsapp_config')
+          .insert({
+            account_id: accountId,
+            user_id: user.id,
+            ...coreRow,
+          })
+        insertError = fallback.error
+      }
 
       if (insertError) {
         console.error('Error inserting whatsapp_config:', insertError)

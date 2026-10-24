@@ -1968,14 +1968,11 @@ export async function PATCH(request: Request) {
           tripEndTime: new Date().toISOString(),
         };
 
-        return NextResponse.json({
-          success: true,
-          booking: enrichedUpdated,
-          localTripRecord,
-        });
-      }
-
-      return NextResponse.json({ success: true });
+      return NextResponse.json({
+        success: true,
+        booking: enrichedUpdated,
+        localTripRecord,
+      });
     }
 
     // -------------------------------------------------------------

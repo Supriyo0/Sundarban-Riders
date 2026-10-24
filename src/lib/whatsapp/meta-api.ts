@@ -56,13 +56,29 @@ export async function verifyPhoneNumber(
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
   const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating`
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!response.ok) {
-    await throwMetaError(response, `Meta API error: ${response.status}`)
+  
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 10000)
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (!response.ok) {
+        await throwMetaError(response, `Meta API error: ${response.status}`)
+      }
+      return await response.json()
+    } catch (err) {
+      lastError = err
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1000))
+      }
+    }
   }
-  return response.json()
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
 // ============================================================

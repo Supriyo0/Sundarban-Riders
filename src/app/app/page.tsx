@@ -998,8 +998,11 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      // Poll every 600ms for instant reactivity
-      pollInterval = setInterval(checkBookingAcceptance, 600);
+      // Poll every 3500ms and pause when tab/screen is hidden to save Supabase egress & CPU
+      pollInterval = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        checkBookingAcceptance();
+      }, 3500);
     }
 
     return () => clearInterval(pollInterval);
@@ -1173,7 +1176,10 @@ function MobileAppPageContent() {
     };
 
     pollRideStatus();
-    pollInterval = setInterval(pollRideStatus, 1500);
+    pollInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      pollRideStatus();
+    }, 3500);
     return () => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);
@@ -1256,7 +1262,10 @@ function MobileAppPageContent() {
     };
 
     checkDriverRideStatus();
-    pollTimer = setInterval(checkDriverRideStatus, 1500);
+    pollTimer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      checkDriverRideStatus();
+    }, 3500);
     return () => {
       isMounted = false;
       if (pollTimer) clearInterval(pollTimer);
@@ -1831,9 +1840,12 @@ function MobileAppPageContent() {
         }
       };
 
-      // Check immediately and then every 1000ms for instant real-time alerts
+      // Check immediately and then every 3500ms when visible
       checkPendingBookings();
-      pollInterval = setInterval(checkPendingBookings, 1000);
+      pollInterval = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        checkPendingBookings();
+      }, 3500);
 
       // Instantly trigger check when driver returns to tab or turns screen on
       const handleTabFocus = () => {

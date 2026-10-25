@@ -629,10 +629,13 @@ async function processMessage(
         textBody: message.text?.body,
         buttonPayload:
           message.interactive?.button_reply?.id ||
-          message.interactive?.list_reply?.id,
+          message.interactive?.list_reply?.id ||
+          message.button?.payload ||
+          message.button?.text,
         buttonText:
           message.interactive?.button_reply?.title ||
-          message.interactive?.list_reply?.title,
+          message.interactive?.list_reply?.title ||
+          message.button?.text,
         location: message.location,
       })
 

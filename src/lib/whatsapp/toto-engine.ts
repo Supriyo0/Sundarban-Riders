@@ -879,6 +879,46 @@ export async function processTotoMessage(
   const payload = ctx.buttonPayload || "";
 
   // -------------------------------------------------------------
+  // FLOW 0: INSTANT WHATSAPP LOGIN OTP DISPATCH
+  // -------------------------------------------------------------
+  if (
+    incomingText === "otp" ||
+    incomingText.startsWith("otp ") ||
+    incomingText === "ওটিপি" ||
+    incomingText === "code" ||
+    incomingText === "login" ||
+    incomingText === "লগইন" ||
+    payload === "request_otp"
+  ) {
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const record = {
+      phone: cleanPhone,
+      otp,
+      role: isRegisteredDriver ? "rider" : "passenger",
+      expiresAt,
+      attempts: 0,
+    };
+    await Promise.all([
+      supabase.from("system_settings").upsert(
+        { key: `otp_${cleanPhone}`, value: JSON.stringify(record) },
+        { onConflict: "key" }
+      ),
+      supabase.from("system_settings").upsert(
+        { key: `otp_${last10}`, value: JSON.stringify(record) },
+        { onConflict: "key" }
+      ),
+    ]);
+
+    const roleName = isRegisteredDriver ? "চালক (Rider)" : "যাত্রী (Passenger)";
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `🔐 *${otp}* হলো আপনার সুন্দরবন রাইডার্স (${roleName}) লগইন OTP।\n\nএই কোডটি আগামী ৫ মিনিটের জন্য কার্যকর। অ্যাপে এই কোডটি লিখে লগইন সম্পন্ন করুন।\n\n${otp} is your Sundarban Riders login OTP, valid for 5 min.`,
+    };
+  }
+
+  // -------------------------------------------------------------
   // FLOW A: 3-STRIKE CANCELLATION CHECK FOR CUSTOMERS
   // -------------------------------------------------------------
   if (customer && (customer.cancellation_count || 0) >= 3) {
@@ -1256,7 +1296,7 @@ export async function processTotoMessage(
     isRegisteredDriver &&
     driver &&
     (payload === "driver_agree_terms" ||
-      (!driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "হ্যাঁ চালক" || incomingText.includes("agree"))))
+      (!driver.agreed_terms && (incomingText.includes("সম্মত") || incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ চালক" || incomingText.includes("agree"))))
   ) {
     // Clear any accidental customer booking state
     customerBookingStates.delete(cleanPhone);
@@ -1399,6 +1439,7 @@ export async function processTotoMessage(
     payload === "take_ride" ||
     payload === "rider_login" ||
     payload === "driver_join" ||
+    (!customerBookingStates.has(cleanPhone) && (incomingText === "1" || incomingText === "১")) ||
     incomingText.includes("রাইডার লগইন") ||
     incomingText.includes("লগইন") ||
     incomingText.includes("রাইড নিন") ||
@@ -1664,8 +1705,8 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "agree_disclaimer" ||
-    (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক")) ||
-    (customerBookingStates.has(cleanPhone) && incomingText === "হ্যাঁ")
+    (customerBookingStates.has(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ" || incomingText.includes("সম্মত"))) ||
+    (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক"))
   ) {
     customerBookingStates.set(cleanPhone, {
       step: "awaiting_location",
@@ -1935,6 +1976,7 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "book_toto" ||
+    (!customerBookingStates.has(cleanPhone) && (incomingText === "2" || incomingText === "২")) ||
     incomingText.includes("টোটো বুকিং") ||
     incomingText.includes("book toto") ||
     incomingText === "book" ||

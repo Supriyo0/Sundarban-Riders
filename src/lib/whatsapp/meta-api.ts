@@ -786,43 +786,41 @@ export async function sendInteractiveButtons(
     phoneNumberId, accessToken, to,
     bodyText, headerText, footerText, buttons, contextMessageId,
   } = args
-  validateInteractiveBody(bodyText)
-  validateInteractiveHeaderFooter(headerText, footerText)
+
+  // Safely clamp bodyText to Meta limit (1024 chars) to prevent rejection
+  const safeBodyText = (bodyText || "").trim().slice(0, INTERACTIVE_LIMITS.bodyMaxLength)
+  if (!safeBodyText) throw new Error('Interactive message requires non-empty bodyText.')
+
   if (buttons.length < 1 || buttons.length > INTERACTIVE_LIMITS.maxButtons) {
     throw new Error(
       `Interactive button message requires 1-${INTERACTIVE_LIMITS.maxButtons} buttons (got ${buttons.length}).`
     )
   }
   const seenButtonIds = new Set<string>()
-  for (const btn of buttons) {
-    if (!btn.id) throw new Error('Interactive button missing id.')
-    // Duplicate button ids make the tapped-button webhook ambiguous —
-    // Meta rejects them, and the pre-flight validator (interactive.ts)
-    // rejects them too, so guard here to keep the two paths in step.
-    if (seenButtonIds.has(btn.id)) {
-      throw new Error(`Interactive message has duplicate button id "${btn.id}".`)
+  const safeButtons = buttons.slice(0, INTERACTIVE_LIMITS.maxButtons).map((btn, idx) => {
+    let btnId = (btn.id || `btn_${idx + 1}`).trim().slice(0, 256)
+    if (seenButtonIds.has(btnId)) {
+      btnId = `${btnId.slice(0, 240)}_${idx + 1}`
     }
-    seenButtonIds.add(btn.id)
-    if (!btn.title) throw new Error(`Interactive button "${btn.id}" missing title.`)
-    if (btn.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
-      throw new Error(
-        `Interactive button title "${btn.title}" exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
-      )
-    }
-  }
+    seenButtonIds.add(btnId)
+    // Clamp title to Meta 20-character limit safely using spread operator for Unicode/Bengali
+    const rawTitle = (btn.title || `বিকল্প ${idx + 1}`).trim()
+    const safeTitle = [...rawTitle].slice(0, INTERACTIVE_LIMITS.buttonTitleMaxLength).join('')
+    return { id: btnId, title: safeTitle }
+  })
 
   const interactive: Record<string, unknown> = {
     type: 'button',
-    body: { text: bodyText },
+    body: { text: safeBodyText },
     action: {
-      buttons: buttons.map((b) => ({
+      buttons: safeButtons.map((b) => ({
         type: 'reply',
         reply: { id: b.id, title: b.title },
       })),
     },
   }
-  if (headerText) interactive.header = { type: 'text', text: headerText }
-  if (footerText) interactive.footer = { text: footerText }
+  if (headerText) interactive.header = { type: 'text', text: [...headerText].slice(0, INTERACTIVE_LIMITS.headerTextMaxLength).join('') }
+  if (footerText) interactive.footer = { text: [...footerText].slice(0, INTERACTIVE_LIMITS.footerMaxLength).join('') }
 
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',

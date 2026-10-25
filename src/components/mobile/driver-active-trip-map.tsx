@@ -286,7 +286,10 @@ export function DriverActiveTripMap({
       } catch {}
     };
 
-    pollTimer = setInterval(checkCancellation, 1500);
+    pollTimer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      checkCancellation();
+    }, 4000);
     return () => {
       isMounted = false;
       if (pollTimer) clearInterval(pollTimer);

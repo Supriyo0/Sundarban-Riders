@@ -26,43 +26,36 @@ import { Button } from "@/components/ui/button";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { toast } from "sonner";
 
-export async function triggerDownloadPdf(url: string, filename: string, e?: React.MouseEvent) {
+export function triggerDownloadPdf(url: string, filename: string, e?: React.MouseEvent) {
   if (e) {
-    e.preventDefault();
     e.stopPropagation();
   }
   try {
-    toast.info("📄 PDF ডাউনলোড প্রস্তুত করা হচ্ছে...");
+    toast.info("📄 PDF ডাউনলোড শুরু হচ্ছে...");
     const fullUrl =
       typeof window !== "undefined" && url.startsWith("/")
         ? window.location.origin + url
         : url;
 
-    // 1. Fetch blob and trigger browser download
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    const blob = await res.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = blobUrl;
+    link.href = fullUrl;
     link.download = filename;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 15000);
-    toast.success("✅ PDF ডাউনলোড সফল হয়েছে!");
 
-    // 2. Also trigger system viewer for Android WebView
     if (typeof window !== "undefined") {
       try {
-        window.open(fullUrl, "_system");
+        window.open(fullUrl, "_blank");
       } catch {}
     }
   } catch (err) {
-    console.warn("Blob download failed, opening direct URL:", err);
+    console.warn("PDF open error:", err);
     if (typeof window !== "undefined") {
       const fullUrl = url.startsWith("/") ? window.location.origin + url : url;
-      window.open(fullUrl, "_system") || window.open(fullUrl, "_blank");
+      window.open(fullUrl, "_blank");
     }
   }
 }
@@ -397,15 +390,18 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
             >
               {role === "rider" ? "🛺 চালক পার্টনার চুক্তি ও নিয়মাবলী" : "👤 যাত্রী সুরক্ষা ও ব্যবহারের শর্তাবলী"}
             </span>
-            <button
-              type="button"
+            <a
+              href={pdfUrl}
+              download={pdfName}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={(e) => triggerDownloadPdf(pdfUrl, pdfName, e)}
-              className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 py-1.5 rounded-lg border border-slate-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              className="text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 px-2.5 py-1.5 rounded-lg border border-slate-300 flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs no-underline"
               title="অফিসিয়াল PDF ডাউনলোড করুন"
             >
               <Download className="w-3.5 h-3.5 text-emerald-700" />
               <span>PDF ডাউনলোড</span>
-            </button>
+            </a>
           </div>
 
           <h1 className="text-xl font-black text-slate-900 tracking-tight leading-tight">

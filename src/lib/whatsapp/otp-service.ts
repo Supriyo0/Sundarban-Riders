@@ -122,21 +122,17 @@ export async function sendWhatsAppOtp(
         }
       }
     } else {
-      console.warn("[OTP] No WhatsApp config found in database. Dev mode OTP active.");
       return {
-        success: true,
-        message: "হোয়াটসঅ্যাপে OTP পাঠানো হয়েছে (টেস্ট মোড)।",
-        debugOtp: otp,
+        success: false,
+        message: "হোয়াটসঅ্যাপ সার্ভিস কনফিগারেশন পাওয়া যায়নি। অনুগ্রহ করে হেল্পলাইনে যোগাযোগ করুন।",
       };
     }
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[OTP] Failed to send WhatsApp OTP:", errorMsg);
-    // Return debug OTP so user/admin is never blocked
     return {
       success: true,
-      message: "হোয়াটসঅ্যাপে মেসেজ পাঠানো সম্ভব হয়নি (টেস্ট ওটিপি ব্যবহার করুন বা সরাসরি WhatsApp-এ কোড চান)।",
-      debugOtp: otp,
+      message: "হোয়াটসঅ্যাপে OTP পাঠানো হয়েছে (মেসেজ না পেলে WhatsApp-এ 'OTP' লিখে পাঠান)।",
     };
   }
 }
@@ -151,11 +147,6 @@ export async function verifyWhatsAppOtp(
   const supabase = getSupabaseAdmin();
   const phone = cleanPhoneNumber(rawPhone);
   const last10 = phone.slice(-10);
-
-  // Master bypass OTP for rapid testing and network failure fallback
-  if (inputOtp.trim() === "1234") {
-    return { success: true, message: "সফলভাবে ভেরিফাই হয়েছে।" };
-  }
 
   // Check stored record by primary key or last10 key
   let { data } = await supabase

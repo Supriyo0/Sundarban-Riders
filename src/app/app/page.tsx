@@ -2186,15 +2186,8 @@ function MobileAppPageContent() {
       if (json.success) {
         setOtpSent(true);
         setOtpTimer(60);
-        if (json.debugOtp) {
-          setFallbackOtp(json.debugOtp);
-        } else {
-          setFallbackOtp(null);
-        }
+        setFallbackOtp(null);
         toast.success(json.message || "WhatsApp-এ OTP পাঠানো হয়েছে!");
-        if (json.debugOtp) {
-          toast.info(`টেস্ট OTP: ${json.debugOtp}`);
-        }
       } else {
         toast.error(json.message || "OTP পাঠানো ব্যর্থ হয়েছে");
       }
@@ -2913,19 +2906,7 @@ function MobileAppPageContent() {
                     className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
                   />
 
-                  {/* Fallback OTP Auto-Fill if WhatsApp is delayed or outside 24h window */}
-                  {fallbackOtp && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-900 text-xs flex items-center justify-between shadow-2xs">
-                      <span>টেস্ট ওটিপি কোড: <strong className="font-mono text-sm tracking-wider text-amber-800">{fallbackOtp}</strong></span>
-                      <button
-                        type="button"
-                        onClick={() => setOtpInput(fallbackOtp)}
-                        className="px-2 py-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-[11px] cursor-pointer"
-                      >
-                        স্বয়ংক্রিয় পূরণ
-                      </button>
-                    </div>
-                  )}
+
 
                   {/* Direct One-Tap WhatsApp Button to open chat & receive OTP instantly */}
                   <a

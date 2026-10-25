@@ -1499,11 +1499,17 @@ export async function processTotoMessage(
         ],
       };
     } else {
-      // User is NOT registered as a rider -> inform them and allow booking
+      // User is NOT registered as a rider -> provide App link and allow booking
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! আপনার নম্বরটি চালক হিসেবে নিবন্ধিত নয়। সুন্দরবন রাইডার চালক হিসেবে যুক্ত হতে হেল্পলাইনে (${helpline}) যোগাযোগ করুন।\n\nআপনি চাইলে এখনই টোটো বুক করতে পারেন:`,
+        bodyText: `🛺 সুন্দরবন রাইডার চালক পার্টনারে স্বাগতম!\n\nচালকদের লাইভ ডিউটি ও রাইড পাওয়ার জন্য আমাদের ড্রাইভার অ্যাপে লগইন বা রেজিস্ট্রেশন করুন:\n👉 https://sundarbanrider.in/app\n\n📄 চালক চুক্তি ও শর্তাবলী (PDF):\n👉 https://sundarbanrider.in/rider-disclaimer.pdf\n\n(অথবা যাত্রী হিসেবে সরাসরি টোটো বুক করতে নিচের বোতামে চাপুন)`,
+        media: {
+          kind: "document",
+          url: RIDER_DISCLAIMER_PDF_URL,
+          filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
+          caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
+        },
         buttons: [
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
@@ -1705,8 +1711,10 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "agree_disclaimer" ||
-    (customerBookingStates.has(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ" || incomingText.includes("সম্মত"))) ||
-    (incomingText.includes("সম্মত আছি") && !incomingText.includes("চালক"))
+    payload === "driver_agree_terms" ||
+    incomingText.includes("সম্মত") ||
+    incomingText.includes("agree") ||
+    (customerBookingStates.has(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ"))
   ) {
     customerBookingStates.set(cleanPhone, {
       step: "awaiting_location",
@@ -2005,7 +2013,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।",
+      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।\n\n📄 যাত্রী নির্দেশিকা (PDF) ডাউনলোড লিংক:\n👉 https://sundarbanrider.in/customer-disclaimer.pdf",
       media: {
         kind: "document",
         url: CUSTOMER_DISCLAIMER_PDF_URL,
@@ -2120,10 +2128,12 @@ export async function processTotoMessage(
       .replace("ABC", senderDisplayName || "");
   }
 
+  const fullWelcomeBody = `${welcomeText}\n\n📱 আমাদের মোবাইল অ্যাপ লিংক:\n👉 https://sundarbanrider.in/app\n📄 যাত্রী নির্দেশিকা (PDF):\n👉 https://sundarbanrider.in/customer-disclaimer.pdf`;
+
   return {
     toPhone: rawPhone,
     type: "interactive_buttons",
-    bodyText: welcomeText,
+    bodyText: fullWelcomeBody,
     buttons: [
       { id: "take_ride", title: "🛺 রাইডার লগইন" },
       { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },

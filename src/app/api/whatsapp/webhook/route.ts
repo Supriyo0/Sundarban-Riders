@@ -655,7 +655,7 @@ async function processMessage(
             accessToken,
             to: recipientPhone,
             bodyText: totoAction.bodyText,
-            headerMedia: totoAction.media ? {
+            headerMedia: totoAction.media && totoAction.media.kind !== 'audio' ? {
               kind: totoAction.media.kind,
               url: totoAction.media.url,
               filename: totoAction.media.filename,
@@ -724,7 +724,7 @@ async function processMessage(
                   accessToken,
                   to: destPhone,
                   bodyText: notif.bodyText,
-                  headerMedia: notif.media ? {
+                  headerMedia: notif.media && notif.media.kind !== 'audio' ? {
                     kind: notif.media.kind,
                     url: notif.media.url,
                     filename: notif.media.filename,

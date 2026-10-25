@@ -929,84 +929,84 @@ function MobileAppPageContent() {
 
     const targetBookingId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
 
+    const checkBookingAcceptance = async () => {
+      try {
+        const currentId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
+        let b: any = null;
+        if (currentId) {
+          const res = await fetch(`/api/bookings?id=${encodeURIComponent(currentId)}&_t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+          });
+          const data = await res.json();
+          if (data?.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress" || data.booking.status === "accepted")) {
+            b = data.booking;
+          }
+        }
+
+        // Fallback check by passenger phone in case ID was refreshed
+        if (!b && session?.phone) {
+          const resPhone = await fetch(`/api/bookings?customer_phone=${encodeURIComponent(session.phone)}&active=true&_t=${Date.now()}`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+          });
+          const dataPhone = await resPhone.json();
+          if (dataPhone?.booking && (dataPhone.booking.status === "assigned" || dataPhone.booking.status === "in_progress" || dataPhone.booking.status === "accepted")) {
+            b = dataPhone.booking;
+          }
+        }
+
+        if (b) {
+          if (b.pickup_location) setPickupText(b.pickup_location);
+          if (b.drop_location) setDropText(b.drop_location);
+          if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
+          if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+          if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
+
+          const acceptedPassengerBooking = {
+            id: b.id,
+            bookingNumber: b.booking_number,
+            driverName: b.driver_name || "টোটো চালক",
+            driverPhone: b.driver_phone || "",
+            totoNumber: b.driver_unique_id || b.toto_number || "",
+            uniqueId: b.driver_unique_id || b.toto_number || "",
+            startOtp: b.start_otp,
+            start_otp: b.start_otp,
+            driver_lat: b.driver_lat,
+            driver_lng: b.driver_lng,
+            driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
+            pickup: b.pickup_location,
+            drop: b.drop_location,
+            pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
+            dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+            fare: Number(b.estimated_fare || tripFare),
+            status: b.status,
+          };
+
+          setPassengerBooking(acceptedPassengerBooking);
+          setActiveBookingId(b.id);
+          setRideStep(b.status === "in_progress" ? "in_trip" : "assigned");
+
+          // Stop search countdown immediately!
+          setSearchStatus("idle");
+          setSearchCountdown(0);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedPassengerBooking));
+            localStorage.setItem("sr_active_booking_id", b.id);
+            localStorage.removeItem("sr_search_status");
+          }
+          setPhase("passenger_home");
+          playSuccessSound();
+          showLocalRideAlertNotification(
+            "🛺 চালক রাইড গ্রহণ করেছেন!",
+            `${b.driver_name || "টোটো চালক"} (${b.driver_unique_id || b.toto_number || "টোটো"}) আপনার পিকআপের উদ্দেশ্যে আসছেন। OTP: ${b.start_otp || ""}`,
+            b.id
+          );
+        }
+      } catch {}
+    };
+
     if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
-      const checkBookingAcceptance = async () => {
-        try {
-          const currentId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
-          let b: any = null;
-          if (currentId) {
-            const res = await fetch(`/api/bookings?id=${encodeURIComponent(currentId)}&_t=${Date.now()}`, {
-              cache: "no-store",
-              headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-            });
-            const data = await res.json();
-            if (data?.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress" || data.booking.status === "accepted")) {
-              b = data.booking;
-            }
-          }
-
-          // Fallback check by passenger phone in case ID was refreshed
-          if (!b && session?.phone) {
-            const resPhone = await fetch(`/api/bookings?customer_phone=${encodeURIComponent(session.phone)}&active=true&_t=${Date.now()}`, {
-              cache: "no-store",
-              headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-            });
-            const dataPhone = await resPhone.json();
-            if (dataPhone?.booking && (dataPhone.booking.status === "assigned" || dataPhone.booking.status === "in_progress" || dataPhone.booking.status === "accepted")) {
-              b = dataPhone.booking;
-            }
-          }
-
-          if (b) {
-            if (b.pickup_location) setPickupText(b.pickup_location);
-            if (b.drop_location) setDropText(b.drop_location);
-            if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
-            if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
-            if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
-
-            const acceptedPassengerBooking = {
-              id: b.id,
-              bookingNumber: b.booking_number,
-              driverName: b.driver_name || "টোটো চালক",
-              driverPhone: b.driver_phone || "",
-              totoNumber: b.driver_unique_id || b.toto_number || "",
-              uniqueId: b.driver_unique_id || b.toto_number || "",
-              startOtp: b.start_otp,
-              start_otp: b.start_otp,
-              driver_lat: b.driver_lat,
-              driver_lng: b.driver_lng,
-              driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
-              pickup: b.pickup_location,
-              drop: b.drop_location,
-              pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
-              dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
-              fare: Number(b.estimated_fare || tripFare),
-              status: b.status,
-            };
-
-            setPassengerBooking(acceptedPassengerBooking);
-            setActiveBookingId(b.id);
-            setRideStep(b.status === "in_progress" ? "in_trip" : "assigned");
-
-            // Stop search countdown immediately!
-            setSearchStatus("idle");
-            setSearchCountdown(0);
-            if (typeof window !== "undefined") {
-              localStorage.setItem("sr_passenger_booking", JSON.stringify(acceptedPassengerBooking));
-              localStorage.setItem("sr_active_booking_id", b.id);
-              localStorage.removeItem("sr_search_status");
-            }
-            setPhase("passenger_home");
-            playSuccessSound();
-            showLocalRideAlertNotification(
-              "🛺 চালক রাইড গ্রহণ করেছেন!",
-              `${b.driver_name || "টোটো চালক"} (${b.driver_unique_id || b.toto_number || "টোটো"}) আপনার পিকআপের উদ্দেশ্যে আসছেন। OTP: ${b.start_otp || ""}`,
-              b.id
-            );
-          }
-        } catch {}
-      };
-
       checkBookingAcceptance();
       // Fast polling (1000ms) so customer immediately sees driver acceptance, coordinates, and OTP
       pollInterval = setInterval(checkBookingAcceptance, 1000);

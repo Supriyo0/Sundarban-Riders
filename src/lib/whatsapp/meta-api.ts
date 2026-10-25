@@ -38,6 +38,37 @@ async function throwMetaError(response: Response, fallback: string): Promise<nev
   throw new Error(message)
 }
 
+/**
+ * Robust fetch wrapper for Meta Graph API calls.
+ * Automatically retries up to maxRetries times with backoff on transient network
+ * drops, ETIMEDOUT, or connection resets to ensure messages never drop.
+ */
+async function metaFetch(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3,
+  timeoutMs = 7000
+): Promise<Response> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      return response
+    } catch (err: unknown) {
+      lastErr = err
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.warn(`[meta-api] fetch attempt ${attempt}/${maxRetries} failed for ${url}: ${errMsg}`)
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 300 * attempt))
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
+}
+
 // ============================================================
 // Phone number / account
 // ============================================================
@@ -260,14 +291,13 @@ export async function sendTextMessage(
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
   }
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
@@ -327,14 +357,13 @@ export async function sendMediaMessage(
   }
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
@@ -700,7 +729,7 @@ export async function sendReactionMessage(
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, targetMessageId, emoji } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -834,14 +863,13 @@ export async function sendInteractiveButtons(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
@@ -967,7 +995,7 @@ export async function sendInteractiveList(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await metaFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

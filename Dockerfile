@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # ---------------------------------------------------------------
 # Stage 1 — install dependencies (cached until package*.json change)
 # ---------------------------------------------------------------

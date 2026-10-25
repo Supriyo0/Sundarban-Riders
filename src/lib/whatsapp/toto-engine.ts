@@ -1523,11 +1523,11 @@ export async function processTotoMessage(
         ],
       };
     } else {
-      // User is NOT registered as a rider -> provide App link and allow booking
+      // User is NOT registered as a rider -> provide Play Store App link and allow booking
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🛺 সুন্দরবন রাইডার চালক পার্টনারে স্বাগতম!\n\nচালকদের লাইভ ডিউটি ও রাইড পাওয়ার জন্য আমাদের ড্রাইভার অ্যাপে লগইন বা রেজিস্ট্রেশন করুন:\n👉 https://sundarbanrider.in/app\n\n📄 চালক চুক্তি ও শর্তাবলী (PDF):\n👉 https://sundarbanrider.in/rider-disclaimer.pdf\n\n(অথবা যাত্রী হিসেবে সরাসরি টোটো বুক করতে নিচের বোতামে চাপুন)`,
+        bodyText: `🛺 সুন্দরবন রাইডার চালক পার্টনারে স্বাগতম!\n\nচালকদের লাইভ ডিউটি ও রাইড পাওয়ার জন্য আমাদের অফিসিয়াল অ্যাপ ডাউনলোড ও লগইন করুন:\n👉 https://play.google.com/store/apps/details?id=com.sundarbanriders.app\n\n📄 চালক চুক্তি ও শর্তাবলী (PDF):\n👉 https://sundarbanrider.in/rider-disclaimer.pdf\n\n(অথবা যাত্রী হিসেবে সরাসরি টোটো বুক করতে নিচের বোতামে চাপুন)`,
         media: {
           kind: "document",
           url: RIDER_DISCLAIMER_PDF_URL,
@@ -1735,10 +1735,11 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "agree_disclaimer" ||
-    incomingText.includes("সম্মত আছি") ||
-    incomingText === "সম্মত" ||
-    incomingText === "agree" ||
-    (hasBookingState(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ"))
+    incomingText.includes("সম্মত") ||
+    incomingText.includes("agree") ||
+    incomingText === "হ্যাঁ" ||
+    incomingText === "yes" ||
+    (hasBookingState(cleanPhone) && (incomingText === "1" || incomingText === "১"))
   ) {
     setBookingState(cleanPhone, {
       step: "awaiting_location",
@@ -2018,22 +2019,13 @@ export async function processTotoMessage(
     // Registered driver clicked book toto: clear any driver location state
     driverLocationStates.delete(cleanPhone);
 
-    // Keep user in customer booking flow
+    // Keep user in customer booking flow awaiting disclaimer
     setBookingState(cleanPhone, {
-      step: customer?.disclaimer_agreed ? "awaiting_location" : "awaiting_disclaimer",
+      step: "awaiting_disclaimer",
       timestamp: Date.now(),
     });
 
-    // If customer has already agreed to the disclaimer previously, jump straight to pickup location
-    if (customer?.disclaimer_agreed) {
-      return {
-        toPhone: rawPhone,
-        type: "text",
-        bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:\n\nদয়া করে নিচের মতো করে আপনার পিকআপ লোকেশন শেয়ার করুন:\n👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার Current Location সেন্ড করুন।\n\n(অথবা আপনার পিকআপ জায়গার নাম লিখে পাঠান, যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")`,
-      };
-    }
-
-    // First time booking: Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
+    // Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
@@ -2152,12 +2144,10 @@ export async function processTotoMessage(
       .replace("ABC", senderDisplayName || "");
   }
 
-  const fullWelcomeBody = `${welcomeText}\n\n📱 আমাদের মোবাইল অ্যাপ লিংক:\n👉 https://sundarbanrider.in/app\n📄 যাত্রী নির্দেশিকা (PDF):\n👉 https://sundarbanrider.in/customer-disclaimer.pdf`;
-
   return {
     toPhone: rawPhone,
     type: "interactive_buttons",
-    bodyText: fullWelcomeBody,
+    bodyText: welcomeText,
     buttons: [
       { id: "take_ride", title: "🛺 রাইডার লগইন" },
       { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },

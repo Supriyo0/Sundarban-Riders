@@ -954,6 +954,62 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
+  // FLOW 1: GREETINGS & RESET (hi / hii / hello / menu / শুরু)
+  // Always shows the clean welcome menu with exactly 2 buttons:
+  // [ 🛺 রাইডার লগইন ] and [ 🛺 টোটো বুকিং করুন ]
+  // Clears any stuck / in-progress booking state so user starts fresh
+  // -------------------------------------------------------------
+  const isHiGreeting = [
+    "hi",
+    "hii",
+    "hiii",
+    "hello",
+    "hey",
+    "heyy",
+    "হায়",
+    "হাই",
+    "হ্যালো",
+    "হে",
+    "নমস্কার",
+    "menu",
+    "মেনু",
+    "start",
+    "শুরু",
+    "reset",
+    "রিসেট",
+  ].includes(incomingText) || payload === "welcome_menu" || payload === "main_menu";
+
+  if (isHiGreeting) {
+    clearBookingState(cleanPhone);
+    driverLocationStates.delete(cleanPhone);
+
+    const senderDisplayName =
+      customer?.name && customer.name !== "সুন্দরবন কাস্টমার"
+        ? customer.name
+        : (driver?.name || ctx.senderName || "");
+
+    let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
+    if (
+      settings.welcome_message_bengali &&
+      !settings.welcome_message_bengali.includes("সহজ, দ্রুত ও নিরাপদ টোটো বুকিং")
+    ) {
+      welcomeText = settings.welcome_message_bengali
+        .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
+        .replace("ABC", senderDisplayName || "");
+    }
+
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: welcomeText,
+      buttons: [
+        { id: "take_ride", title: "🛺 রাইডার লগইন" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+      ],
+    };
+  }
+
+  // -------------------------------------------------------------
   // FLOW B: DRIVER ACTIONS (Accept, Decline, Start, Complete)
   // -------------------------------------------------------------
   if (payload.startsWith("driver_accept_")) {

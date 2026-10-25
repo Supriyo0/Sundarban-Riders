@@ -680,7 +680,7 @@ function MobileAppPageContent() {
 
   const handleConfirmBooking = useCallback(async () => {
     if (isCustomerBlocked || customerStrikes >= 3) {
-      toast.error("⚠️ ৩ বার বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সচল করতে হেল্পলাইনে (9593177885) যোগাযোগ করুন।");
+      toast.error("⚠️ ৩ বার বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সচল করতে হেল্পলাইনে (8348122122) যোগাযোগ করুন।");
       return;
     }
     if (!dropText || !dropText.trim()) {
@@ -2917,13 +2917,13 @@ function MobileAppPageContent() {
 
                   {/* Direct One-Tap WhatsApp Button to open chat & receive OTP instantly */}
                   <a
-                    href={`https://wa.me/919732566827?text=${encodeURIComponent("OTP")}`}
+                    href={`https://wa.me/918348122122?text=${encodeURIComponent("OTP")}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center"
                   >
                     <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>WhatsApp-এ ওটিপি না আসলে এখানে চাপুন (সরাসরি কোড পান)</span>
+                    <span>WhatsApp-এ ওটিপি না আসলে এখানে চাপুন (8348122122)</span>
                   </a>
 
                   <div className="flex items-center justify-between pt-1">
@@ -3526,13 +3526,13 @@ function MobileAppPageContent() {
           </Button>
 
           <a
-            href="https://wa.me/919593177885?text=নমস্কার%20অ্যাডমিন,%20আমি%20সুন্দরবন%20রাইডার্সে%20চালক%20হিসেবে%20ডকুমেন্টস%20জমা%20দিয়েছি।%20দয়া%20করে%20আমার%20অ্যাকাউন্টটি%20অনুমোদন%20করুন।"
+            href="https://wa.me/918348122122?text=নমস্কার%20অ্যাডমিন,%20আমি%20সুন্দরবন%20রাইডার্সে%20চালক%20হিসেবে%20ডকুমেন্টস%20জমা%20দিয়েছি।%20দয়া%20করে%20আমার%20অ্যাকাউন্টটি%20অনুমোদন%20করুন।"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full h-11 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md flex items-center justify-center gap-2 transition-all text-xs"
           >
             <MessageCircle className="w-4 h-4" />
-            <span>হোয়াটসঅ্যাপ হেল্পলাইনে মেসেজ করুন</span>
+            <span>হোয়াটসঅ্যাপ হেল্পলাইনে মেসেজ করুন (8348122122)</span>
           </a>
 
           <a
@@ -4685,11 +4685,11 @@ function MobileAppPageContent() {
                 </p>
                 <div className="pt-1 flex items-center justify-between">
                   <a
-                    href="tel:9593177885"
+                    href="tel:8348122122"
                     className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors"
                   >
                     <Phone className="w-3.5 h-3.5 fill-white" />
-                    <span>📞 হেল্পলাইনে কল করুন (9593177885)</span>
+                    <span>📞 হেল্পলাইনে কল করুন (8348122122)</span>
                   </a>
                 </div>
               </div>

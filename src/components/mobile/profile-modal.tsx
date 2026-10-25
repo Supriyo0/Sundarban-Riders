@@ -494,8 +494,8 @@ export function MobileProfileModal({
 
                 <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
                   <span className="font-bold text-slate-700">২৪×৭ হেল্পলাইন:</span>
-                  <a href="tel:9593177885" className="text-emerald-700 font-bold hover:underline">
-                    9593177885 📞
+                  <a href="tel:8348122122" className="text-emerald-700 font-bold hover:underline">
+                    8348122122 📞
                   </a>
                 </div>
               </div>

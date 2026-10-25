@@ -1189,7 +1189,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "customer_blocked",
-          message: "⚠️ ৩ বারের বেশি বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সক্রিয় করতে অ্যাডমিনের হেল্পলাইনে (9593177885) যোগাযোগ করুন।",
+          message: "⚠️ ৩ বারের বেশি বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সক্রিয় করতে অ্যাডমিনের হেল্পলাইনে (8348122122) যোগাযোগ করুন।",
           cancellation_count: existingCustomer.cancellation_count || 3,
           is_blocked: true,
         },

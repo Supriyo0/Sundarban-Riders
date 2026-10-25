@@ -99,4 +99,60 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
     expect(toBengaliDigits("3/3")).toBe("৩/৩");
     expect(`(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(3)}/৩)`).toBe("(আপনার বর্তমান বাতিল সংখ্যা: ৩/৩)");
   });
+
+  it("handles greeting 'hii' with clean welcome message, play store link, and exactly 2 buttons", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919000000001",
+      textBody: "hii",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.type).toBe("interactive_buttons");
+    expect(action?.bodyText).toContain("play.google.com");
+    expect(action?.buttons).toEqual([
+      { id: "take_ride", title: "🛺 রাইডার লগইন" },
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+    ]);
+  });
+
+  it("returns admin contact details when unregistered rider clicks rider login", async () => {
+    // Unregistered phone number
+    const action = await processTotoMessage({
+      fromPhone: "+919999888877",
+      buttonPayload: "take_ride",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.bodyText).toContain("নিবন্ধিত নন");
+    expect(action?.bodyText).toContain("8348122122");
+    expect(action?.buttons).toEqual([
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+    ]);
+  });
+
+  it("returns 2 buttons (offline + book toto) when driver declines a ride request", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "driver_decline_SR-1234",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.buttons).toEqual([
+      { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+    ]);
+  });
+
+  it("returns start menu buttons when customer skips review", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919112233445",
+      buttonPayload: "skip_review",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.buttons).toEqual([
+      { id: "take_ride", title: "🛺 রাইডার লগইন" },
+      { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+    ]);
+  });
 });

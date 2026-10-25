@@ -19,6 +19,15 @@ export function toBengaliDigits(num: number | string): string {
   return String(num).replace(/[0-9]/g, (digit) => bengaliDigits[Number(digit)]);
 }
 
+export function fromBengaliDigits(num: number | string): string {
+  const bengaliDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  let res = String(num || "");
+  bengaliDigits.forEach((digit, idx) => {
+    res = res.replaceAll(digit, idx.toString());
+  });
+  return res;
+}
+
 export interface TotoMessageContext {
   fromPhone: string;
   senderName?: string;
@@ -59,7 +68,8 @@ export interface OutboundWhatsAppAction {
 }
 
 interface CustomerBookingState {
-  step: "awaiting_disclaimer" | "awaiting_location" | "awaiting_drop" | "awaiting_complaint" | "awaiting_feedback";
+  step: "awaiting_disclaimer" | "awaiting_location" | "awaiting_drop" | "awaiting_complaint" | "awaiting_feedback" | "awaiting_review";
+  bookingId?: string;
   pickupLocation?: string;
   pickupLat?: number;
   pickupLng?: number;
@@ -93,7 +103,8 @@ export function clearBookingState(phone: string): void {
 }
 
 export interface DriverLocationState {
-  step: "awaiting_driver_location" | "active";
+  step: "awaiting_driver_location" | "active" | "awaiting_driver_otp";
+  bookingId?: string;
   lat?: number;
   lng?: number;
   locationName?: string;
@@ -685,6 +696,7 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
     )}&viewbox=88.1,22.3,88.5,21.5&bounded=0&format=json&limit=1`;
     const res = await fetch(url, {
       headers: { "User-Agent": "SundarbanRiders/1.0 (dispatch@sundarbanriders.com)" },
+      signal: AbortSignal.timeout(2000),
     });
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
@@ -777,6 +789,8 @@ export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন �
 
 > আপনি কি উপরোক্ত সকল শর্তাবলীতে সম্মত আছেন?`;
 
+export const PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.sundarbanriders.app";
+
 export const formatTotoWelcomeMessage = (name?: string) => {
   const greeting = name && name.trim() && name.trim() !== "সুন্দরবন কাস্টমার" ? `🙏🏻 নমস্কার ${name.trim()} 🙏🏻` : `🙏🏻 নমস্কার 🙏🏻`;
   return `${greeting}
@@ -784,6 +798,9 @@ export const formatTotoWelcomeMessage = (name?: string) => {
 আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
 🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
                🙏🏻 সুন্দরবন রাইডার 🙏🏻
+
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+👉 ${PLAYSTORE_APP_URL}
 
 Licence No :- 1554
 Reg. No :- WB-18-0208526
@@ -796,6 +813,9 @@ export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏🏻 নমস্কার 🙏
 আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
 🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
                🙏🏻 সুন্দরবন রাইডার 🙏🏻
+
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+👉 ${PLAYSTORE_APP_URL}
 
 Licence No :- 1554
 Reg. No :- WB-18-0208526
@@ -1010,7 +1030,7 @@ export async function processTotoMessage(
   }
 
   // -------------------------------------------------------------
-  // FLOW B: DRIVER ACTIONS (Accept, Decline, Start, Complete)
+  // FLOW B: DRIVER ACTIONS (Accept, Decline, OTP Entry, Complete)
   // -------------------------------------------------------------
   if (payload.startsWith("driver_accept_")) {
     const bookingId = payload.replace("driver_accept_", "");
@@ -1029,8 +1049,11 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
-        buttons: [{ id: "driver_go_offline", title: "🔴 অফলাইন যান" }],
+        bodyText: `⚠️ দুঃখিত! এই রাইডটির মেয়াদ শেষ হয়েছে বা ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
       };
     }
 
@@ -1065,8 +1088,11 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
-        buttons: [{ id: "driver_go_offline", title: "🔴 অফলাইন যান" }],
+        bodyText: `⚠️ দুঃখিত! এই রাইডটির মেয়াদ শেষ হয়েছে বা ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
       };
     }
 
@@ -1089,25 +1115,27 @@ export async function processTotoMessage(
         if (m.unique_id) driverUid = m.unique_id;
       } catch {}
     }
-    const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "SR-DRV";
+    const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "WB-96-T-8421";
+    const fareAmount = booking.estimated_fare || bookingMeta.estimated_fare || 30;
 
     const extraNotifications: NonNullable<OutboundWhatsAppAction["extraNotifications"]> = [
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🆔 বুকিং আইডি: #${booking.booking_number || booking.id}\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🆔 চালক আইডি: ${driverBadge}\n=======================\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ওটিপিটি চালককে দিন)\n=======================\nচালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🆔 বুকিং আইডি: #${booking.booking_number || booking.id}\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🛺 টোটো নং: ${driverBadge}\n=======================\n💵 আনুমানিক ভাড়া: *₹${fareAmount}.০০*\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n=======================\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ৪ সংখ্যার ওটিপিটি চালককে দিন। চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন)`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],
       },
     ];
 
-    // Inform other online drivers on WhatsApp that this booking was taken
+    // Inform other online drivers on WhatsApp that this booking expired / was taken
     try {
       const { data: otherDrivers } = await supabase
         .from("drivers")
         .select("phone")
-        .neq("phone", rawPhone);
+        .neq("phone", rawPhone)
+        .neq("is_active", false);
 
       if (otherDrivers && otherDrivers.length > 0) {
         for (const od of otherDrivers) {
@@ -1115,7 +1143,7 @@ export async function processTotoMessage(
             extraNotifications.push({
               toPhone: od.phone,
               type: "text",
-              bodyText: `ℹ️ বুকিং আপডেট: #${booking.booking_number} রাইডটি চালক ${driver?.name || "অন্য একজন চালক"} গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+              bodyText: `ℹ️ বুকিং আপডেট: #${booking.booking_number || booking.id.slice(0, 8)} রাইডটির মেয়াদ শেষ হয়েছে বা অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
             });
           }
         }
@@ -1128,9 +1156,9 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য নিচের গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রী গাড়িতে উঠলে তাঁর ৪ সংখ্যার ওটিপি সংগ্রহ করে নিচের বোতামে চাপ দিন)`,
+      bodyText: `🎉 রাইড গ্রহণ সফল হয়েছে!\n=======================\n👤 যাত্রী: ${booking.customer_name || "গ্রাহক"}\n📞 ফোন: ${booking.customer_phone}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n=======================\n🗺️ কাস্টমারের রিয়েলটাইম পিকআপ লোকেশনে পৌঁছানোর জন্য গুগল ম্যাপ লিংকে ক্লিক করুন:\n👉 ${gmapUrl}\n\n(যাত্রীর কাছে পৌঁছালে যাত্রীর ৪ সংখ্যার ওটিপি নিয়ে নিচের বোতামে চাপ দিন)`,
       buttons: [
-        { id: `driver_start_${booking.id}`, title: "🚀 যাত্রা শুরু" },
+        { id: `driver_enter_otp_${booking.id}`, title: "🔐 ওটিপি যাচাই" },
       ],
       extraNotifications,
     };
@@ -1143,33 +1171,54 @@ export async function processTotoMessage(
       bodyText: `❌ আপনি রাইডটি প্রত্যাখ্যান করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
       buttons: [
         { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
       ],
     };
   }
 
-  if (payload.startsWith("driver_start_")) {
-    const bookingId = payload.replace("driver_start_", "");
-    const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId);
-    let bQuery = supabase.from("bookings").select("*");
-    if (isBIdUuid) {
-      bQuery = bQuery.or(`id.eq.${bookingId},booking_number.eq.${bookingId}`);
-    } else {
-      bQuery = bQuery.eq("booking_number", bookingId);
-    }
-    const { data: booking } = await bQuery.maybeSingle();
-
-    if (!booking) {
-      return {
-        toPhone: rawPhone,
-        type: "text",
-        bodyText: "বুকিং পাওয়া যায়নি।",
-      };
-    }
+  // Driver clicks [ 🔐 ওটিপি যাচাই ]
+  if (payload.startsWith("driver_enter_otp_") || payload.startsWith("driver_start_")) {
+    const bookingId = payload.replace("driver_enter_otp_", "").replace("driver_start_", "");
+    driverLocationStates.set(cleanPhone, {
+      step: "awaiting_driver_otp",
+      bookingId,
+      updatedAt: Date.now(),
+    });
 
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `🔐 যাত্রা শুরু করতে যাত্রীর ৪-সংখ্যার ওটিপি (OTP) আবশ্যক!\n\nঅনুগ্রহ করে যাত্রীর কাছ থেকে ওটিপি নিয়ে তা লিখে এই নম্বরে পাঠান (যেমন: *OTP 1234* বা শুধু *1234*)। ওটিপি যাচাই ছাড়া যাত্রা শুরু করা যাবে না।`,
+      bodyText: `🔐 যাত্রীর ৪ সংখ্যার ওটিপি (OTP) সংগ্রহ করে এখানে লিখে পাঠান (যেমন: "১২৩৪" বা "1234"):`,
+    };
+  }
+
+  // Customer clicks [ ⭐ রিভিউ দিন ]
+  if (payload.startsWith("give_review_") || payload === "give_review" || payload === "customer_review") {
+    const bookingId = payload.replace("give_review_", "").replace("customer_review", "");
+    customerBookingStates.set(cleanPhone, {
+      step: "awaiting_review",
+      bookingId: bookingId || undefined,
+      timestamp: Date.now(),
+    });
+
+    return {
+      toPhone: rawPhone,
+      type: "text",
+      bodyText: `⭐ সুন্দরবন রাইডার রিভিউ ⭐\n=======================\nঅনুগ্রহ করে ১ থেকে ৫ এর মধ্যে রেটিং দিন (যেমন: "৫" বা "5 স্টার") এবং চালক বা যাত্রা সম্পর্কে আপনার মূল্যবান মন্তব্য লিখে জানান:`,
+    };
+  }
+
+  // Customer clicks [ ⏭️ স্কিপ করুন ]
+  if (payload === "skip_review" || incomingText === "skip" || incomingText === "স্কিপ") {
+    clearBookingState(cleanPhone);
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: `🙏 সুন্দরবন রাইডার ব্যবহারের জন্য আপনাকে আন্তরিক ধন্যবাদ! 🙏\n\nপুনরায় সেবা পেতে নিচের যে কোনো অপশন বেছে নিন:`,
+      buttons: [
+        { id: "take_ride", title: "🛺 রাইডার লগইন" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+      ],
     };
   }
 
@@ -1182,7 +1231,8 @@ export async function processTotoMessage(
     incomingText === "ওটিপি";
 
   // Handle Driver OTP Verification via incoming WhatsApp message
-  const otpMatch = (ctx.textBody || incomingText).match(/(?:otp|ওটিপি)?\s*([0-9]{4})/i);
+  const convertedInput = fromBengaliDigits(ctx.textBody || incomingText);
+  const otpMatch = convertedInput.match(/(?:otp|ওটিপি)?\s*([0-9]{4})/i);
 
   if (isExplicitOtpRequest && !otpMatch) {
     const key = `otp_91${last10}`;
@@ -1231,15 +1281,18 @@ export async function processTotoMessage(
     };
   }
 
-  if (otpMatch && driver) {
-    const { data: activeAssignedBooking } = await supabase
+  // Driver submits passenger 4-digit ride OTP
+  if (otpMatch && (driver || isRegisteredDriver)) {
+    let bQuery = supabase
       .from("bookings")
       .select("*")
-      .eq("driver_id", driver.id)
       .eq("status", "assigned")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
+
+    if (driver?.id) {
+      bQuery = bQuery.eq("driver_id", driver.id);
+    }
+    const { data: activeAssignedBooking } = await bQuery.limit(1).maybeSingle();
 
     if (activeAssignedBooking) {
       const enteredOtp = otpMatch[1];
@@ -1266,20 +1319,26 @@ export async function processTotoMessage(
           .update({ status: "in_progress", feedback: updatedMeta, updated_at: new Date().toISOString() })
           .eq("id", activeAssignedBooking.id);
 
+        driverLocationStates.set(cleanPhone, {
+          step: "active",
+          updatedAt: Date.now(),
+        });
+
+        const dropPlace = activeAssignedBooking.drop_location || "গন্তব্য";
         const extraNotifications = activeAssignedBooking.customer_phone ? [
           {
             toPhone: activeAssignedBooking.customer_phone,
             type: "text" as const,
-            bodyText: `🛺 আপনার যাত্রা শুরু হয়েছে! সুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক।`,
+            bodyText: `🟢 আপনার রাইড শুরু হয়েছে! চালক আপনাকে নিয়ে গন্তব্যের উদ্দেশ্যে রওনা হয়েছেন।\n📍 গন্তব্য: ${dropPlace}\n⏱️ আনুমানিক সময়: ১৫-২৫ মিনিট।\nসুন্দরবন রাইডারের সাথে আপনার যাত্রা শুভ ও নিরাপদ হোক! 🛺✨`,
           },
         ] : [];
 
         return {
           toPhone: rawPhone,
           type: "interactive_buttons",
-          bodyText: `🟢 ওটিপি (${enteredOtp}) সফলভাবে যাচাই হয়েছে!\nযাত্রী নিয়ে যাত্রা শুরু হয়েছে, সাবধানে ড্রাইভ করুন।\n\n🏁 গন্তব্যে পৌঁছে ট্রিপ সমাপ্ত করতে নিচের বোতামে চাপ দিন:`,
+          bodyText: `🟢 ওটিপি (${toBengaliDigits(enteredOtp)}) সফলভাবে যাচাই হয়েছে!\nযাত্রী নিয়ে যাত্রা শুরু হয়েছে, সাবধানে ড্রাইভ করুন।\n\n🏁 গন্তব্যে পৌঁছে ট্রিপ সমাপ্ত করতে নিচের বোতামে চাপ দিন:`,
           buttons: [
-            { id: `driver_complete_${activeAssignedBooking.id}`, title: "🏁 ট্রিপ সমাপ্ত" },
+            { id: `driver_complete_${activeAssignedBooking.id}`, title: "🏁 রাইড শেষ করুন" },
           ],
           extraNotifications,
         };
@@ -1287,12 +1346,13 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "text",
-          bodyText: `❌ ভুল ওটিপি (${enteredOtp})! অনুগ্রহ করে যাত্রীর অ্যাপ বা হোয়াটসঅ্যাপে দেখানো সঠিক ৪ ডিজিটের ওটিপিটি জেনে লিখে পাঠান।`,
+          bodyText: `❌ ভুল ওটিপি (${toBengaliDigits(enteredOtp)})! অনুগ্রহ করে যাত্রীর অ্যাপ বা হোয়াটসঅ্যাপে দেখানো সঠিক ৪ ডিজিটের ওটিপিটি জেনে পুনরায় লিখে পাঠান:`,
         };
       }
     }
   }
 
+  // Driver finishes ride
   if (payload.startsWith("driver_complete_")) {
     const bookingId = payload.replace("driver_complete_", "");
     const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId);
@@ -1323,8 +1383,8 @@ export async function processTotoMessage(
     const fareResult = calculateTotoFare(distKm, passengerCount, pricingConfig, rideStartTime);
     const finalFare = Number(booking?.final_fare) || Number(booking?.estimated_fare) || fareResult.totalFare;
 
-    // Sanitize: Purge transient tracking telemetry and keep only essential history records
     const updatedMeta = JSON.stringify({
+      ...meta,
       actual_distance_km: distKm,
       calculated_fare: finalFare,
       fare_breakdown: fareResult,
@@ -1349,22 +1409,29 @@ export async function processTotoMessage(
       ).catch(() => {});
     }
 
+    const cleanPickup = (booking?.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
+    const cleanDrop = (booking?.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
+
     const extraNotifications = booking?.customer_phone ? [
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons" as const,
-        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏\n=======================\n📍 মোট অতিক্রান্ত দূরত্ব: ${distKm} কিমি\n💵 সংগৃহীত চূড়ান্ত ভাড়া: ₹${finalFare}.00\n=======================\n🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে —\nক্লিক করুন :`,
+        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! 🙏\n=======================\n🆔 বুকিং নং: #${booking.booking_number || booking.id.slice(0, 8)}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n📏 মোট অতিক্রান্ত দূরত্ব: *${distKm} কিমি*\n💵 সংগৃহীত চূড়ান্ত ভাড়া: *₹${finalFare}.০০*\n=======================\n"সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। আমাদের সেবাকে আরও উন্নত করতে আপনার অভিজ্ঞতা জানান:`,
         buttons: [
-          { id: "customer_complaint", title: "↩️ অভিযোগ জানান" },
-          { id: "customer_feedback", title: "↩️ মতামত বা পরামর্শ" },
+          { id: `give_review_${booking.id}`, title: "⭐ রিভিউ দিন" },
+          { id: "skip_review", title: "⏭️ স্কিপ করুন" },
         ],
       },
     ] : [];
 
     return {
       toPhone: rawPhone,
-      type: "text",
-      bodyText: `🏁 ট্রিপ সফলভাবে সম্পন্ন হয়েছে!\n=======================\n📍 মোট অতিক্রান্ত দূরত্ব: ${distKm} কিমি\n💵 সংগৃহীত চূড়ান্ত ভাড়া: ₹${finalFare}.00\n=======================\nআপনি এখন পরবর্তী রাইড পাওয়ার জন্য প্রস্তুত।`,
+      type: "interactive_buttons",
+      bodyText: `🏁 রাইড সফলভাবে সমাপ্ত হয়েছে! 🏁\n=======================\n🆔 বুকিং নং: #${booking?.booking_number || bookingId.slice(0, 8)}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n📏 মোট অতিক্রান্ত দূরত্ব: *${distKm} কিমি*\n💵 সংগৃহীত চূড়ান্ত ভাড়া: *₹${finalFare}.০০*\n=======================\nপরবর্তী পদক্ষেপ বেছে নিন:`,
+      buttons: [
+        { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+        { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+      ],
       extraNotifications,
     };
   }
@@ -1579,17 +1646,11 @@ export async function processTotoMessage(
         ],
       };
     } else {
-      // User is NOT registered as a rider -> provide Play Store App link and allow booking
+      // User is NOT registered as a rider -> message that they are not registered + administrator details
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `🛺 সুন্দরবন রাইডার চালক পার্টনারে স্বাগতম!\n\nচালকদের লাইভ ডিউটি ও রাইড পাওয়ার জন্য আমাদের অফিসিয়াল অ্যাপ ডাউনলোড ও লগইন করুন:\n👉 https://play.google.com/store/apps/details?id=com.sundarbanriders.app\n\n📄 চালক চুক্তি ও শর্তাবলী (PDF):\n👉 https://sundarbanrider.in/rider-disclaimer.pdf\n\n(অথবা যাত্রী হিসেবে সরাসরি টোটো বুক করতে নিচের বোতামে চাপুন)`,
-        media: {
-          kind: "document",
-          url: RIDER_DISCLAIMER_PDF_URL,
-          filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-          caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
-        },
+        bodyText: `⚠️ আপনি সুন্দরবন রাইডার চালক হিসেবে নিবন্ধিত নন!\n=======================\nসুন্দরবন রাইডার চালক পার্টনার হতে অনুগ্রহ করে অ্যাডমিন বা কার্যালয়ে যোগাযোগ করুন:\n\n📞 অ্যাডমিন ফোন/হোয়াটসঅ্যাপ: 8348122122\n📧 ইমেল: sr.rider122@gmail.com\n🏢 অফিস: কাকদ্বীপ, দক্ষিণ ২৪ পরগনা\n\n📲 অথবা আমাদের অফিসিয়াল চালক অ্যাপ ডাউনলোড করে রেজিস্ট্রেশন করুন:\n👉 https://play.google.com/store/apps/details?id=com.sundarbanriders.app\n\n(যাত্রী হিসেবে টোটো বুক করতে নিচের বোতামে চাপুন)`,
         buttons: [
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
@@ -1623,7 +1684,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nপুনরায় ডিউটি শুরু করতে বা টোটো বুকিং করতে নিচের বোতামে চাপুন:`,
+      bodyText: `⚪ আপনি এখন অফলাইনে আছেন।\nডিউটি বন্ধ করা হয়েছে, তাই আপনার কাছে কোনো রাইড নোটিফিকেশন আসবে না।\n\nপুনরায় ডিউটি শুরু করতে বা টোটো বুকিং করতে নিচের বোতামে চাপুন:`,
       buttons: [
         { id: "take_ride", title: "🛺 রাইডার লগইন" },
         { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
@@ -1870,6 +1931,52 @@ export async function processTotoMessage(
           { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
         ],
       };
+    } else if (bookingState.step === "awaiting_review" && incomingText) {
+      clearBookingState(cleanPhone);
+      const reviewText = ctx.textBody?.trim() || incomingText;
+      const convertedText = fromBengaliDigits(reviewText);
+      const ratingMatch = convertedText.match(/\b([1-5])\b/);
+      const ratingNum = ratingMatch ? parseInt(ratingMatch[1], 10) : 5;
+
+      const bId = bookingState.bookingId;
+      if (bId) {
+        const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bId);
+        let bQuery = supabase.from("bookings").select("*");
+        if (isBIdUuid) {
+          bQuery = bQuery.or(`id.eq.${bId},booking_number.eq.${bId}`);
+        } else {
+          bQuery = bQuery.eq("booking_number", bId);
+        }
+        const { data: bRow } = await bQuery.maybeSingle();
+        if (bRow) {
+          let bMeta: any = {};
+          try { bMeta = JSON.parse(bRow.feedback || "{}"); } catch {}
+          await supabase.from("bookings").update({
+            rating: ratingNum,
+            feedback: JSON.stringify({ ...bMeta, customer_rating: ratingNum, customer_comment: reviewText }),
+            updated_at: new Date().toISOString(),
+          }).eq("id", bRow.id);
+        }
+      }
+
+      await saveFeedbackRecord({
+        type: "suggestion",
+        ticket: `#REV-${Math.floor(1000 + Math.random() * 9000)}`,
+        customer_phone: cleanPhone,
+        customer_name: ctx.senderName || customer?.name || "গ্রাহক",
+        message: `[রেটিং: ${ratingNum} স্টার] ${reviewText}`,
+        status: "reviewed",
+      });
+
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `🌸 আপনার মূল্যবান ${toBengaliDigits(ratingNum)} স্টার রেটিং ও মন্তব্যের জন্য ধন্যবাদ! 🌸\n=======================\nসুন্দরবন রাইডার আপনার সুস্বাস্থ্য ও নিরাপদ ভবিষ্যৎ কামনা করে। পুনরায় সেবা পেতে নিচের যে কোনো বোতাম বেছে নিন:`,
+        buttons: [
+          { id: "take_ride", title: "🛺 রাইডার লগইন" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
     } else if (bookingState.step === "awaiting_location") {
       let pickup = "";
       if (ctx.location?.latitude && ctx.location?.longitude) {
@@ -2007,19 +2114,19 @@ export async function processTotoMessage(
           bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [
             { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
-            { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ প্রত্যাখ্যান" },
+            { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ বাতিল" },
           ],
         };
       });
 
       const statusLine = nearbyDrivers.length > 0
-        ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে জানানো হবে।`
+        ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে ওটিপি ও চালকের বিবরণ জানানো হবে।`
         : `⚠️ বর্তমানে আপনার ৫ কিমির মধ্যে কোনো সক্রিয় চালক অনলাইনে নেই। তবে আপনার বুকিংটি লাইভ রাখা হয়েছে, কাছাকাছি কোনো চালক ডিউটিতে এলে অনুরোধ পৌঁছে যাবে।`;
 
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨\n=======================\n🆔 বুকিং নং: * #${bookingNumber} *\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\n${statusLine}`,
+        bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bookingNumber}*\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\n${statusLine}`,
         buttons: [
           { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
         ],

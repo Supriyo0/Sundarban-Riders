@@ -705,50 +705,52 @@ async function processMessage(
         }
       }
 
-      // Dispatch any secondary notifications (e.g. alerts to customer or online drivers)
+      // Dispatch any secondary notifications (e.g. alerts to customer or online drivers) concurrently
       if (totoAction.extraNotifications && totoAction.extraNotifications.length > 0) {
-        for (const notif of totoAction.extraNotifications) {
-          const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
-          if (notif.media) {
-            try {
-              await sendMediaMessage({
-                phoneNumberId,
-                accessToken,
-                to: destPhone,
-                kind: notif.media.kind,
-                link: notif.media.url,
-                filename: notif.media.filename,
-                caption: notif.media.caption,
-              })
-            } catch (err) {
-              console.error('[webhook] extraNotification media error:', err)
+        await Promise.all(
+          totoAction.extraNotifications.map(async (notif) => {
+            const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
+            if (notif.media) {
+              try {
+                await sendMediaMessage({
+                  phoneNumberId,
+                  accessToken,
+                  to: destPhone,
+                  kind: notif.media.kind,
+                  link: notif.media.url,
+                  filename: notif.media.filename,
+                  caption: notif.media.caption,
+                })
+              } catch (err) {
+                console.error('[webhook] extraNotification media error:', err)
+              }
             }
-          }
-          if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
-            try {
-              await sendInteractiveButtons({
-                phoneNumberId,
-                accessToken,
-                to: destPhone,
-                bodyText: notif.bodyText,
-                buttons: notif.buttons.slice(0, 3),
-              })
-            } catch (err) {
-              console.error('[webhook] extraNotification button error:', err)
+            if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
+              try {
+                await sendInteractiveButtons({
+                  phoneNumberId,
+                  accessToken,
+                  to: destPhone,
+                  bodyText: notif.bodyText,
+                  buttons: notif.buttons.slice(0, 3),
+                })
+              } catch (err) {
+                console.error('[webhook] extraNotification button error:', err)
+              }
+            } else if (notif.bodyText) {
+              try {
+                await sendTextMessage({
+                  phoneNumberId,
+                  accessToken,
+                  to: destPhone,
+                  text: notif.bodyText,
+                })
+              } catch (err) {
+                console.error('[webhook] extraNotification text error:', err)
+              }
             }
-          } else if (notif.bodyText) {
-            try {
-              await sendTextMessage({
-                phoneNumberId,
-                accessToken,
-                to: destPhone,
-                text: notif.bodyText,
-              })
-            } catch (err) {
-              console.error('[webhook] extraNotification text error:', err)
-            }
-          }
-        }
+          })
+        )
       }
 
       return { totoAction, metaMessageId }

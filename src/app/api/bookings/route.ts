@@ -1820,30 +1820,8 @@ export async function PATCH(request: Request) {
       const initialEstFare = Number(booking.estimated_fare) || Number(meta.estimated_fare) || Number(meta.initial_fare) || calculatedFare;
 
       // Exact Odometer-Based Dynamic Fare Calculation:
-      // 1. If driver didn't move after pickup (distanceKm < 0.3 km):
-      //    Charge official minimum base fare from rate chart (Slab 1 base fare = ₹22, e.g. 1 km min ride charge + booking charge)
-      // 2. If ride finished early / mid-way (distanceKm < initialEstDist * 0.85):
-      //    Dynamically recalculate fare for actual distance travelled using official fare chart (calculateTotoFare).
-      // 3. If ride reached intended destination area normally (distanceKm >= initialEstDist * 0.85 && distanceKm <= initialEstDist * 1.25):
-      //    Charge initialEstFare (upfront agreed fare).
-      // 4. If customer travelled further (distanceKm > initialEstDist * 1.25):
-      //    Bill actual distance from rate chart.
-      let finalFareToCharge = calculatedFare;
-      if (distanceKm < 0.3) {
-        // Driver did not move: charge rate chart minimum base fare (never full estimate)
-        finalFareToCharge = fareResult.totalFare;
-      } else if (initialEstDist > 0 && initialEstFare > 0) {
-        if (distanceKm < initialEstDist * 0.85) {
-          // Mid-trip drop / early termination: strictly bill for actual distance travelled
-          finalFareToCharge = calculatedFare;
-        } else if (distanceKm <= initialEstDist * 1.25) {
-          // Normal destination completion: respect upfront quote
-          finalFareToCharge = initialEstFare;
-        } else {
-          // Extended trip: bill actual distance from chart
-          finalFareToCharge = calculatedFare;
-        }
-      }
+      // The final fare is calculated strictly based on the rider's actual movement in the app using the official rate chart
+      const finalFareToCharge = calculatedFare;
 
       const acceptStartMs = meta.trip_accepted_time
         ? Number(meta.trip_accepted_time)

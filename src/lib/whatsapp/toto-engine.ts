@@ -1372,16 +1372,35 @@ export async function processTotoMessage(
     const eLat = meta.end_coords?.[0] || (sLat + 0.02);
     const eLng = meta.end_coords?.[1] || (sLng + 0.02);
 
-    const distKm = Math.max(1.0, Math.round(calculateDistanceKm(sLat, sLng, eLat, eLng) * 1.25 * 10) / 10);
+    // Exact distance calculation from rider movement in the app or live GPS
+    let distKm = Number(meta.actual_distance_km) || Number(meta.live_distance_km);
+    if (!distKm || isNaN(distKm) || distKm <= 0) {
+      let currentDriverLat = driver?.latitude;
+      let currentDriverLng = driver?.longitude;
+      if (!currentDriverLat || !currentDriverLng) {
+        try {
+          const dLoc = JSON.parse(driver?.current_location_name || "{}");
+          currentDriverLat = dLoc.lat;
+          currentDriverLng = dLoc.lng;
+        } catch {}
+      }
+      if (currentDriverLat && currentDriverLng && sLat && sLng) {
+        const directKm = calculateDistanceKm(sLat, sLng, currentDriverLat, currentDriverLng);
+        distKm = Math.max(0.5, Math.round(directKm * 1.25 * 10) / 10);
+      } else {
+        const directKm = calculateDistanceKm(sLat, sLng, eLat, eLng);
+        distKm = Math.max(0.5, Math.round(directKm * 1.25 * 10) / 10);
+      }
+    }
     
-    // Accurately calculate final fare matching app's pricing configuration
+    // Accurately calculate final fare strictly matching app's pricing configuration based on rider movement
     const pricingConfig = await loadActivePricingConfig(supabase);
     const passengerCount = meta.passenger_count || 3;
     const rideStartTime = meta.trip_start_time
       ? new Date(meta.trip_start_time)
       : (booking?.created_at ? new Date(booking.created_at) : new Date());
     const fareResult = calculateTotoFare(distKm, passengerCount, pricingConfig, rideStartTime);
-    const finalFare = Number(booking?.final_fare) || Number(booking?.estimated_fare) || fareResult.totalFare;
+    const finalFare = fareResult.totalFare;
 
     const updatedMeta = JSON.stringify({
       ...meta,

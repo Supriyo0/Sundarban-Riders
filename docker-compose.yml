@@ -22,8 +22,8 @@ services:
     # in .env.local can't desync the app from the mapping and the
     # healthcheck below.
     dns:
-      - 8.8.8.8
       - 8.8.4.4
+      - 9.9.9.9
     environment:
       PORT: 3000
       NODE_OPTIONS: "--dns-result-order=ipv4first"

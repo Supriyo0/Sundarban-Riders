@@ -68,6 +68,30 @@ interface CustomerBookingState {
 
 const customerBookingStates = new Map<string, CustomerBookingState>();
 
+export function getBookingState(phone: string): CustomerBookingState | undefined {
+  const clean = phone.replace(/\D/g, "");
+  const last10 = clean.slice(-10);
+  return customerBookingStates.get(clean) || customerBookingStates.get(last10);
+}
+
+export function hasBookingState(phone: string): boolean {
+  return Boolean(getBookingState(phone));
+}
+
+export function setBookingState(phone: string, state: CustomerBookingState): void {
+  const clean = phone.replace(/\D/g, "");
+  const last10 = clean.slice(-10);
+  customerBookingStates.set(clean, state);
+  customerBookingStates.set(last10, state);
+}
+
+export function clearBookingState(phone: string): void {
+  const clean = phone.replace(/\D/g, "");
+  const last10 = clean.slice(-10);
+  customerBookingStates.delete(clean);
+  customerBookingStates.delete(last10);
+}
+
 export interface DriverLocationState {
   step: "awaiting_driver_location" | "active";
   lat?: number;
@@ -1711,12 +1735,12 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "agree_disclaimer" ||
-    payload === "driver_agree_terms" ||
-    incomingText.includes("সম্মত") ||
-    incomingText.includes("agree") ||
-    (customerBookingStates.has(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ"))
+    incomingText.includes("সম্মত আছি") ||
+    incomingText === "সম্মত" ||
+    incomingText === "agree" ||
+    (hasBookingState(cleanPhone) && (incomingText === "1" || incomingText === "১" || incomingText === "হ্যাঁ"))
   ) {
-    customerBookingStates.set(cleanPhone, {
+    setBookingState(cleanPhone, {
       step: "awaiting_location",
       timestamp: Date.now(),
     });
@@ -1743,10 +1767,10 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   // FLOW E: LOCATION & DESTINATION INPUT FROM CUSTOMER & FEEDBACK
   // -------------------------------------------------------------
-  const bookingState = customerBookingStates.get(cleanPhone);
+  const bookingState = getBookingState(cleanPhone);
   if (bookingState && !payload) {
     if (bookingState.step === "awaiting_complaint" && incomingText) {
-      customerBookingStates.delete(cleanPhone);
+      clearBookingState(cleanPhone);
       const complaintText = ctx.textBody?.trim() || incomingText;
       const ticketNo = `CMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1768,7 +1792,7 @@ export async function processTotoMessage(
         ],
       };
     } else if (bookingState.step === "awaiting_feedback" && incomingText) {
-      customerBookingStates.delete(cleanPhone);
+      clearBookingState(cleanPhone);
       const feedbackText = ctx.textBody?.trim() || incomingText;
       const ticketNo = `SUG-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1798,7 +1822,7 @@ export async function processTotoMessage(
       }
 
       if (pickup) {
-        customerBookingStates.set(cleanPhone, {
+        setBookingState(cleanPhone, {
           step: "awaiting_drop",
           pickupLocation: pickup,
           pickupLat: ctx.location?.latitude,
@@ -1815,7 +1839,7 @@ export async function processTotoMessage(
     } else if (bookingState.step === "awaiting_drop" && incomingText) {
       const dropLocation = ctx.textBody?.trim() || incomingText;
       const pickupLocation = bookingState.pickupLocation || "পিকআপ লোকেশন";
-      customerBookingStates.delete(cleanPhone);
+      clearBookingState(cleanPhone);
 
       const bookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1984,7 +2008,7 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "book_toto" ||
-    (!customerBookingStates.has(cleanPhone) && (incomingText === "2" || incomingText === "২")) ||
+    (!hasBookingState(cleanPhone) && (incomingText === "2" || incomingText === "২")) ||
     incomingText.includes("টোটো বুকিং") ||
     incomingText.includes("book toto") ||
     incomingText === "book" ||
@@ -1995,7 +2019,7 @@ export async function processTotoMessage(
     driverLocationStates.delete(cleanPhone);
 
     // Keep user in customer booking flow
-    customerBookingStates.set(cleanPhone, {
+    setBookingState(cleanPhone, {
       step: customer?.disclaimer_agreed ? "awaiting_location" : "awaiting_disclaimer",
       timestamp: Date.now(),
     });

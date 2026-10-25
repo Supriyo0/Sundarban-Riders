@@ -618,10 +618,9 @@ async function processMessage(
 
   // ============================================================
   // FAST-PATH: Dispatch Toto WhatsApp Bot reply IMMEDIATELY (<200ms)
-  // We trigger the Meta Graph API response concurrently with DB logging
-  // so the user receives their reply with sub-300ms latency!
+  // We send the reply to WhatsApp immediately so the user gets instant response
   // ============================================================
-  const totoReplyPromise = message.type === 'reaction' ? null : (async () => {
+  const totoRes = message.type === 'reaction' ? null : await (async () => {
     try {
       const totoAction = await processTotoMessage({
         fromPhone: message.from,
@@ -986,32 +985,29 @@ async function processMessage(
   // ============================================================
   // Record Toto Bot reply in conversation thread
   // ============================================================
-  if (totoReplyPromise) {
+  if (totoRes && totoRes.metaMessageId) {
     try {
-      const totoRes = await totoReplyPromise
-      if (totoRes && totoRes.metaMessageId) {
-        await supabaseAdmin().from('messages').insert({
-          account_id: accountId,
-          contact_id: contactRecord.id,
-          conversation_id: conversation.id,
-          direction: 'outbound',
-          sender_type: 'agent',
-          content_type:
-            totoRes.totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
-          content_text: totoRes.totoAction.bodyText,
-          body: totoRes.totoAction.bodyText,
-          message_id: totoRes.metaMessageId,
-          status: 'sent',
+      await supabaseAdmin().from('messages').insert({
+        account_id: accountId,
+        contact_id: contactRecord.id,
+        conversation_id: conversation.id,
+        direction: 'outbound',
+        sender_type: 'agent',
+        content_type:
+          totoRes.totoAction.type === 'interactive_buttons' ? 'interactive' : 'text',
+        content_text: totoRes.totoAction.bodyText,
+        body: totoRes.totoAction.bodyText,
+        message_id: totoRes.metaMessageId,
+        status: 'sent',
+      })
+      await supabaseAdmin()
+        .from('conversations')
+        .update({
+          last_message: totoRes.totoAction.bodyText,
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
-        await supabaseAdmin()
-          .from('conversations')
-          .update({
-            last_message: totoRes.totoAction.bodyText,
-            last_message_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', conversation.id)
-      }
+        .eq('id', conversation.id)
     } catch (totoErr) {
       console.error('[webhook] Toto bot logging error:', totoErr)
     }

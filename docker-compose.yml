@@ -21,8 +21,12 @@ services:
     # here because `environment` wins over `env_file`, so a stray PORT
     # in .env.local can't desync the app from the mapping and the
     # healthcheck below.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       PORT: 3000
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
     # Host side only — HOST_PORT=8080 publishes the app on :8080.
     ports:
       - '${HOST_PORT:-3000}:3000'

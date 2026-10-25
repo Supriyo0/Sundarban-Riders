@@ -98,6 +98,20 @@ export function LiveRideTrackingMap({
     }
   }, [booking?.trip_start_time, booking?.tripStartTime]);
 
+  // Synchronize driver position immediately when booking props update
+  useEffect(() => {
+    if (booking?.driver_lat && booking?.driver_lng) {
+      const bLat = Number(booking.driver_lat);
+      const bLng = Number(booking.driver_lng);
+      if (!isNaN(bLat) && !isNaN(bLng) && bLat !== 0 && bLng !== 0) {
+        setDriverPos((prev) => {
+          if (prev[0] === bLat && prev[1] === bLng) return prev;
+          return [bLat, bLng];
+        });
+      }
+    }
+  }, [booking?.driver_lat, booking?.driver_lng]);
+
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentClockTime, setCurrentClockTime] = useState("");
 
@@ -289,7 +303,7 @@ export function LiveRideTrackingMap({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [effectiveRideStep, dropCoords?.[0], dropCoords?.[1], pickupCoords[0], pickupCoords[1]]);
+  }, [effectiveRideStep, dropCoords?.[0], dropCoords?.[1], pickupCoords[0], pickupCoords[1], driverPos[0], driverPos[1]]);
 
   // 2. Poll driver location, trip start time & booking status every 2.5s
   useEffect(() => {

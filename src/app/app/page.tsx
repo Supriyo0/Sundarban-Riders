@@ -860,11 +860,16 @@ function MobileAppPageContent() {
                   totoNumber: b.driver_unique_id || b.toto_number || "",
                   uniqueId: b.driver_unique_id || b.toto_number || "",
                   startOtp: b.start_otp,
+                  start_otp: b.start_otp,
+                  driver_lat: b.driver_lat,
+                  driver_lng: b.driver_lng,
+                  driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
                   pickup: b.pickup_location,
                   drop: b.drop_location,
                   pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
                   dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
                   fare: Number(b.estimated_fare || tripFare),
+                  status: b.status,
                 };
                 setPassengerBooking(acceptedBooking);
                 setActiveBookingId(b.id);
@@ -967,11 +972,16 @@ function MobileAppPageContent() {
               totoNumber: b.driver_unique_id || b.toto_number || "",
               uniqueId: b.driver_unique_id || b.toto_number || "",
               startOtp: b.start_otp,
+              start_otp: b.start_otp,
+              driver_lat: b.driver_lat,
+              driver_lng: b.driver_lng,
+              driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
               pickup: b.pickup_location,
               drop: b.drop_location,
               pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
               dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
               fare: Number(b.estimated_fare || tripFare),
+              status: b.status,
             };
 
             setPassengerBooking(acceptedPassengerBooking);
@@ -998,14 +1008,21 @@ function MobileAppPageContent() {
       };
 
       checkBookingAcceptance();
-      // Poll every 3500ms and pause when tab/screen is hidden to save Supabase egress & CPU
-      pollInterval = setInterval(() => {
-        if (typeof document !== "undefined" && document.hidden) return;
-        checkBookingAcceptance();
-      }, 3500);
+      // Fast polling (1000ms) so customer immediately sees driver acceptance, coordinates, and OTP
+      pollInterval = setInterval(checkBookingAcceptance, 1000);
+      if (typeof window !== "undefined") {
+        window.addEventListener("focus", checkBookingAcceptance);
+        document.addEventListener("visibilitychange", checkBookingAcceptance);
+      }
     }
 
-    return () => clearInterval(pollInterval);
+    return () => {
+      clearInterval(pollInterval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", checkBookingAcceptance);
+        document.removeEventListener("visibilitychange", checkBookingAcceptance);
+      }
+    };
   }, [searchStatus, activeBookingId, Boolean(passengerBooking), session?.phone]);
 
   // Passenger Live Polling for Ride Progress (Driver heading to pickup -> Journey Started -> Completed)
@@ -1038,11 +1055,16 @@ function MobileAppPageContent() {
             totoNumber: b.driver_unique_id || b.toto_number || "",
             uniqueId: b.driver_unique_id || b.toto_number || "",
             startOtp: b.start_otp,
+            start_otp: b.start_otp,
+            driver_lat: b.driver_lat,
+            driver_lng: b.driver_lng,
+            driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
             pickup: b.pickup_location,
             drop: b.drop_location,
             pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
             dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
             fare: Number(b.estimated_fare || tripFare),
+            status: b.status,
           };
           setPassengerBooking(acceptedBooking);
           setSearchStatus("idle");
@@ -1062,9 +1084,15 @@ function MobileAppPageContent() {
         if (b.final_fare || b.estimated_fare) setTripFare(Number(b.final_fare || b.estimated_fare));
         if (b.actual_distance_km) setTripDistance(Number(b.actual_distance_km));
 
-        // Keep startOtp up to date if returned
-        if (b.start_otp) {
-          setPassengerBooking((prev: any) => (prev ? { ...prev, startOtp: b.start_otp } : prev));
+        // Keep startOtp and driver coordinates up to date
+        if (b.start_otp || b.driver_lat || b.driver_lng) {
+          setPassengerBooking((prev: any) => (prev ? {
+            ...prev,
+            ...(b.start_otp ? { startOtp: b.start_otp, start_otp: b.start_otp } : {}),
+            ...(b.driver_lat ? { driver_lat: b.driver_lat } : {}),
+            ...(b.driver_lng ? { driver_lng: b.driver_lng } : {}),
+            ...(b.driver_coords ? { driver_coords: b.driver_coords } : {}),
+          } : prev));
         }
 
         // When driver starts the trip:

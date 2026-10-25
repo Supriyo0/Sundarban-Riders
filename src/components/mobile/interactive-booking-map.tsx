@@ -983,6 +983,9 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
+          // Immediately draw route line so black (#064e3b) and green (#10b981) track is NEVER missing or blank while road network resolves
+          applyRouteGeometry([pCoords, dCoords]);
+
           // Immediately dispatch coordinates so parent page.tsx never loses dropCoords while route is fetching
           const initialComputedFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
           onRouteSelectedRef.current?.({
@@ -1003,7 +1006,7 @@ export function InteractiveBookingMap({
             }
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
-            const safetyTimer = setTimeout(() => controller.abort(), 8000);
+            const safetyTimer = setTimeout(() => controller.abort(), 4000);
 
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
@@ -1016,8 +1019,7 @@ export function InteractiveBookingMap({
               if (
                 data?.coordinates &&
                 Array.isArray(data.coordinates) &&
-                data.coordinates.length > 2 &&
-                data.isExactRoadRoute
+                data.coordinates.length > 2
               ) {
                 applyRouteGeometry(data.coordinates);
                 routeClientCache.set(cacheKey, {
@@ -1025,6 +1027,8 @@ export function InteractiveBookingMap({
                   durationMin: data.durationMin,
                   coordinates: data.coordinates,
                 });
+              } else {
+                applyRouteGeometry([pCoords, dCoords]);
               }
 
               if (data?.riverCrossing) {
@@ -1056,6 +1060,7 @@ export function InteractiveBookingMap({
               // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
+            applyRouteGeometry([pCoords, dCoords]);
             setDistanceKm(baselineDist);
             setRoadDurationMin(baselineDuration);
             const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
@@ -1597,9 +1602,10 @@ export function InteractiveBookingMap({
               // Update the live user dot on the map without touching React state
               await updateLiveUserDot(latitude, longitude);
 
-              // Only initialize pickup if it was never locked before (0, 0)
+              // Calibrate pickup location accurately to the user's real live GPS location
               const prevPickup = pickupCoordsRef.current;
-              if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+              const hasMovedFar = prevPickup[0] !== 0 && calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.015;
+              if ((prevPickup[0] === 0 || hasMovedFar) && !hasManualPickupRef.current && !isCancelled) {
                 setPickupCoords([latitude, longitude]);
                 pickupCoordsRef.current = [latitude, longitude];
                 setHasValidPickup(true);
@@ -1650,9 +1656,10 @@ export function InteractiveBookingMap({
             // Update the live user dot on the map without touching React state
             await updateLiveUserDot(latitude, longitude);
 
-            // Only initialize pickup if it was never locked before (0, 0)
+            // Calibrate pickup location accurately to the user's real live GPS location
             const prevPickup = pickupCoordsRef.current;
-            if (prevPickup[0] === 0 && !hasManualPickupRef.current && !isCancelled) {
+            const hasMovedFar = prevPickup[0] !== 0 && calculateDistanceKm(prevPickup[0], prevPickup[1], latitude, longitude) > 0.015;
+            if ((prevPickup[0] === 0 || hasMovedFar) && !hasManualPickupRef.current && !isCancelled) {
               const liveP: [number, number] = [latitude, longitude];
               setPickupCoords(liveP);
               pickupCoordsRef.current = liveP;

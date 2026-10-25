@@ -792,6 +792,11 @@ export interface SendInteractiveButtonsArgs {
   to: string
   /** The body text — what the customer reads above the buttons. */
   bodyText: string
+  headerMedia?: {
+    kind: 'document' | 'image' | 'video'
+    url: string
+    filename?: string
+  }
   /** Optional plain-text header (≤ 60 chars). */
   headerText?: string
   /** Optional grey footer line under the buttons (≤ 60 chars). */
@@ -815,7 +820,7 @@ export async function sendInteractiveButtons(
 ): Promise<MetaSendResult> {
   const {
     phoneNumberId, accessToken, to,
-    bodyText, headerText, footerText, buttons, contextMessageId,
+    bodyText, headerMedia, headerText, footerText, buttons, contextMessageId,
   } = args
 
   // Safely clamp bodyText to Meta limit (1024 chars) to prevent rejection
@@ -850,7 +855,17 @@ export async function sendInteractiveButtons(
       })),
     },
   }
-  if (headerText) interactive.header = { type: 'text', text: [...headerText].slice(0, INTERACTIVE_LIMITS.headerTextMaxLength).join('') }
+  if (headerMedia) {
+    interactive.header = {
+      type: headerMedia.kind,
+      [headerMedia.kind]: {
+        link: headerMedia.url,
+        ...(headerMedia.filename ? { filename: headerMedia.filename } : {}),
+      },
+    }
+  } else if (headerText) {
+    interactive.header = { type: 'text', text: [...headerText].slice(0, INTERACTIVE_LIMITS.headerTextMaxLength).join('') }
+  }
   if (footerText) interactive.footer = { text: [...footerText].slice(0, INTERACTIVE_LIMITS.footerMaxLength).join('') }
 
   const body: Record<string, unknown> = {

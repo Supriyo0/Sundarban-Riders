@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     if (mapboxToken) {
       try {
         const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&continue_straight=false&access_token=${mapboxToken}`;
-        let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(4000) }).catch(() => null);
+        let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(2000) }).catch(() => null);
 
         let route: any = null;
         if (mbRes && mbRes.ok) {
@@ -137,7 +137,7 @@ export async function GET(req: Request) {
         // Rural Toto fallback: If car driving returns NoRoute or NoSegment (e.g. narrow village brick paths), query cycling profile
         if (!route) {
           const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&access_token=${mapboxToken}`;
-          const cycRes = await fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(3500) }).catch(() => null);
+          const cycRes = await fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(2000) }).catch(() => null);
           if (cycRes && cycRes.ok) {
             const cycData = await cycRes.json();
             if (cycData?.code === "Ok" && cycData?.routes?.length > 0) {

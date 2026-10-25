@@ -32,9 +32,9 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
   });
 
   it("returns driver disclaimer with attached PDF for first-time rider login", async () => {
-    // 919876543210 is a driver without agreed_terms in DB
+    // 919883838854 is a registered driver with agreed_terms: false in DB
     const action = await processTotoMessage({
-      fromPhone: "+919876543210",
+      fromPhone: "+919883838854",
       buttonPayload: "take_ride",
     });
 

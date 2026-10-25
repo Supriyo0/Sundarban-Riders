@@ -643,25 +643,7 @@ async function processMessage(
       let metaMessageId: string | null = null
       const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
 
-      // 1. Send media attachment (e.g. Driver Disclaimer PDF or Customer Image) if provided
-      if (totoAction.media) {
-        try {
-          const mediaRes = await sendMediaMessage({
-            phoneNumberId,
-            accessToken,
-            to: recipientPhone,
-            kind: totoAction.media.kind,
-            link: totoAction.media.url,
-            filename: totoAction.media.filename,
-            caption: totoAction.media.caption,
-          })
-          metaMessageId = mediaRes.messageId
-        } catch (mediaErr) {
-          console.error('[webhook] Media send failed:', mediaErr)
-        }
-      }
-
-      // 2. Send interactive buttons or text message
+      // 1. Send interactive buttons or text message (with headerMedia if media provided)
       if (
         totoAction.type === 'interactive_buttons' &&
         totoAction.buttons &&
@@ -673,6 +655,11 @@ async function processMessage(
             accessToken,
             to: recipientPhone,
             bodyText: totoAction.bodyText,
+            headerMedia: totoAction.media ? {
+              kind: totoAction.media.kind,
+              url: totoAction.media.url,
+              filename: totoAction.media.filename,
+            } : undefined,
             buttons: totoAction.buttons.slice(0, 3),
           })
           metaMessageId = res.messageId
@@ -691,17 +678,37 @@ async function processMessage(
             console.error('[webhook] Text fallback send also failed:', textErr)
           }
         }
-      } else if (totoAction.type === 'text' || (!totoAction.media && totoAction.bodyText)) {
-        try {
-          const res = await sendTextMessage({
-            phoneNumberId,
-            accessToken,
-            to: recipientPhone,
-            text: totoAction.bodyText,
-          })
-          metaMessageId = res.messageId
-        } catch (textErr) {
-          console.error('[webhook] Send text message failed:', textErr)
+      } else {
+        // Standalone media send if not combined into interactive buttons
+        if (totoAction.media) {
+          try {
+            const mediaRes = await sendMediaMessage({
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              kind: totoAction.media.kind,
+              link: totoAction.media.url,
+              filename: totoAction.media.filename,
+              caption: totoAction.media.caption,
+            })
+            metaMessageId = mediaRes.messageId
+          } catch (mediaErr) {
+            console.error('[webhook] Media send failed:', mediaErr)
+          }
+        }
+
+        if (totoAction.type === 'text' || (!totoAction.media && totoAction.bodyText)) {
+          try {
+            const res = await sendTextMessage({
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              text: totoAction.bodyText,
+            })
+            metaMessageId = res.messageId
+          } catch (textErr) {
+            console.error('[webhook] Send text message failed:', textErr)
+          }
         }
       }
 
@@ -710,21 +717,6 @@ async function processMessage(
         await Promise.all(
           totoAction.extraNotifications.map(async (notif) => {
             const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
-            if (notif.media) {
-              try {
-                await sendMediaMessage({
-                  phoneNumberId,
-                  accessToken,
-                  to: destPhone,
-                  kind: notif.media.kind,
-                  link: notif.media.url,
-                  filename: notif.media.filename,
-                  caption: notif.media.caption,
-                })
-              } catch (err) {
-                console.error('[webhook] extraNotification media error:', err)
-              }
-            }
             if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
               try {
                 await sendInteractiveButtons({
@@ -732,21 +724,43 @@ async function processMessage(
                   accessToken,
                   to: destPhone,
                   bodyText: notif.bodyText,
+                  headerMedia: notif.media ? {
+                    kind: notif.media.kind,
+                    url: notif.media.url,
+                    filename: notif.media.filename,
+                  } : undefined,
                   buttons: notif.buttons.slice(0, 3),
                 })
               } catch (err) {
                 console.error('[webhook] extraNotification button error:', err)
               }
-            } else if (notif.bodyText) {
-              try {
-                await sendTextMessage({
-                  phoneNumberId,
-                  accessToken,
-                  to: destPhone,
-                  text: notif.bodyText,
-                })
-              } catch (err) {
-                console.error('[webhook] extraNotification text error:', err)
+            } else {
+              if (notif.media) {
+                try {
+                  await sendMediaMessage({
+                    phoneNumberId,
+                    accessToken,
+                    to: destPhone,
+                    kind: notif.media.kind,
+                    link: notif.media.url,
+                    filename: notif.media.filename,
+                    caption: notif.media.caption,
+                  })
+                } catch (err) {
+                  console.error('[webhook] extraNotification media error:', err)
+                }
+              }
+              if (notif.bodyText) {
+                try {
+                  await sendTextMessage({
+                    phoneNumberId,
+                    accessToken,
+                    to: destPhone,
+                    text: notif.bodyText,
+                  })
+                } catch (err) {
+                  console.error('[webhook] extraNotification text error:', err)
+                }
               }
             }
           })

@@ -330,18 +330,8 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
   }, [items]);
 
   const handleAgreementToggle = () => {
-    if (!hasScrolledToBottom) {
-      setShowScrollWarning(true);
-      // Auto scroll smoothly to bottom
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTo({
-          top: scrollContainerRef.current.scrollHeight,
-          behavior: "smooth",
-        });
-      }
-      setTimeout(() => setShowScrollWarning(false), 4000);
-      return;
-    }
+    setHasScrolledToBottom(true);
+    setShowScrollWarning(false);
     setIsAgreed((prev) => !prev);
   };
 

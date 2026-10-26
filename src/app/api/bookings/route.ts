@@ -4,8 +4,8 @@ export const revalidate = 0;
 let lastStaleCleanupTime = 0;
 const bookingPollCache = new Map<string, { data: any; timestamp: number }>();
 let pendingBookingsCache: { data: any; timestamp: number } | null = null;
-const ID_CACHE_TTL = 1500;
-const PENDING_CACHE_TTL = 2500;
+const ID_CACHE_TTL = 800;
+const PENDING_CACHE_TTL = 2000;
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -722,7 +722,7 @@ export async function GET(request: Request) {
       }
 
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-      let query = admin.from("bookings").select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)");
+      let query = admin.from("bookings").select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)");
       if (isUuid) {
         query = query.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
       } else {
@@ -1001,7 +1001,7 @@ export async function GET(request: Request) {
 
       const { data, error } = await admin
         .from("bookings")
-        .select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)")
+        .select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)")
         .in("driver_id", matchedDriverIds)
         .in("status", ["assigned", "in_progress"])
         .order("created_at", { ascending: false })
@@ -1077,7 +1077,7 @@ export async function GET(request: Request) {
 
       let activeQuery = admin
         .from("bookings")
-        .select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)")
+        .select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)")
         .or(custOrClause)
         .order("created_at", { ascending: false });
 

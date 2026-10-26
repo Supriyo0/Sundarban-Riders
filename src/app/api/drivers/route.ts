@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       const last10 = cleanPhone.slice(-10);
       query = query.or(`phone.eq.${filterPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`);
     } else if (!showAll) {
-      query = query.select("id, name, phone, toto_number, is_active, latitude, longitude, current_location_name, unique_id, rating, total_trips").eq("is_active", true);
+      query = query.select("id, name, phone, toto_number, is_active, latitude, longitude, current_location_name, rating, total_trips").eq("is_active", true);
     }
 
     const { data, error } = await query;

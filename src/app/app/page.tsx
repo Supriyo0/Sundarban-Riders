@@ -1010,8 +1010,8 @@ function MobileAppPageContent() {
 
     if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
       checkBookingAcceptance();
-      // Throttled polling (2500ms) with document.hidden guard to protect Supabase egress
-      pollInterval = setInterval(checkBookingAcceptance, 2500);
+      // Fast responsive polling (1500ms) with document.hidden guard
+      pollInterval = setInterval(checkBookingAcceptance, 1500);
       if (typeof window !== "undefined") {
         window.addEventListener("focus", checkBookingAcceptance);
         document.addEventListener("visibilitychange", checkBookingAcceptance);
@@ -1210,7 +1210,7 @@ function MobileAppPageContent() {
     pollInterval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       pollRideStatus();
-    }, 3500);
+    }, 1800);
     return () => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);

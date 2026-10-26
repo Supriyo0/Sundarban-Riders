@@ -236,12 +236,22 @@ export function calculateTotoFare(
   };
 }
 
+let cachedPricingConfig: { config: TotoPricingConfig; timestamp: number } | null = null;
+const PRICING_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+export function invalidatePricingCache() {
+  cachedPricingConfig = null;
+}
+
 /**
  * Loads dynamic pricing configuration from Supabase system_settings with fallback to DEFAULT_TOTO_PRICING
  */
 export async function loadActivePricingConfig(
   supabaseClient?: any
 ): Promise<TotoPricingConfig> {
+  if (cachedPricingConfig && Date.now() - cachedPricingConfig.timestamp < PRICING_CACHE_TTL) {
+    return cachedPricingConfig.config;
+  }
   try {
     if (!supabaseClient) return DEFAULT_TOTO_PRICING;
     const { data } = await supabaseClient
@@ -252,16 +262,19 @@ export async function loadActivePricingConfig(
 
     if (data?.value) {
       const parsed = typeof data.value === "string" ? JSON.parse(data.value) : data.value;
-      return {
+      const config: TotoPricingConfig = {
         ...DEFAULT_TOTO_PRICING,
         ...parsed,
         slabs: parsed.slabs && Array.isArray(parsed.slabs) && parsed.slabs.length > 0
           ? parsed.slabs
           : DEFAULT_TOTO_SLABS,
       };
+      cachedPricingConfig = { config, timestamp: Date.now() };
+      return config;
     }
   } catch (err) {
     console.warn("[pricing] Failed to load config from system_settings:", err);
   }
   return DEFAULT_TOTO_PRICING;
 }
+

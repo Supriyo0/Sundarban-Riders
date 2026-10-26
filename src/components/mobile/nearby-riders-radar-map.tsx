@@ -54,7 +54,10 @@ export function NearbyRidersRadarMap({
     }
 
     loadRealDrivers();
-    pollInterval = setInterval(loadRealDrivers, 3500);
+    pollInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadRealDrivers();
+    }, 5000);
 
     return () => clearInterval(pollInterval);
   }, []);

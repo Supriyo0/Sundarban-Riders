@@ -134,17 +134,6 @@ export async function GET(req: Request) {
           }
         }
 
-        // Rural Toto fallback: If car driving returns NoRoute or NoSegment (e.g. narrow village brick paths), query cycling profile
-        if (!route) {
-          const cycleUrl = `https://api.mapbox.com/directions/v5/mapbox/cycling/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&access_token=${mapboxToken}`;
-          const cycRes = await fetch(cycleUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(2000) }).catch(() => null);
-          if (cycRes && cycRes.ok) {
-            const cycData = await cycRes.json();
-            if (cycData?.code === "Ok" && cycData?.routes?.length > 0) {
-              route = cycData.routes[0];
-            }
-          }
-        }
 
         if (
           route &&
@@ -182,7 +171,6 @@ export async function GET(req: Request) {
       const osrmEndpoints = [
         `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
         `https://routing.openstreetmap.de/routed-car/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
-        `https://routing.openstreetmap.de/routed-bike/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&steps=true&geometries=geojson`,
       ];
 
       const queryEndpoint = async (url: string) => {

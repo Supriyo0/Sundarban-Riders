@@ -65,6 +65,8 @@ export function LiveRideTrackingMap({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const driverMarkerRef = useRef<any>(null);
+  const pickupMarkerRef = useRef<any>(null);
+  const dropMarkerRef = useRef<any>(null);
   const routeLineRef = useRef<any>(null);
   const routeCasingRef = useRef<any>(null);
   const meterRef = useRef<LiveFareMeter>(new LiveFareMeter(passengerCount, pricingConfig, booking?.trip_start_time || booking?.tripStartTime));
@@ -111,6 +113,19 @@ export function LiveRideTrackingMap({
       }
     }
   }, [booking?.driver_lat, booking?.driver_lng]);
+
+  // Synchronize customer pickup & drop markers reactively
+  useEffect(() => {
+    if (pickupMarkerRef.current && pickupCoords && pickupCoords[0] && pickupCoords[0] !== 0) {
+      pickupMarkerRef.current.setLatLng(pickupCoords);
+    }
+  }, [pickupCoords?.[0], pickupCoords?.[1]]);
+
+  useEffect(() => {
+    if (dropMarkerRef.current && dropCoords && dropCoords[0] && dropCoords[0] !== 0) {
+      dropMarkerRef.current.setLatLng(dropCoords);
+    }
+  }, [dropCoords?.[0], dropCoords?.[1]]);
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentClockTime, setCurrentClockTime] = useState("");
@@ -310,6 +325,10 @@ export function LiveRideTrackingMap({
     let mounted = true;
     let timer: NodeJS.Timeout;
     const poll = async () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        if (mounted) timer = setTimeout(poll, 3500);
+        return;
+      }
       const bId = booking?.id || booking?.booking_number || booking?.bookingNumber;
       if (!bId || !mounted) return;
       try {
@@ -395,7 +414,7 @@ export function LiveRideTrackingMap({
           }
         }
       } catch {}
-      if (mounted) timer = setTimeout(poll, 1500);
+      if (mounted) timer = setTimeout(poll, 3500);
     };
     poll();
     return () => { mounted = false; clearTimeout(timer); };
@@ -434,7 +453,7 @@ export function LiveRideTrackingMap({
         }).addTo(map);
 
         // Pickup pin
-        L.marker(pickupCoords, {
+        const pMarker = L.marker(pickupCoords, {
           icon: L.divIcon({
             className: "",
             html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
@@ -444,10 +463,11 @@ export function LiveRideTrackingMap({
             iconSize: [0, 0],
           }),
         }).addTo(map);
+        pickupMarkerRef.current = pMarker;
 
         // Drop pin (only if valid drop destination was selected)
         if (dropCoords && dropCoords[0] && dropCoords[0] !== 0 && !isNaN(dropCoords[0])) {
-          L.marker(dropCoords, {
+          const dMarker = L.marker(dropCoords, {
             icon: L.divIcon({
               className: "",
               html: `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;">
@@ -457,6 +477,7 @@ export function LiveRideTrackingMap({
               iconSize: [0, 0],
             }),
           }).addTo(map);
+          dropMarkerRef.current = dMarker;
         }
 
         // Moving toto driver marker with Uber-style radar pulse ring

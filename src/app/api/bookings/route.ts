@@ -2,6 +2,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 let lastStaleCleanupTime = 0;
+const bookingPollCache = new Map<string, { data: any; timestamp: number }>();
+let pendingBookingsCache: { data: any; timestamp: number } | null = null;
+const ID_CACHE_TTL = 1500;
+const PENDING_CACHE_TTL = 2500;
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -26,29 +30,47 @@ function formatWhatsAppPhone(p: string | null | undefined): string {
   return digits;
 }
 
+let cachedWhatsAppConfig: { phoneNumberId: string; accessToken: string } | null = null;
+let cachedConfigTimestamp = 0;
+const CONFIG_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function getCachedWhatsAppConfig(admin: SupabaseClient) {
+  if (cachedWhatsAppConfig && Date.now() - cachedConfigTimestamp < CONFIG_CACHE_TTL) {
+    return cachedWhatsAppConfig;
+  }
+  try {
+    const { data: config } = await admin
+      .from("whatsapp_config")
+      .select("phone_number_id, access_token")
+      .limit(1)
+      .maybeSingle();
+
+    if (config?.phone_number_id && config?.access_token) {
+      cachedWhatsAppConfig = {
+        phoneNumberId: config.phone_number_id,
+        accessToken: decrypt(config.access_token),
+      };
+      cachedConfigTimestamp = Date.now();
+      return cachedWhatsAppConfig;
+    }
+  } catch {}
+  return null;
+}
+
 async function notifyOnlineDriversViaWhatsApp(
   admin: SupabaseClient,
   booking: any,
   pickupCoords?: [number, number]
 ) {
   try {
-    const { data: config } = await admin
-      .from("whatsapp_config")
-      .select("*")
-      .limit(1)
-      .maybeSingle();
-
-    if (!config || !config.phone_number_id || !config.access_token) {
-      return;
-    }
-
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
+    const cfg = await getCachedWhatsAppConfig(admin);
+    if (!cfg) return;
+    const { phoneNumberId, accessToken } = cfg;
 
     // Fetch active drivers (is_active is not false)
     const { data: drivers } = await admin
       .from("drivers")
-      .select("*")
+      .select("id, name, phone, latitude, longitude, current_location_name")
       .neq("is_active", false);
 
     if (!drivers || drivers.length === 0) return;
@@ -147,15 +169,9 @@ async function notifyOnlineDriversViaWhatsApp(
  */
 async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: any) {
   try {
-    const { data: config } = await admin
-      .from("whatsapp_config")
-      .select("*")
-      .limit(1)
-      .maybeSingle();
-
-    if (!config || !config.phone_number_id || !config.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
+    const cfg = await getCachedWhatsAppConfig(admin);
+    if (!cfg) return;
+    const { phoneNumberId, accessToken } = cfg;
 
     // 1. Notify Passenger on WhatsApp with Start OTP
     if (booking.customer_phone) {
@@ -240,10 +256,9 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
 async function notifyTripStarted(admin: SupabaseClient, booking: any) {
   try {
     if (!booking.customer_phone) return;
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
+    const cfg = await getCachedWhatsAppConfig(admin);
+    if (!cfg) return;
+    const { phoneNumberId, accessToken } = cfg;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
     const text = await getCustomWhatsAppMessage(admin, "passenger_trip_started", {
@@ -265,10 +280,9 @@ async function notifyTripStarted(admin: SupabaseClient, booking: any) {
 async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
   try {
     if (!booking.customer_phone) return;
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
+    const cfg = await getCachedWhatsAppConfig(admin);
+    if (!cfg) return;
+    const { phoneNumberId, accessToken } = cfg;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
     const meta = typeof booking.feedback === "string" ? (() => { try { return JSON.parse(booking.feedback); } catch { return {}; } })() : (booking.feedback || {});
@@ -335,10 +349,9 @@ ${actualDist ? `📏 মোট দূরত্ব: ${actualDist} কিমি\n`
 
 async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelledBy: string, reason?: string) {
   try {
-    const { data: config } = await admin.from("whatsapp_config").select("*").limit(1).maybeSingle();
-    if (!config?.phone_number_id || !config?.access_token) return;
-    const accessToken = decrypt(config.access_token);
-    const phoneNumberId = config.phone_number_id;
+    const cfg = await getCachedWhatsAppConfig(admin);
+    if (!cfg) return;
+    const { phoneNumberId, accessToken } = cfg;
     const reasonText = reason ? (" (কারণ: " + reason + ")") : "";
 
     if (cancelledBy === "driver" && booking.customer_phone) {
@@ -703,8 +716,13 @@ export async function GET(request: Request) {
 
     if (id) {
       const cleanId = (id || "").replace(/^#/, "").trim();
+      const cached = bookingPollCache.get(cleanId);
+      if (cached && Date.now() - cached.timestamp < ID_CACHE_TTL) {
+        return NextResponse.json(cached.data, { headers: NO_CACHE_HEADERS });
+      }
+
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-      let query = admin.from("bookings").select("*, drivers(*)");
+      let query = admin.from("bookings").select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)");
       if (isUuid) {
         query = query.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
       } else {
@@ -731,7 +749,7 @@ export async function GET(request: Request) {
       driverUid = driverUid || "SR-DRV";
 
       const meta = getBookingMeta(data);
-      return NextResponse.json({
+      const resPayload = {
         booking: {
           ...enriched,
           driver_name: d?.name || meta.driver_name || (data as any).driver_name || "সুন্দরবন চালক",
@@ -740,10 +758,16 @@ export async function GET(request: Request) {
           driver_unique_id: driverUid,
           unique_id: driverUid,
         },
-      }, { headers: NO_CACHE_HEADERS });
+      };
+
+      bookingPollCache.set(cleanId, { data: resPayload, timestamp: Date.now() });
+      return NextResponse.json(resPayload, { headers: NO_CACHE_HEADERS });
     }
 
     if (status === "pending") {
+      if (pendingBookingsCache && Date.now() - pendingBookingsCache.timestamp < PENDING_CACHE_TTL) {
+        return NextResponse.json(pendingBookingsCache.data, { headers: NO_CACHE_HEADERS });
+      }
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
       // Automatically cancel any pending bookings older than 5 minutes throttled to once per minute
@@ -821,10 +845,12 @@ export async function GET(request: Request) {
           .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
       }
 
-      return NextResponse.json({
+      const resPayload = {
         bookings: enriched,
         booking: enriched[0] || null,
-      }, { headers: NO_CACHE_HEADERS });
+      };
+      pendingBookingsCache = { data: resPayload, timestamp: Date.now() };
+      return NextResponse.json(resPayload, { headers: NO_CACHE_HEADERS });
     }
 
     const driverPhone = searchParams.get("driver_phone") || searchParams.get("driverPhone");
@@ -975,7 +1001,7 @@ export async function GET(request: Request) {
 
       const { data, error } = await admin
         .from("bookings")
-        .select("*, drivers(*)")
+        .select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)")
         .in("driver_id", matchedDriverIds)
         .in("status", ["assigned", "in_progress"])
         .order("created_at", { ascending: false })
@@ -1041,9 +1067,17 @@ export async function GET(request: Request) {
         });
       }
 
+      const custCacheKey = `cust_act_${cleanPhone || customerPhone}`;
+      if (isActiveOnly) {
+        const cached = bookingPollCache.get(custCacheKey);
+        if (cached && Date.now() - cached.timestamp < ID_CACHE_TTL) {
+          return NextResponse.json(cached.data, { headers: NO_CACHE_HEADERS });
+        }
+      }
+
       let activeQuery = admin
         .from("bookings")
-        .select("*, drivers(*)")
+        .select("*, drivers(id, name, phone, toto_number, unique_id, current_location_name, latitude, longitude)")
         .or(custOrClause)
         .order("created_at", { ascending: false });
 
@@ -1095,10 +1129,16 @@ export async function GET(request: Request) {
         };
       }
 
-      return NextResponse.json({
+      const resPayload = {
         booking: finalBooking,
         customer: customerRecord || { cancellation_count: 0, is_blocked: false }
-      }, { headers: NO_CACHE_HEADERS });
+      };
+
+      if (isActiveOnly) {
+        bookingPollCache.set(custCacheKey, { data: resPayload, timestamp: Date.now() });
+      }
+
+      return NextResponse.json(resPayload, { headers: NO_CACHE_HEADERS });
     }
 
     // Default: return recent pending bookings strictly within 5.0 km and within 3 minutes
@@ -1157,6 +1197,8 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
+    bookingPollCache.clear();
+    pendingBookingsCache = null;
     const body = await request.json();
     const pickupLocation = body.pickupLocation || body.pickup || body.pickup_location;
     const dropLocation = body.dropLocation || body.drop || body.drop_location;
@@ -1331,6 +1373,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 100): P
  */
 export async function PATCH(request: Request) {
   try {
+    bookingPollCache.clear();
+    pendingBookingsCache = null;
     const body = await request.json();
     const action = body.action;
     const bookingId = body.bookingId || body.booking_id || body.id;

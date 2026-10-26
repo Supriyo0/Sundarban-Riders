@@ -57,6 +57,7 @@ import { Geolocation } from "@capacitor/geolocation";
 import dynamic from "next/dynamic";
 import { TripCompletionReceipt } from "@/components/mobile/trip-completion-receipt";
 import { DriverRadarPanel } from "@/components/mobile/driver-radar-panel";
+import { calculateTotoFare, DEFAULT_TOTO_PRICING } from "@/lib/pricing/fare-calculator";
 
 // Haversine distance calculator in km
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -930,6 +931,7 @@ function MobileAppPageContent() {
     const targetBookingId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
 
     const checkBookingAcceptance = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const currentId = activeBookingId || (typeof window !== "undefined" ? localStorage.getItem("sr_active_booking_id") : null);
         let b: any = null;
@@ -1008,8 +1010,8 @@ function MobileAppPageContent() {
 
     if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
       checkBookingAcceptance();
-      // Fast polling (1000ms) so customer immediately sees driver acceptance, coordinates, and OTP
-      pollInterval = setInterval(checkBookingAcceptance, 1000);
+      // Throttled polling (2500ms) with document.hidden guard to protect Supabase egress
+      pollInterval = setInterval(checkBookingAcceptance, 2500);
       if (typeof window !== "undefined") {
         window.addEventListener("focus", checkBookingAcceptance);
         document.addEventListener("visibilitychange", checkBookingAcceptance);
@@ -1034,6 +1036,7 @@ function MobileAppPageContent() {
     let isMounted = true;
     let pollInterval: NodeJS.Timeout | null = null;
     const pollRideStatus = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const res = await fetch(`/api/bookings?id=${encodeURIComponent(bId)}&_t=${Date.now()}`, {
           cache: "no-store",
@@ -1699,7 +1702,10 @@ function MobileAppPageContent() {
     }).catch(() => {});
 
     syncDriverStatus();
-    const interval = setInterval(syncDriverStatus, 3500);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      syncDriverStatus();
+    }, 8000);
     return () => clearInterval(interval);
   }, [phase, session?.driverId, session?.phone, isOnline]);
 
@@ -1908,7 +1914,10 @@ function MobileAppPageContent() {
           }
         } catch {}
       };
-      activeRidePollInterval = setInterval(checkActiveRideStatus, 3000);
+      activeRidePollInterval = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        checkActiveRideStatus();
+      }, 3500);
     }
     return () => clearInterval(activeRidePollInterval);
   }, [phase, activeRide]);
@@ -3862,17 +3871,13 @@ function MobileAppPageContent() {
                   const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
                   const distKm = typeof finalKm === "number" ? Math.max(0, Math.round(finalKm * 10) / 10) : 0;
                   
-                  // Odometer-based fare calculation:
-                  // If toto did not move (< 0.3 km), charge minimum base fare (₹25), NEVER the full beginning estimate!
-                  let calculatedFare = activeRide.fare || 25;
-                  if (distKm < 0.3) {
-                    calculatedFare = 25;
-                  } else if (distKm > 0 && activeRide.distanceKm && activeRide.distanceKm > 0) {
-                    if (distKm < activeRide.distanceKm * 0.85) {
-                      calculatedFare = Math.max(25, Math.round((activeRide.fare || 25) * (distKm / activeRide.distanceKm)));
-                    }
-                  }
-                  const finalFare = calculatedFare;
+                  // Odometer-based exact fare calculation matching server & WhatsApp:
+                  const finalFareResult = calculateTotoFare(
+                    distKm,
+                    activeRide.passengerCount || 3,
+                    DEFAULT_TOTO_PRICING
+                  );
+                  const finalFare = finalFareResult.totalFare;
 
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,

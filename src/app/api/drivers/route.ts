@@ -2,19 +2,30 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { driverLocationStates } from "@/lib/whatsapp/toto-engine";
 
+let activeDriversCache: { data: any; timestamp: number } | null = null;
+const ACTIVE_DRIVERS_CACHE_TTL = 4000;
+
+export function invalidateActiveDriversCache() {
+  activeDriversCache = null;
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const filterPhone = url.searchParams.get("phone");
     const filterId = url.searchParams.get("id");
+    const showAll = url.searchParams.get("all") === "true";
+
+    // Cache active drivers list used by map polling
+    if (!filterId && !filterPhone && !showAll && activeDriversCache && Date.now() - activeDriversCache.timestamp < ACTIVE_DRIVERS_CACHE_TTL) {
+      return NextResponse.json(activeDriversCache.data);
+    }
 
     const admin = supabaseAdmin();
     let query = admin
       .from("drivers")
       .select("*")
       .order("created_at", { ascending: false });
-
-    const showAll = url.searchParams.get("all") === "true";
 
     if (filterId) {
       query = query.eq("id", filterId);
@@ -23,7 +34,7 @@ export async function GET(request: Request) {
       const last10 = cleanPhone.slice(-10);
       query = query.or(`phone.eq.${filterPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`);
     } else if (!showAll) {
-      query = query.eq("is_active", true);
+      query = query.select("id, name, phone, toto_number, is_active, latitude, longitude, current_location_name, unique_id, rating, total_trips").eq("is_active", true);
     }
 
     const { data, error } = await query;
@@ -101,10 +112,16 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({
+    const responsePayload = {
       driver: drivers[0] || null,
       drivers,
-    });
+    };
+
+    if (!filterId && !filterPhone && !showAll) {
+      activeDriversCache = { data: responsePayload, timestamp: Date.now() };
+    }
+
+    return NextResponse.json(responsePayload);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -113,6 +130,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    activeDriversCache = null;
     const body = await request.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
@@ -252,6 +270,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
+    activeDriversCache = null;
     const body = await request.json().catch(() => null);
     if (!body || (!body.id && !body.phone)) {
       return NextResponse.json({ error: "Driver ID or Phone is required" }, { status: 400 });

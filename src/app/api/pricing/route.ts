@@ -5,12 +5,20 @@ import {
   DEFAULT_TOTO_SLABS,
   TotoPricingConfig,
   TotoSlabConfig,
+  invalidatePricingCache,
 } from "@/lib/pricing/fare-calculator";
 
 const PRICING_CONFIG_KEY = "toto_pricing_config";
 
+let cachedApiPricing: { config: TotoPricingConfig; timestamp: number } | null = null;
+const API_PRICING_TTL = 10 * 60 * 1000; // 10 minutes
+
 export async function GET() {
   try {
+    if (cachedApiPricing && Date.now() - cachedApiPricing.timestamp < API_PRICING_TTL) {
+      return NextResponse.json({ config: cachedApiPricing.config });
+    }
+
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from("system_settings")
@@ -33,12 +41,13 @@ export async function GET() {
               ? parsed.slabs
               : DEFAULT_TOTO_SLABS,
         };
+        cachedApiPricing = { config, timestamp: Date.now() };
         return NextResponse.json({ config });
       } catch {}
     }
 
     // Also check individual keys in system_settings as fallback
-    const { data: allSettings } = await admin.from("system_settings").select("*");
+    const { data: allSettings } = await admin.from("system_settings").select("key, value");
     const merged: TotoPricingConfig = {
       ...DEFAULT_TOTO_PRICING,
       slabs: [...DEFAULT_TOTO_SLABS],
@@ -144,6 +153,9 @@ export async function POST(request: Request) {
         { onConflict: "key" }
       );
     }
+
+    cachedApiPricing = null;
+    invalidatePricingCache();
 
     return NextResponse.json({
       success: true,

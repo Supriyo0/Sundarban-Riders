@@ -714,7 +714,7 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
 
 let cachedSettings: Record<string, string> | null = null;
 let cachedSettingsTime = 0;
-const SETTINGS_TTL_MS = 60 * 1000;
+const SETTINGS_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<Record<string, string>> {
   const now = Date.now();
@@ -865,11 +865,16 @@ export async function processTotoMessage(
 
   let driverQuery = Promise.resolve<{ data: DriverRecord | null; error: unknown }>({ data: null, error: null });
   try {
+    const phoneEqs = Array.from(new Set([rawPhone, cleanPhone, `+${cleanPhone}`, last10, `91${last10}`, `+91${last10}`, `0${last10}`]))
+      .filter(Boolean)
+      .map((p) => `phone.eq.${p}`)
+      .join(",");
+    const driverOrClause = `${phoneEqs},phone.ilike.%${last10}`;
     driverQuery = Promise.resolve(
       supabase
         .from("drivers")
-        .select("*")
-        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`)
+        .select("id, name, phone, toto_number, is_active, is_available, agreed_terms, latitude, longitude, current_location_name")
+        .or(driverOrClause)
         .limit(1)
         .maybeSingle()
     ).catch(() => ({ data: null, error: null }));
@@ -879,11 +884,16 @@ export async function processTotoMessage(
 
   let customerQuery = Promise.resolve<{ data: CustomerRecord | null; error: unknown }>({ data: null, error: null });
   try {
+    const phoneEqs = Array.from(new Set([rawPhone, cleanPhone, `+${cleanPhone}`, last10, `91${last10}`, `+91${last10}`, `0${last10}`]))
+      .filter(Boolean)
+      .map((p) => `phone.eq.${p}`)
+      .join(",");
+    const custOrClause = `${phoneEqs},phone.ilike.%${last10}`;
     customerQuery = Promise.resolve(
       supabase
         .from("customers")
-        .select("*")
-        .or(`phone.eq.${rawPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`)
+        .select("id, name, phone, cancellation_count, is_blocked")
+        .or(custOrClause)
         .limit(1)
         .maybeSingle()
     ).catch(() => ({ data: null, error: null }));

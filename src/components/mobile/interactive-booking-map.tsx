@@ -642,7 +642,10 @@ export function InteractiveBookingMap({
       } catch {}
     };
     loadDrivers();
-    timer = setInterval(loadDrivers, 4500);
+    timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadDrivers();
+    }, 6000);
     return () => clearInterval(timer);
   }, []);
 
@@ -983,22 +986,10 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // Immediately draw route line so black (#064e3b) and green (#10b981) track is NEVER missing or blank while road network resolves
-          applyRouteGeometry([pCoords, dCoords]);
-
-          // Immediately dispatch coordinates so parent page.tsx never loses dropCoords while route is fetching
-          const initialComputedFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
-          onRouteSelectedRef.current?.({
-            pickup: pText || "Current Location",
-            drop: dText || "Drop Location",
-            distanceKm: baselineDist,
-            estimatedFare: initialComputedFare.totalFare,
-            rideTier: "standard",
-            pickupCoords: pCoords,
-            dropCoords: dCoords,
-            paymentMode: "cash",
-            passengerCount,
-          });
+          // Clear stale polyline while exact road route is resolving — NO fake straight line or random curves
+          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
+          if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+          setIsCalculatingRoute(true);
 
           try {
             if (routeAbortControllerRef.current) {
@@ -1006,7 +997,7 @@ export function InteractiveBookingMap({
             }
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
-            const safetyTimer = setTimeout(() => controller.abort(), 4000);
+            const safetyTimer = setTimeout(() => controller.abort(), 6000);
 
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
@@ -1027,8 +1018,6 @@ export function InteractiveBookingMap({
                   durationMin: data.durationMin,
                   coordinates: data.coordinates,
                 });
-              } else {
-                applyRouteGeometry([pCoords, dCoords]);
               }
 
               if (data?.riverCrossing) {
@@ -1057,10 +1046,8 @@ export function InteractiveBookingMap({
             }
           } catch (err: any) {
             if (err?.name === "AbortError") {
-              // Newer pin drag / route calculation is in flight — do not overwrite
               return;
             }
-            applyRouteGeometry([pCoords, dCoords]);
             setDistanceKm(baselineDist);
             setRoadDurationMin(baselineDuration);
             const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
@@ -2172,6 +2159,14 @@ export function InteractiveBookingMap({
       {/* 1. EDGE-TO-EDGE FULL-SCREEN LEAFLET MAP CANVAS               */}
       {/* ------------------------------------------------------------- */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
+
+      {/* Floating Route & Fare Calculating Popup */}
+      {isCalculatingRoute && Boolean(dropCoords && dropCoords[0] !== 0) && (
+        <div className="absolute top-44 left-1/2 -translate-x-1/2 z-40 bg-zinc-900/90 text-white backdrop-blur-md px-4 py-2.5 rounded-full shadow-2xl border border-emerald-500/40 flex items-center gap-2.5 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
+          <span className="text-xs font-bold tracking-wide">সঠিক রাস্তার রুট ও ভাড়া খোঁজা হচ্ছে...</span>
+        </div>
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* 2. TOP FLOATING LIQUID GLASS UBER SEARCH CARD & QUICK SHORTCUTS */}

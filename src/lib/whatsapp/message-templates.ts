@@ -265,6 +265,13 @@ export function interpolateTemplate(
   return result;
 }
 
+const templateCache = new Map<string, { text: string; timestamp: number }>();
+const TEMPLATE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+export function invalidateTemplateCache() {
+  templateCache.clear();
+}
+
 /**
  * Loads a template dynamically from database system_settings, or falls back to hardcoded default
  */
@@ -276,19 +283,25 @@ export async function getCustomWhatsAppMessage(
   const def = ALL_WHATSAPP_TEMPLATES.find((t) => t.key === templateKey);
   let templateText = def?.defaultText || "";
 
-  try {
-    const settingKey = `wa_tpl_${templateKey}`;
-    const { data } = await admin
-      .from("system_settings")
-      .select("value")
-      .eq("key", settingKey)
-      .maybeSingle();
+  const cached = templateCache.get(templateKey);
+  if (cached && Date.now() - cached.timestamp < TEMPLATE_CACHE_TTL) {
+    templateText = cached.text;
+  } else {
+    try {
+      const settingKey = `wa_tpl_${templateKey}`;
+      const { data } = await admin
+        .from("system_settings")
+        .select("value")
+        .eq("key", settingKey)
+        .maybeSingle();
 
-    if (data?.value && data.value.trim().length > 0) {
-      templateText = data.value;
+      if (data?.value && data.value.trim().length > 0) {
+        templateText = data.value;
+      }
+      templateCache.set(templateKey, { text: templateText, timestamp: Date.now() });
+    } catch (err) {
+      console.warn(`[templates] Failed to load custom template ${templateKey}:`, err);
     }
-  } catch (err) {
-    console.warn(`[templates] Failed to load custom template ${templateKey}:`, err);
   }
 
   // Also resolve {{helpline}} default if not provided
@@ -298,3 +311,4 @@ export async function getCustomWhatsAppMessage(
 
   return interpolateTemplate(templateText, vars);
 }
+

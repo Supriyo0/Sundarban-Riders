@@ -823,9 +823,8 @@ export async function sendInteractiveButtons(
     bodyText, headerMedia, headerText, footerText, buttons, contextMessageId,
   } = args
 
-  // Safely clamp bodyText to Meta limit (1024 chars) to prevent rejection
-  const safeBodyText = (bodyText || "").trim().slice(0, INTERACTIVE_LIMITS.bodyMaxLength)
-  if (!safeBodyText) throw new Error('Interactive message requires non-empty bodyText.')
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(headerText, footerText)
 
   if (buttons.length < 1 || buttons.length > INTERACTIVE_LIMITS.maxButtons) {
     throw new Error(
@@ -833,23 +832,25 @@ export async function sendInteractiveButtons(
     )
   }
   const seenButtonIds = new Set<string>()
-  const safeButtons = buttons.slice(0, INTERACTIVE_LIMITS.maxButtons).map((btn, idx) => {
-    let btnId = (btn.id || `btn_${idx + 1}`).trim().slice(0, 256)
-    if (seenButtonIds.has(btnId)) {
-      btnId = `${btnId.slice(0, 240)}_${idx + 1}`
+  for (const btn of buttons) {
+    if (!btn.id) throw new Error('Interactive button missing id.')
+    if (seenButtonIds.has(btn.id)) {
+      throw new Error(`Interactive button has duplicate id "${btn.id}".`)
     }
-    seenButtonIds.add(btnId)
-    // Clamp title to Meta 20-character limit safely using spread operator for Unicode/Bengali
-    const rawTitle = (btn.title || `বিকল্প ${idx + 1}`).trim()
-    const safeTitle = [...rawTitle].slice(0, INTERACTIVE_LIMITS.buttonTitleMaxLength).join('')
-    return { id: btnId, title: safeTitle }
-  })
+    seenButtonIds.add(btn.id)
+    if (!btn.title) throw new Error(`Interactive button "${btn.id}" missing title.`)
+    if (btn.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+      throw new Error(
+        `Interactive button title "${btn.title}" exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
+      )
+    }
+  }
 
   const interactive: Record<string, unknown> = {
     type: 'button',
-    body: { text: safeBodyText },
+    body: { text: bodyText },
     action: {
-      buttons: safeButtons.map((b) => ({
+      buttons: buttons.map((b) => ({
         type: 'reply',
         reply: { id: b.id, title: b.title },
       })),

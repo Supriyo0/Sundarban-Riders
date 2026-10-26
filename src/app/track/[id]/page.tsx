@@ -82,6 +82,7 @@ export default function TrackRidePage() {
 
   const loadBooking = useCallback(async () => {
     if (!bookingId) return;
+    if (typeof document !== "undefined" && document.hidden) return;
     try {
       const res = await fetch(`/api/bookings?id=${encodeURIComponent(bookingId)}`);
       const data = await res.json();
@@ -111,12 +112,21 @@ export default function TrackRidePage() {
     }
   }, [bookingId]);
 
-  // Initial fetch and continuous 3-second live GPS polling
+  // Initial fetch and continuous 3-second live GPS polling (halts when completed/cancelled or tab inactive)
   useEffect(() => {
     loadBooking();
-    const interval = setInterval(loadBooking, 3000);
+    if (booking?.status === "completed" || booking?.status === "cancelled") {
+      return;
+    }
+    const interval = setInterval(() => {
+      if (booking?.status === "completed" || booking?.status === "cancelled") {
+        clearInterval(interval);
+        return;
+      }
+      loadBooking();
+    }, 3000);
     return () => clearInterval(interval);
-  }, [loadBooking]);
+  }, [loadBooking, booking?.status]);
 
   // Fetch real road route geometry
   useEffect(() => {

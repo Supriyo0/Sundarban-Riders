@@ -3869,7 +3869,9 @@ function MobileAppPageContent() {
                 onCompleteTrip={async (finalKm) => {
                   const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
                   const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-                  const distKm = typeof finalKm === "number" ? Math.max(0, Math.round(finalKm * 10) / 10) : 0;
+                  const distKm = typeof finalKm === "number" && finalKm > 0
+                    ? Math.max(0.1, Math.round(finalKm * 10) / 10)
+                    : (Number(activeRide.distanceKm) || Number(activeRide.estimated_distance_km) || 1.0);
                   
                   // Odometer-based exact fare calculation matching server & WhatsApp:
                   const finalFareResult = calculateTotoFare(
@@ -3929,7 +3931,7 @@ function MobileAppPageContent() {
                       bookingId: activeRide.id,
                       driverId: session?.driverId,
                       endCoords: driverLiveCoords || null,
-                      finalDistanceKm: typeof finalKm === "number" ? finalKm : 0,
+                      finalDistanceKm: distKm,
                       durationMinutes: actualDurationMinutes,
                     }),
                   })
@@ -4786,11 +4788,15 @@ function MobileAppPageContent() {
                       toast.warning("চালক রাইড বাতিল করেছেন। অন্য রাইড বুক করতে পারেন।", { duration: 5000 });
                       return;
                     }
-                    const finalFare = b?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
-                    const finalKm = b?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
-                    const estDist = b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
-                    const estFare = b?.estimated_fare || passengerBooking?.fare || tripFare;
-                    const durMin = b?.duration_minutes || passengerBooking?.durationMinutes || 1;
+                    let bMeta: any = {};
+                    try {
+                      bMeta = typeof b?.feedback === "string" ? JSON.parse(b.feedback) : (b?.feedback || {});
+                    } catch {}
+                    const finalFare = b?.final_fare || bMeta?.calculated_fare || bMeta?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
+                    const finalKm = b?.actual_distance_km || bMeta?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
+                    const estDist = b?.estimated_distance_km || bMeta?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
+                    const estFare = b?.estimated_fare || bMeta?.estimated_fare || passengerBooking?.fare || tripFare;
+                    const durMin = b?.duration_minutes || bMeta?.duration_minutes || passengerBooking?.durationMinutes || 1;
                     const completedData = {
                       ...b,
                       id: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",

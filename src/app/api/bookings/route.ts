@@ -67,11 +67,12 @@ async function notifyOnlineDriversViaWhatsApp(
     if (!cfg) return;
     const { phoneNumberId, accessToken } = cfg;
 
-    // Fetch active drivers (is_active is not false)
+    // Fetch strictly active & available online drivers
     const { data: drivers } = await admin
       .from("drivers")
       .select("id, name, phone, latitude, longitude, current_location_name")
-      .neq("is_active", false);
+      .eq("is_active", true)
+      .eq("is_available", true);
 
     if (!drivers || drivers.length === 0) return;
 
@@ -104,8 +105,7 @@ async function notifyOnlineDriversViaWhatsApp(
         const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
         return dKm <= 15.0; // Nearby regional radius
       }
-      // If driver is online/active, still notify even if exact GPS is resolving
-      return true;
+      return false; // Do not notify drivers whose nearby location cannot be verified
     });
 
     const sendPromises = nearbyDrivers.slice(0, 15).map(async (d) => {
@@ -208,29 +208,8 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
       }).catch((e) => console.warn("[notifyRideAccepted] Passenger WhatsApp send error:", e));
     }
 
-    // 2. Proactively update other drivers: "booking taken by other rider"
-    const { data: allDrivers } = await admin
-      .from("drivers")
-      .select("id, phone");
-
-    if (allDrivers && allDrivers.length > 0) {
-      const myCleanPhone = (driver.phone || "").replace(/\D/g, "").slice(-10);
-      const otherDriverPromises = allDrivers.slice(0, 15).map(async (od) => {
-        if (!od.phone) return;
-        const otherClean = od.phone.replace(/\D/g, "").slice(-10);
-        if (driver.id && od.id === driver.id) return;
-        if (myCleanPhone && otherClean === myCleanPhone) return;
-
-        const dPhone = formatWhatsAppPhone(od.phone);
-        return sendTextMessage({
-          phoneNumberId,
-          accessToken,
-          to: dPhone,
-          text: "ℹ️ বুকিং আপডেট: #" + booking.booking_number + " রাইডটি চালক " + (driver.name || "অন্য একজন চালক") + " গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।",
-        }).catch((e) => console.warn("[notifyRideAccepted] Driver WhatsApp send error:", e));
-      });
-      await Promise.allSettled(otherDriverPromises);
-    }
+    // Only passenger is notified upon ride acceptance.
+    // Do not blast unsolicited "taken by another" broadcast messages to all other drivers.
   } catch (err) {
     console.error("[dispatch] Error in notifyRideAccepted:", err);
   }
@@ -368,24 +347,9 @@ async function notifyTripCancelled(admin: SupabaseClient, booking: any, cancelle
             text,
           }).catch(() => {});
         }
-      } else {
-        const { data: drivers } = await admin.from("drivers").select("phone");
-        if (drivers) {
-          for (const d of drivers) {
-            if (!d.phone) continue;
-            const text = await getCustomWhatsAppMessage(admin, "ride_cancelled_to_driver", {
-              booking_number: booking.booking_number,
-              reason: reasonText,
-            });
-            await sendTextMessage({
-              phoneNumberId,
-              accessToken,
-              to: formatWhatsAppPhone(d.phone),
-              text,
-            }).catch(() => {});
-          }
-        }
       }
+      // If unassigned (driver_id is null), do not blast all drivers in DB.
+      // Any driver who later taps "✅ রাইড গ্রহণ" will be properly told the passenger cancelled.
     }
   } catch (err) {
     console.error("[notifyTripCancelled] Error:", err);

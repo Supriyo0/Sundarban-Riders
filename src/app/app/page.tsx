@@ -559,6 +559,44 @@ function MobileAppPageContent() {
     });
   }, []);
 
+  const handleNavTabChange = useCallback((t: MobileNavTab) => {
+    if (t === "safety") {
+      setShowProfileModal(false);
+      setShowSosModal(true);
+      setBottomNavTab("safety");
+    } else if (t === "profile") {
+      setShowSosModal(false);
+      setShowProfileModal(true);
+      setBottomNavTab("profile");
+    } else {
+      setShowProfileModal(false);
+      setShowSosModal(false);
+      setBottomNavTab(t);
+    }
+  }, []);
+
+  const handleOpenProfileModal = useCallback(() => {
+    setShowSosModal(false);
+    setShowProfileModal(true);
+    setBottomNavTab("profile");
+  }, []);
+
+  const handleCloseProfileModal = useCallback(() => {
+    setShowProfileModal(false);
+    setBottomNavTab((prev) => (prev === "profile" ? "home" : prev));
+  }, []);
+
+  const handleOpenSosModal = useCallback(() => {
+    setShowProfileModal(false);
+    setShowSosModal(true);
+    setBottomNavTab("safety");
+  }, []);
+
+  const handleCloseSosModal = useCallback(() => {
+    setShowSosModal(false);
+    setBottomNavTab((prev) => (prev === "safety" ? "home" : prev));
+  }, []);
+
   // Customer Past Rides History State (Strict Real Data from Supabase)
   const [customerHistory, setCustomerHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -3663,9 +3701,9 @@ function MobileAppPageContent() {
                 toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
               }}
               onSwitchRole={handleSwitchRole}
-              onSosClick={() => setShowSosModal(true)}
+              onSosClick={handleOpenSosModal}
               onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
-              onOpenProfile={() => setShowProfileModal(true)}
+              onOpenProfile={handleOpenProfileModal}
             />
           )
         }
@@ -3673,11 +3711,7 @@ function MobileAppPageContent() {
           activeRide ? undefined : (
             <MobileBottomNav
               activeTab={bottomNavTab}
-              onTabChange={(t) => {
-                if (t === "safety") setShowSosModal(true);
-                else if (t === "profile") setShowProfileModal(true);
-                else setBottomNavTab(t);
-              }}
+              onTabChange={handleNavTabChange}
               role="rider"
             />
           )
@@ -4166,7 +4200,7 @@ function MobileAppPageContent() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowSosModal(false)}
+                  onClick={handleCloseSosModal}
                   className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
                 >
                   <X className="w-4 h-4" />
@@ -4217,7 +4251,7 @@ function MobileAppPageContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowSosModal(false);
+                    handleCloseSosModal();
                     setShowDisclaimerViewer(true);
                   }}
                   className="w-full p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-between transition-all cursor-pointer"
@@ -4231,7 +4265,7 @@ function MobileAppPageContent() {
               </div>
 
               <Button
-                onClick={() => setShowSosModal(false)}
+                onClick={handleCloseSosModal}
                 variant="outline"
                 className="w-full h-11 rounded-2xl text-xs font-bold border-slate-300 text-slate-700 mt-2"
               >
@@ -4331,7 +4365,7 @@ function MobileAppPageContent() {
         {/* 👤 Uber Driver Profile & KYC Modal */}
         <MobileProfileModal
           isOpen={showProfileModal}
-          onClose={() => setShowProfileModal(false)}
+          onClose={handleCloseProfileModal}
           role="rider"
           userName={session?.driverName || "টোটো চালক"}
           userPhone={session?.phone}
@@ -4460,19 +4494,15 @@ function MobileAppPageContent() {
             toast.info(!isSoundMuted ? "সাউন্ড মিউট করা হয়েছে 🔇" : "সাউন্ড সক্রিয় করা হয়েছে 🔔");
           }}
           onSwitchRole={handleSwitchRole}
-          onSosClick={() => setShowSosModal(true)}
+          onSosClick={handleOpenSosModal}
           onOpenDisclaimers={() => setShowDisclaimerViewer(true)}
-          onOpenProfile={() => setShowProfileModal(true)}
+          onOpenProfile={handleOpenProfileModal}
         />
       }
       bottomNav={
         <MobileBottomNav
           activeTab={bottomNavTab}
-          onTabChange={(t) => {
-            if (t === "safety") setShowSosModal(true);
-            else if (t === "profile") setShowProfileModal(true);
-            else setBottomNavTab(t);
-          }}
+          onTabChange={handleNavTabChange}
           role="passenger"
         />
       }
@@ -4770,7 +4800,7 @@ function MobileAppPageContent() {
                   tripDistance={tripDistance}
                   tripFare={tripFare}
                   onCancelRide={() => setShowCancelModal(true)}
-                  onSosClick={() => setShowSosModal(true)}
+                  onSosClick={handleOpenSosModal}
                   onTripFinished={(completedServerBooking?: any) => {
                     const b = completedServerBooking;
                     if (b?.status === "cancelled") {
@@ -5003,7 +5033,7 @@ function MobileAppPageContent() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowSosModal(false)}
+                onClick={handleCloseSosModal}
                 className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500"
               >
                 <X className="w-4 h-4" />
@@ -5054,7 +5084,7 @@ function MobileAppPageContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowSosModal(false);
+                    handleCloseSosModal();
                     setShowDisclaimerViewer(true);
                   }}
                   className="w-full p-3 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-between transition-all cursor-pointer"
@@ -5068,7 +5098,7 @@ function MobileAppPageContent() {
               </div>
 
             <Button
-              onClick={() => setShowSosModal(false)}
+              onClick={handleCloseSosModal}
               variant="outline"
               className="w-full h-11 rounded-2xl text-xs font-bold border-slate-300 text-slate-700 mt-2"
             >
@@ -5385,7 +5415,7 @@ function MobileAppPageContent() {
       {/* 👤 Uber Passenger Profile & Account Modal */}
       <MobileProfileModal
         isOpen={showProfileModal}
-        onClose={() => setShowProfileModal(false)}
+        onClose={handleCloseProfileModal}
         role="passenger"
         userName={session?.passengerName || "যাত্রী বন্ধু"}
         userPhone={session?.phone || phoneInput}

@@ -206,17 +206,33 @@ export function MobileProfileModal({
               <p className="text-[11px] text-slate-500 font-medium">সুন্দরবন রাইডার্স ইউজার প্রোফাইল</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onLogout && (
+              <button
+                type="button"
+                onClick={() => {
+                  onLogout();
+                  onClose();
+                }}
+                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                title="লগআউট করুন"
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                <span>লগআউট</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-200/80 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 pb-16 space-y-4">
           {/* 1. Avatar & Basic Profile Card */}
           <div className="p-4 rounded-3xl bg-gradient-to-tr from-emerald-50/80 via-teal-50/40 to-slate-50 border border-emerald-200/60 shadow-xs flex flex-col items-center text-center relative">
             {/* Hidden File Input */}
@@ -581,17 +597,19 @@ export function MobileProfileModal({
 
           {/* 5. Logout Button */}
           {onLogout && (
-            <Button
-              type="button"
-              onClick={() => {
-                onLogout();
-                onClose();
-              }}
-              className="w-full h-11 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-black text-xs flex items-center justify-center gap-2 shadow-2xs active:scale-98 cursor-pointer transition-all"
-            >
-              <LogOut className="w-4 h-4 text-rose-600" />
-              <span>অ্যাকাউন্ট থেকে লগআউট করুন</span>
-            </Button>
+            <div className="pt-2">
+              <Button
+                type="button"
+                onClick={() => {
+                  onLogout();
+                  onClose();
+                }}
+                className="w-full h-12 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm flex items-center justify-center gap-2 shadow-md active:scale-98 cursor-pointer transition-all border-none"
+              >
+                <LogOut className="w-4.5 h-4.5 text-white" />
+                <span>অ্যাকাউন্ট থেকে লগআউট করুন</span>
+              </Button>
+            </div>
           )}
         </div>
       </div>

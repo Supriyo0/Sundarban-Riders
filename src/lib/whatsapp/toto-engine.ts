@@ -1299,26 +1299,7 @@ export async function processTotoMessage(
       },
     ];
 
-    // Inform other online drivers on WhatsApp that this booking expired / was taken
-    try {
-      const { data: otherDrivers } = await supabase
-        .from("drivers")
-        .select("phone")
-        .neq("phone", rawPhone)
-        .neq("is_active", false);
-
-      if (otherDrivers && otherDrivers.length > 0) {
-        for (const od of otherDrivers) {
-          if (od.phone) {
-            extraNotifications.push({
-              toPhone: od.phone,
-              type: "text",
-              bodyText: `ℹ️ বুকিং আপডেট: #${booking.booking_number || booking.id.slice(0, 8)} রাইডটির মেয়াদ শেষ হয়েছে বা অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
-            });
-          }
-        }
-      }
-    } catch {}
+    // Only notify assigned driver and passenger; do not send unsolicited broadcasts to other drivers
 
     const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
     const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
@@ -2169,11 +2150,12 @@ export async function processTotoMessage(
       pLng = pGeo.lng;
     }
 
-    // Query online drivers within 5km radar
+    // Query strictly online and available drivers within 5km radar
     const { data: onlineDrivers } = await supabase
       .from("drivers")
       .select("*")
-      .neq("is_active", false);
+      .eq("is_active", true)
+      .eq("is_available", true);
 
     const nearbyDrivers = (onlineDrivers || []).filter((d) => {
       const dClean = (d.phone || "").replace(/\D/g, "").slice(-10);
@@ -2442,11 +2424,12 @@ export async function processTotoMessage(
         scheduleWhatsAppBookingTimeout(newBooking.id, rawPhone, bookingNumber);
       }
 
-      // Query online drivers and filter nearby within 5 km radar
+      // Query strictly online and available drivers within 5 km radar
       const { data: onlineDrivers } = await supabase
         .from("drivers")
         .select("*")
-        .neq("is_active", false);
+        .eq("is_active", true)
+        .eq("is_available", true);
 
       // Filter drivers strictly within 5km radius of pickup location (exclude sender driver if they are booking as passenger)
       const nearbyDrivers = (onlineDrivers || []).filter((d) => {

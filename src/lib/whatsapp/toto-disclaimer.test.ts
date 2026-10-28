@@ -155,4 +155,43 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
       { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
     ]);
   });
+
+  it("removes estimated fare and [00 km dure] from new booking notification sent to drivers", async () => {
+    const testPhone = "+919123456789";
+    await processTotoMessage({ fromPhone: testPhone, buttonPayload: "agree_disclaimer" });
+    await processTotoMessage({ fromPhone: testPhone, textBody: "কাকদ্বীপ স্টেশন" });
+    const stepFinal = await processTotoMessage({ fromPhone: testPhone, textBody: "লট ৮ ফেরিঘাট" });
+
+    expect(stepFinal).not.toBeNull();
+    if (stepFinal?.extraNotifications && stepFinal.extraNotifications.length > 0) {
+      for (const notif of stepFinal.extraNotifications) {
+        expect(notif.bodyText).not.toContain("আনুমানিক ভাড়া");
+        expect(notif.bodyText).not.toContain("কিমি দূরে]");
+      }
+    }
+  });
+
+  it("handles cancellation after timeout without penalizing customer under the 3-cancellation rule", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919123456789",
+      buttonPayload: "cancel_no_penalty_SR-9999",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.bodyText).toContain("কোনো পেনাল্টি বা ৩ বার বাতিল নিয়মের আওতায় নেওয়া হয়নি");
+    expect(action?.buttons).toEqual([
+      { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+    ]);
+  });
+
+  it("returns specific message when driver accepts a non-existent, expired, or cancelled ride", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919876543210",
+      buttonPayload: "driver_accept_nonexistent_id",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.bodyText).toContain("দুঃখিত");
+  });
 });
+

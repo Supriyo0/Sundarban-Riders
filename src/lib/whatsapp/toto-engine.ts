@@ -5,6 +5,8 @@ import {
   loadActivePricingConfig,
   DEFAULT_TOTO_PRICING,
 } from "@/lib/pricing/fare-calculator";
+import { sendInteractiveButtons, sendTextMessage } from "@/lib/whatsapp/meta-api";
+import { decrypt, isLegacyFormat } from "@/lib/whatsapp/encryption";
 
 // Helper to get Supabase Admin client
 function getSupabaseAdmin() {
@@ -714,7 +716,12 @@ export async function geocodeLocation(query: string): Promise<{ lat: number; lng
 
 let cachedSettings: Record<string, string> | null = null;
 let cachedSettingsTime = 0;
-const SETTINGS_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const SETTINGS_TTL_MS = 30 * 1000; // 30 seconds for rapid sync from admin panel
+
+export function invalidateCachedSettings(): void {
+  cachedSettings = null;
+  cachedSettingsTime = 0;
+}
 
 async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>): Promise<Record<string, string>> {
   const now = Date.now();
@@ -729,7 +736,13 @@ async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>):
     const settings: Record<string, string> = {};
     if (settingsData) {
       settingsData.forEach((s) => {
-        settings[s.key] = s.value;
+        if (s.key && s.value) {
+          settings[s.key] = s.value;
+          if (s.key.startsWith("wa_tpl_")) {
+            const bareKey = s.key.replace("wa_tpl_", "");
+            settings[bareKey] = s.value;
+          }
+        }
       });
     }
     cachedSettings = settings;
@@ -738,6 +751,100 @@ async function getCachedSettings(supabase: ReturnType<typeof getSupabaseAdmin>):
   } catch {
     return cachedSettings ?? {};
   }
+}
+
+async function getWhatsAppCredentials(supabase: ReturnType<typeof getSupabaseAdmin>) {
+  try {
+    const { data: config } = await supabase
+      .from("whatsapp_config")
+      .select("phone_number_id, access_token")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (config?.phone_number_id && config?.access_token) {
+      const token = isLegacyFormat(config.access_token)
+        ? config.access_token
+        : decrypt(config.access_token);
+      return { phoneNumberId: config.phone_number_id, accessToken: token };
+    }
+  } catch (err) {
+    console.warn("[toto-engine] Failed to load whatsapp credentials:", err);
+  }
+  return null;
+}
+
+// -------------------------------------------------------------
+// 3-MINUTE WHATSAPP BOOKING TIMEOUT MANAGER
+// -------------------------------------------------------------
+const activeBookingTimeouts = new Map<string, NodeJS.Timeout>();
+
+export function cancelBookingTimeout(bookingId?: string) {
+  if (!bookingId) return;
+  const t = activeBookingTimeouts.get(bookingId);
+  if (t) {
+    clearTimeout(t);
+    activeBookingTimeouts.delete(bookingId);
+  }
+}
+
+export function scheduleWhatsAppBookingTimeout(
+  bookingId: string,
+  customerPhone: string,
+  bookingNumber?: string
+) {
+  cancelBookingTimeout(bookingId);
+
+  const timer = setTimeout(async () => {
+    activeBookingTimeouts.delete(bookingId);
+    try {
+      const supabase = getSupabaseAdmin();
+      const { data: booking } = await supabase
+        .from("bookings")
+        .select("*")
+        .eq("id", bookingId)
+        .maybeSingle();
+
+      // Only notify if status is STILL pending (no driver accepted yet within 3 min)
+      if (booking && booking.status === "pending") {
+        const cleanPhone = customerPhone.replace(/[^0-9]/g, "");
+        const creds = await getWhatsAppCredentials(supabase);
+        if (!creds) return;
+
+        const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ পয়েন্ট";
+        const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
+        const bNum = booking.booking_number || booking.id.slice(0, 8);
+
+        const bodyText = `⚠️ কোনো চালক পাওয়া যায়নি! ⚠️\n=======================\n🆔 বুকিং নং: *#${bNum}*\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n=======================\nদুঃখিত! বিগত ৩ মিনিটে কোনো চালক আপনার রাইড গ্রহণ করতে পারেননি। চালকরা হয়তো এই মুহূর্তে অন্য ট্রিপে ব্যস্ত আছেন।\n\nআপনি কি পুনরায় চালক খুঁজতে চান নাকি বুকিং বাতিল করবেন?`;
+
+        const buttons = [
+          { id: `retry_booking_${booking.id}`, title: "🔄 আবার খুঁজুন" },
+          { id: `cancel_no_penalty_${booking.id}`, title: "❌ বুকিং বাতিল" },
+        ];
+
+        try {
+          await sendInteractiveButtons({
+            phoneNumberId: creds.phoneNumberId,
+            accessToken: creds.accessToken,
+            to: cleanPhone,
+            bodyText,
+            buttons,
+          });
+        } catch {
+          await sendTextMessage({
+            phoneNumberId: creds.phoneNumberId,
+            accessToken: creds.accessToken,
+            to: cleanPhone,
+            text: `${bodyText}\n\n• পুনরায় খুঁজতে লিখুন: আবার খুঁজুন\n• বাতিল করতে লিখুন: বাতিল`,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[scheduleWhatsAppBookingTimeout] Error:", err);
+    }
+  }, 3 * 60 * 1000); // 3 minutes timeout
+
+  activeBookingTimeouts.set(bookingId, timer);
 }
 
 export const RIDER_DISCLAIMER_PDF_URL =
@@ -1018,14 +1125,25 @@ export async function processTotoMessage(
         ? customer.name
         : (driver?.name || ctx.senderName || "");
 
+    const customWelcome =
+      settings.welcome_message ||
+      settings.welcome_message_bengali ||
+      settings.wa_tpl_welcome_message;
+
     let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
-    if (
-      settings.welcome_message_bengali &&
-      !settings.welcome_message_bengali.includes("সহজ, দ্রুত ও নিরাপদ টোটো বুকিং")
-    ) {
-      welcomeText = settings.welcome_message_bengali
+    if (customWelcome && customWelcome.trim().length > 0) {
+      welcomeText = customWelcome
+        .replace("{{name}}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
         .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
+        .replace("{{helpline}}", helpline)
+        .replace("{helpline}", helpline)
         .replace("ABC", senderDisplayName || "");
+      if (!welcomeText.includes("play.google.com")) {
+        welcomeText = welcomeText.replace(
+          "Licence No",
+          `📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:\n👉 ${PLAYSTORE_APP_URL}\n\nLicence No`
+        );
+      }
     }
 
     return {
@@ -1055,11 +1173,51 @@ export async function processTotoMessage(
     }
     const { data: booking } = await bQuery.maybeSingle();
 
-    if (!booking || booking.status !== "pending") {
+    if (!booking) {
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! এই রাইডটির মেয়াদ শেষ হয়েছে বা ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        bodyText: `⚠️ দুঃখিত! এই রাইডটি আর উপলব্ধ নেই। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    }
+
+    // 1. If customer cancelled it
+    if (booking.status === "cancelled" || booking.cancelled_by === "customer") {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ দুঃখিত! যাত্রী এই রাইডটি বাতিল করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    }
+
+    // 2. If booking was more than 3 minutes ago
+    const isOver3Min = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 3 * 60 * 1000);
+    if (isOver3Min) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ দুঃখিত! ৩ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        buttons: [
+          { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+          { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+        ],
+      };
+    }
+
+    // 3. If already taken by another driver
+    if (booking.status !== "pending") {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
         buttons: [
           { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
@@ -1098,13 +1256,15 @@ export async function processTotoMessage(
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ দুঃখিত! এই রাইডটির মেয়াদ শেষ হয়েছে বা ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+        bodyText: `⚠️ দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা বাতিল হয়েছে। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
         buttons: [
           { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
           { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
         ],
       };
     }
+
+    cancelBookingTimeout(booking.id);
 
     if (driver) {
       void Promise.resolve(
@@ -1624,10 +1784,16 @@ export async function processTotoMessage(
     if (isRegisteredDriver && driver) {
       // If driver has NOT agreed to terms yet (first time), show driver disclaimer with accept button and attached PDF
       if (!driver.agreed_terms) {
+        const driverTermsText =
+          settings.driver_terms ||
+          settings.driver_terms_bengali ||
+          settings.wa_tpl_driver_terms ||
+          "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।";
+
         return {
           toPhone: rawPhone,
           type: "interactive_buttons",
-          bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
+          bodyText: driverTermsText,
           media: {
             kind: "document",
             url: RIDER_DISCLAIMER_PDF_URL,
@@ -1774,10 +1940,16 @@ export async function processTotoMessage(
     payload !== "view_customer_disclaimer" &&
     payload !== "customer_disclaimer"
   ) {
+    const driverTermsText =
+      settings.driver_terms ||
+      settings.driver_terms_bengali ||
+      settings.wa_tpl_driver_terms ||
+      "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।";
+
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
+      bodyText: driverTermsText,
       media: {
         kind: "document",
         url: RIDER_DISCLAIMER_PDF_URL,
@@ -1793,18 +1965,46 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   // FLOW C: CUSTOMER CANCELLATION HANDLER (Immediate Driver Alert)
   // -------------------------------------------------------------
-  if (payload === "cancel_ride" || incomingText === "cancel" || incomingText === "বাতিল") {
+  const isNoPenaltyAction =
+    payload.startsWith("cancel_no_penalty_") ||
+    incomingText.includes("cancel_no_penalty");
+
+  if (
+    payload === "cancel_ride" ||
+    isNoPenaltyAction ||
+    incomingText === "cancel" ||
+    incomingText === "বাতিল"
+  ) {
     customerBookingStates.delete(cleanPhone);
 
-    // 1. Fetch latest active booking (pending, assigned, confirmed)
-    const { data: activeBooking } = await supabase
+    const bIdFromPayload = isNoPenaltyAction
+      ? payload.replace("cancel_no_penalty_", "").trim()
+      : null;
+
+    let activeBookingQuery = supabase
       .from("bookings")
-      .select("*, drivers(*)")
-      .eq("customer_phone", cleanPhone)
-      .in("status", ["pending", "assigned", "confirmed"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .select("*, drivers(*)");
+
+    if (bIdFromPayload) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bIdFromPayload);
+      if (isUuid) {
+        activeBookingQuery = activeBookingQuery.or(`id.eq.${bIdFromPayload},booking_number.eq.${bIdFromPayload}`);
+      } else {
+        activeBookingQuery = activeBookingQuery.eq("booking_number", bIdFromPayload);
+      }
+    } else {
+      activeBookingQuery = activeBookingQuery
+        .eq("customer_phone", cleanPhone)
+        .in("status", ["pending", "assigned", "confirmed"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+    }
+
+    const { data: activeBooking } = await activeBookingQuery.maybeSingle();
+
+    if (activeBooking) {
+      cancelBookingTimeout(activeBooking.id);
+    }
 
     const extraNotifications: Array<{
       toPhone: string;
@@ -1813,6 +2013,14 @@ export async function processTotoMessage(
       buttons?: Array<{ id: string; title: string }>;
     }> = [];
 
+    const isOver3MinPending =
+      activeBooking &&
+      activeBooking.status === "pending" &&
+      activeBooking.created_at &&
+      Date.now() - new Date(activeBooking.created_at).getTime() >= 180000;
+
+    const isExemptFromStrike = isNoPenaltyAction || Boolean(isOver3MinPending);
+
     if (activeBooking) {
       // Mark booking cancelled
       await supabase
@@ -1820,6 +2028,7 @@ export async function processTotoMessage(
         .update({
           status: "cancelled",
           cancelled_by: "customer",
+          cancel_reason: isExemptFromStrike ? "no_rider_found" : "customer_request",
           updated_at: new Date().toISOString(),
         })
         .eq("id", activeBooking.id);
@@ -1854,6 +2063,19 @@ export async function processTotoMessage(
       }
     }
 
+    // If exempt from strike (timeout / no rider found after 3 min), DO NOT penalize or add cancellation strike!
+    if (isExemptFromStrike) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে। চালক না পাওয়ার কারণে এই বাতিলের জন্য কোনো পেনাল্টি বা ৩ বার বাতিল নিয়মের আওতায় নেওয়া হয়নি।\n=======================\n(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(customer?.cancellation_count || 0)}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
+        buttons: [
+          { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+        ],
+        extraNotifications,
+      };
+    }
+
     const newCancels = (customer?.cancellation_count || 0) + 1;
     void Promise.resolve(
       supabase
@@ -1871,6 +2093,135 @@ export async function processTotoMessage(
       bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।\n=======================\n❌ ৩ বারের বেশি বুকিং বাতিল করলে আপনার নম্বরটি সাময়িকভাবে স্থগিত হতে পারে।\n(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(newCancels)}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
       buttons: [
         { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+      ],
+      extraNotifications,
+    };
+  }
+
+  // -------------------------------------------------------------
+  // FLOW C.2: PASSENGER RETRIES BOOKING ("🔄 আবার খুঁজুন" / "find again")
+  // -------------------------------------------------------------
+  if (
+    payload.startsWith("retry_booking_") ||
+    incomingText === "আবার খুঁজুন" ||
+    incomingText === "find again" ||
+    incomingText === "আবার"
+  ) {
+    const bIdFromPayload = payload.startsWith("retry_booking_")
+      ? payload.replace("retry_booking_", "").trim()
+      : null;
+
+    let bQuery = supabase.from("bookings").select("*");
+    if (bIdFromPayload) {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bIdFromPayload);
+      if (isUuid) {
+        bQuery = bQuery.or(`id.eq.${bIdFromPayload},booking_number.eq.${bIdFromPayload}`);
+      } else {
+        bQuery = bQuery.eq("booking_number", bIdFromPayload);
+      }
+    } else {
+      bQuery = bQuery
+        .eq("customer_phone", cleanPhone)
+        .order("created_at", { ascending: false })
+        .limit(1);
+    }
+
+    const { data: bookingToRetry } = await bQuery.maybeSingle();
+
+    if (!bookingToRetry || (bookingToRetry.status !== "pending" && bookingToRetry.status !== "cancelled")) {
+      return {
+        toPhone: rawPhone,
+        type: "interactive_buttons",
+        bodyText: `ℹ️ এই বুকিংটি ইতিমধ্যে গৃহীত বা সমাপ্ত হয়েছে। নতুন টোটো বুক করতে নিচের বোতামে চাপ দিন:`,
+        buttons: [
+          { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
+        ],
+      };
+    }
+
+    // Reset status to pending and refresh timestamp
+    await supabase
+      .from("bookings")
+      .update({
+        status: "pending",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", bookingToRetry.id);
+
+    // Schedule 3-minute timeout again
+    scheduleWhatsAppBookingTimeout(
+      bookingToRetry.id,
+      rawPhone,
+      bookingToRetry.booking_number
+    );
+
+    let pLat = 0;
+    let pLng = 0;
+    let bMeta: any = {};
+    try { bMeta = JSON.parse(bookingToRetry.feedback || "{}"); } catch {}
+    if (bMeta.start_coords && Array.isArray(bMeta.start_coords)) {
+      pLat = bMeta.start_coords[0];
+      pLng = bMeta.start_coords[1];
+    } else {
+      const pGeo = await geocodeLocation(bookingToRetry.pickup_location || "");
+      pLat = pGeo.lat;
+      pLng = pGeo.lng;
+    }
+
+    // Query online drivers within 5km radar
+    const { data: onlineDrivers } = await supabase
+      .from("drivers")
+      .select("*")
+      .neq("is_active", false);
+
+    const nearbyDrivers = (onlineDrivers || []).filter((d) => {
+      const dClean = (d.phone || "").replace(/\D/g, "").slice(-10);
+      if (dClean === last10) return false;
+      let dLat = d.latitude;
+      let dLng = d.longitude;
+      if (!dLat || !dLng) {
+        try {
+          const meta = JSON.parse(d.current_location_name || "{}");
+          dLat = meta.lat;
+          dLng = meta.lng;
+        } catch {}
+      }
+      if (!pLat || !pLng || !dLat || !dLng) return false;
+      const distKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
+      return distKm <= 5.0;
+    });
+
+    const bNum = bookingToRetry.booking_number || bookingToRetry.id.slice(0, 8);
+    const extraNotifications = nearbyDrivers.map((d) => {
+      let recipientPhone = (d.phone || "").replace(/[^0-9]/g, "");
+      if (recipientPhone.length === 10) {
+        recipientPhone = `91${recipientPhone}`;
+      } else if (recipientPhone.startsWith("0")) {
+        recipientPhone = `91${recipientPhone.replace(/^0+/, "")}`;
+      }
+
+      return {
+        toPhone: recipientPhone,
+        type: "interactive_buttons" as const,
+        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bNum}\n👤 যাত্রী: ${bookingToRetry.customer_name || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+        buttons: [
+          { id: `driver_accept_${bookingToRetry.id}`, title: "✅ রাইড গ্রহণ" },
+          { id: `driver_decline_${bookingToRetry.id}`, title: "❌ বাতিল" },
+        ],
+      };
+    });
+
+    const statusLine = nearbyDrivers.length > 0
+      ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে পুনরায় অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে ওটিপি ও চালকের বিবরণ জানানো হবে।`
+      : `⚠️ বর্তমানে আপনার ৫ কিমির মধ্যে কোনো সক্রিয় চালক অনলাইনে নেই। তবে আপনার বুকিংটি লাইভ রাখা হয়েছে, কাছাকাছি কোনো চালক ডিউটিতে এলে অনুরোধ পৌঁছে যাবে।`;
+
+    return {
+      toPhone: rawPhone,
+      type: "interactive_buttons",
+      bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bNum}*\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\n${statusLine}`,
+      buttons: [
+        { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
       ],
       extraNotifications,
     };
@@ -2087,6 +2438,10 @@ export async function processTotoMessage(
         status: "pending",
       }).select().maybeSingle();
 
+      if (newBooking?.id) {
+        scheduleWhatsAppBookingTimeout(newBooking.id, rawPhone, bookingNumber);
+      }
+
       // Query online drivers and filter nearby within 5 km radar
       const { data: onlineDrivers } = await supabase
         .from("drivers")
@@ -2120,27 +2475,10 @@ export async function processTotoMessage(
           recipientPhone = `91${recipientPhone.replace(/^0+/, "")}`;
         }
 
-        let distText = "";
-        if (pLat && pLng) {
-          let dLat = d.latitude;
-          let dLng = d.longitude;
-          if (!dLat || !dLng) {
-            try {
-              const meta = JSON.parse(d.current_location_name || "{}");
-              dLat = meta.lat;
-              dLng = meta.lng;
-            } catch {}
-          }
-          if (dLat && dLng) {
-            const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-            distText = ` [${dKm} কিমি দূরে]`;
-          }
-        }
-
         return {
           toPhone: recipientPhone,
           type: "interactive_buttons" as const,
-          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}${distText}\n🏁 গন্তব্য: ${dropLocation}\n💵 আনুমানিক ভাড়া: ₹${estimatedFare}.০০\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [
             { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
             { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ বাতিল" },
@@ -2178,7 +2516,9 @@ export async function processTotoMessage(
     incomingText === "শর্ত"
   ) {
     const fullDisclaimer =
+      settings.customer_disclaimer ||
       settings.customer_disclaimer_bengali ||
+      settings.wa_tpl_customer_disclaimer ||
       DEFAULT_TOTO_CUSTOMER_DISCLAIMER;
 
     return {
@@ -2217,11 +2557,17 @@ export async function processTotoMessage(
       timestamp: Date.now(),
     });
 
+    const customerDisclaimerText =
+      settings.customer_disclaimer ||
+      settings.customer_disclaimer_bengali ||
+      settings.wa_tpl_customer_disclaimer ||
+      "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।\n\n📄 যাত্রী নির্দেশিকা (PDF) ডাউনলোড লিংক:\n👉 https://sundarbanrider.in/customer-disclaimer.pdf";
+
     // Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।\n\n📄 যাত্রী নির্দেশিকা (PDF) ডাউনলোড লিংক:\n👉 https://sundarbanrider.in/customer-disclaimer.pdf",
+      bodyText: customerDisclaimerText,
       media: {
         kind: "document",
         url: CUSTOMER_DISCLAIMER_PDF_URL,
@@ -2327,13 +2673,24 @@ export async function processTotoMessage(
       : (ctx.senderName || "");
 
   let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
-  if (
-    settings.welcome_message_bengali &&
-    !settings.welcome_message_bengali.includes("সহজ, দ্রুত ও নিরাপদ টোটো বুকিং")
-  ) {
-    welcomeText = settings.welcome_message_bengali
+  const customWelcome =
+    settings.welcome_message ||
+    settings.welcome_message_bengali ||
+    settings.wa_tpl_welcome_message;
+
+  if (customWelcome && customWelcome.trim().length > 0) {
+    welcomeText = customWelcome
+      .replace("{{name}}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
       .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
+      .replace("{{helpline}}", helpline)
+      .replace("{helpline}", helpline)
       .replace("ABC", senderDisplayName || "");
+    if (!welcomeText.includes("play.google.com")) {
+      welcomeText = welcomeText.replace(
+        "Licence No",
+        `📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:\n👉 ${PLAYSTORE_APP_URL}\n\nLicence No`
+      );
+    }
   }
 
   return {

@@ -25,6 +25,9 @@ export const ALL_WHATSAPP_TEMPLATES: WhatsAppTemplateDefinition[] = [
 🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
                🙏🏻 সুন্দরবন রাইডার 🙏🏻
 
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+👉 https://play.google.com/store/apps/details?id=com.sundarbanriders.app
+
 Licence No :- 1554
 Reg. No :- WB-18-0208526
 Email :- sr.rider122@gmail.com
@@ -82,8 +85,6 @@ Help No :- {{helpline}} (WhatsApp)`,
       "{{passenger_count}}",
       "{{pickup_location}}",
       "{{drop_location}}",
-      "{{distance_text}}",
-      "{{estimated_fare}}",
     ],
     defaultText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺
 =======================
@@ -91,9 +92,8 @@ Help No :- {{helpline}} (WhatsApp)`,
 👤 যাত্রী: {{customer_name}}
 👥 যাত্রী সংখ্যা: {{passenger_count}} জন
 📞 ফোন: {{customer_phone}}
-📍 পিকআপ: {{pickup_location}}{{distance_text}}
+📍 পিকআপ: {{pickup_location}}
 🏁 গন্তব্য: {{drop_location}}
-💵 আনুমানিক ভাড়া: ₹{{estimated_fare}}.০০
 =======================
 আপনি কি এই রাইডটি গ্রহণ করতে চান?`,
   },

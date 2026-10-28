@@ -116,23 +116,6 @@ async function notifyOnlineDriversViaWhatsApp(
         recipientPhone = `91${recipientPhone.replace(/^0+/, "")}`;
       }
 
-      let distText = "";
-      if (pLat && pLng) {
-        let dLat = d.latitude;
-        let dLng = d.longitude;
-        if (!dLat || !dLng) {
-          try {
-            const meta = JSON.parse(d.current_location_name || "{}");
-            dLat = meta.lat;
-            dLng = meta.lng;
-          } catch {}
-        }
-        if (dLat && dLng) {
-          const dKm = calculateDistanceKm(pLat, pLng, dLat, dLng);
-          distText = ` [${dKm} কিমি দূরে]`;
-        }
-      }
-
       const bMeta = getBookingMeta(booking);
       const pCount = bMeta.passenger_count || 3;
       const bodyText = await getCustomWhatsAppMessage(admin, "driver_new_booking_alert", {
@@ -142,8 +125,8 @@ async function notifyOnlineDriversViaWhatsApp(
         passenger_count: pCount,
         pickup_location: booking.pickup_location,
         drop_location: booking.drop_location,
-        distance_text: distText,
-        estimated_fare: booking.estimated_fare || 35,
+        distance_text: "",
+        estimated_fare: "",
       });
 
       return sendInteractiveButtons({
@@ -1520,12 +1503,35 @@ export async function PATCH(request: Request) {
         );
       }
 
-      // Check if cancelled or already on trip
+      // Check if cancelled by customer
+      if (booking.status === "cancelled" || booking.cancelled_by === "customer") {
+        return NextResponse.json(
+          {
+            error: "booking_cancelled_by_customer",
+            message: "⚠️ দুঃখিত! যাত্রী এই রাইডটি বাতিল করেছেন।",
+          },
+          { status: 409 }
+        );
+      }
+
+      // Check if booking was created more than 3 minutes ago
+      const isOver3MinExpired = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 3 * 60 * 1000);
+      if (isOver3MinExpired) {
+        return NextResponse.json(
+          {
+            error: "booking_expired_timeout",
+            message: "⚠️ দুঃখিত! ৩ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে।",
+          },
+          { status: 410 }
+        );
+      }
+
+      // Check if already on trip or otherwise non-pending
       if (booking.status !== "pending" && booking.status !== "searching") {
         return NextResponse.json(
           {
             error: "booking_already_taken",
-            message: "দুঃখিত! এই রাইডটি ইতিমধ্যে সমাপ্ত বা বাতিল হয়েছে।",
+            message: "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন বা সমাপ্ত হয়েছে।",
           },
           { status: 409 }
         );

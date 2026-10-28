@@ -9,7 +9,7 @@ import { sendInteractiveButtons, sendTextMessage } from "@/lib/whatsapp/meta-api
 import { decrypt, isLegacyFormat } from "@/lib/whatsapp/encryption";
 
 // Helper to get Supabase Admin client
-function getSupabaseAdmin() {
+export function getSupabaseAdmin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -1253,6 +1253,24 @@ export async function processTotoMessage(
       .maybeSingle();
 
     if (!assignedBooking) {
+      const { data: freshB } = await supabase
+        .from("bookings")
+        .select("status, cancelled_by")
+        .eq("id", booking.id)
+        .maybeSingle();
+
+      if (freshB?.status === "cancelled" || freshB?.cancelled_by === "customer") {
+        return {
+          toPhone: rawPhone,
+          type: "interactive_buttons",
+          bodyText: `⚠️ দুঃখিত! যাত্রী এই রাইডটি বাতিল করেছেন। পরবর্তী রাইডের জন্য অপেক্ষা করুন।`,
+          buttons: [
+            { id: "driver_go_offline", title: "🔴 অফলাইন যান" },
+            { id: "book_toto", title: "🛺 টোটো বুকিং করুন" },
+          ],
+        };
+      }
+
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
@@ -1292,9 +1310,9 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🆔 বুকিং আইডি: #${booking.booking_number || booking.id}\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🛺 টোটো নং: ${driverBadge}\n=======================\n💵 আনুমানিক ভাড়া: *₹${fareAmount}.০০*\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n=======================\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ৪ সংখ্যার ওটিপিটি চালককে দিন। চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন)`,
+        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🆔 বুকিং আইডি: #${booking.booking_number || booking.id}\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🛺 টোটো নং: ${driverBadge}\n=======================\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n=======================\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ৪ সংখ্যার ওটিপিটি চালককে দিন। চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন)`,
         buttons: [
-          { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
+          { id: `cancel_ride_${booking.id || booking.booking_number}`, title: "❌ বুকিং বাতিল" },
         ],
       },
     ];
@@ -1950,17 +1968,24 @@ export async function processTotoMessage(
     payload.startsWith("cancel_no_penalty_") ||
     incomingText.includes("cancel_no_penalty");
 
-  if (
+  const isCancelAction =
     payload === "cancel_ride" ||
+    payload.startsWith("cancel_ride_") ||
     isNoPenaltyAction ||
     incomingText === "cancel" ||
-    incomingText === "বাতিল"
-  ) {
+    incomingText === "বাতিল" ||
+    incomingText.includes("বাতিল") ||
+    incomingText.includes("cancel");
+
+  if (isCancelAction) {
     customerBookingStates.delete(cleanPhone);
 
-    const bIdFromPayload = isNoPenaltyAction
-      ? payload.replace("cancel_no_penalty_", "").trim()
-      : null;
+    let bIdFromPayload: string | null = null;
+    if (payload.startsWith("cancel_no_penalty_")) {
+      bIdFromPayload = payload.replace("cancel_no_penalty_", "").trim();
+    } else if (payload.startsWith("cancel_ride_")) {
+      bIdFromPayload = payload.replace("cancel_ride_", "").trim();
+    }
 
     let activeBookingQuery = supabase
       .from("bookings")
@@ -1974,14 +1999,33 @@ export async function processTotoMessage(
         activeBookingQuery = activeBookingQuery.eq("booking_number", bIdFromPayload);
       }
     } else {
+      const phoneFilters = Array.from(new Set([cleanPhone, last10, `+91${last10}`, `91${last10}`, `0${last10}`]))
+        .filter(Boolean)
+        .map((p) => `customer_phone.eq.${p}`)
+        .join(",");
       activeBookingQuery = activeBookingQuery
-        .eq("customer_phone", cleanPhone)
-        .in("status", ["pending", "assigned", "confirmed"])
+        .or(`${phoneFilters},customer_phone.ilike.%${last10}`)
+        .in("status", ["pending", "searching", "assigned", "confirmed"])
         .order("created_at", { ascending: false })
         .limit(1);
     }
 
-    const { data: activeBooking } = await activeBookingQuery.maybeSingle();
+    let { data: activeBooking } = await activeBookingQuery.maybeSingle();
+
+    // Fallback search if phone format in DB differed slightly
+    if (!activeBooking) {
+      const { data: fallbackBooking } = await supabase
+        .from("bookings")
+        .select("*, drivers(*)")
+        .or(`customer_phone.ilike.%${last10}`)
+        .in("status", ["pending", "searching", "assigned", "confirmed"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (fallbackBooking) {
+        activeBooking = fallbackBooking;
+      }
+    }
 
     if (activeBooking) {
       cancelBookingTimeout(activeBooking.id);
@@ -2203,7 +2247,7 @@ export async function processTotoMessage(
       type: "interactive_buttons",
       bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bNum}*\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\n${statusLine}`,
       buttons: [
-        { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
+        { id: `cancel_ride_${bookingToRetry.id || bNum}`, title: "❌ বুকিং বাতিল" },
       ],
       extraNotifications,
     };
@@ -2478,7 +2522,7 @@ export async function processTotoMessage(
         type: "interactive_buttons",
         bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bookingNumber}*\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\n${statusLine}`,
         buttons: [
-          { id: "cancel_ride", title: "❌ বুকিং বাতিল" },
+          { id: `cancel_ride_${newBooking?.id || bookingNumber}`, title: "❌ বুকিং বাতিল" },
         ],
         extraNotifications,
       };

@@ -204,7 +204,7 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
         accessToken,
         to: custPhone,
         bodyText,
-        buttons: [{ id: "cancel_ride", title: "❌ বুকিং বাতিল" }],
+        buttons: [{ id: `cancel_ride_${booking.id || booking.booking_number}`, title: "❌ বুকিং বাতিল" }],
       }).catch((e) => console.warn("[notifyRideAccepted] Passenger WhatsApp send error:", e));
     }
 

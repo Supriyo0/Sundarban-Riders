@@ -193,5 +193,40 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
     expect(action).not.toBeNull();
     expect(action?.bodyText).toContain("দুঃখিত");
   });
+
+  it("verifies passenger confirmation does not contain estimated fare", async () => {
+    const { getSupabaseAdmin } = await import("@/lib/whatsapp/toto-engine");
+    const supabase = getSupabaseAdmin();
+    
+    // Create mock booking
+    const { data: b } = await supabase.from("bookings").insert({
+      booking_number: "SR-TEST-FARE",
+      customer_phone: "919999988888",
+      customer_name: "টেস্ট যাত্রী",
+      pickup_location: "কাকদ্বীপ",
+      drop_location: "নামখানা",
+      status: "pending",
+    }).select().single();
+
+    if (b) {
+      const action = await processTotoMessage({
+        fromPhone: "+919593177885",
+        buttonPayload: `driver_accept_${b.id}`,
+      });
+
+      expect(action).not.toBeNull();
+      const passengerNotification = action?.extraNotifications?.find(
+        (n) => n.toPhone === "919999988888"
+      );
+      if (passengerNotification) {
+        expect(passengerNotification.bodyText).not.toContain("আনুমানিক ভাড়া");
+        expect(passengerNotification.bodyText).toContain("আপনার রাইড নিশ্চিত হয়েছে");
+      }
+
+      // Cleanup
+      await supabase.from("bookings").delete().eq("id", b.id);
+    }
+  });
 });
+
 

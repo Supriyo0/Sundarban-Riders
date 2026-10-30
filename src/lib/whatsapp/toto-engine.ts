@@ -815,7 +815,11 @@ export function scheduleWhatsAppBookingTimeout(
         const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
         const bNum = booking.booking_number || booking.id.slice(0, 8);
 
-        const bodyText = `⚠️ কোনো চালক পাওয়া যায়নি! ⚠️\n=======================\n🆔 বুকিং নং: *#${bNum}*\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n=======================\nদুঃখিত! বিগত ৩ মিনিটে কোনো চালক আপনার রাইড গ্রহণ করতে পারেননি। চালকরা হয়তো এই মুহূর্তে অন্য ট্রিপে ব্যস্ত আছেন।\n\nআপনি কি পুনরায় চালক খুঁজতে চান নাকি বুকিং বাতিল করবেন?`;
+        const bodyText = `⏳ দুঃখিত! এই মুহূর্তে কোনো স্বাধীন চালক উপলব্ধ নেই ।
+=======================
+ℹ️ "সুন্দরবন রাইডার" যেহেতু একটি প্রযুক্তি মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler); তাই স্বাধীন চালকদের প্রাপ্যতা ও রাইড গ্রহণের সিদ্ধান্ত তাঁদের নিজস্ব।
+
+আপনি কি পুনরায় চালক খুঁজতে চান, নাকি অনুরোধটি বাতিল করবেন?`;
 
         const buttons = [
           { id: `retry_booking_${booking.id}`, title: "🔄 আবার খুঁজুন" },
@@ -872,14 +876,10 @@ export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্
 
 💫 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে... "সুন্দরবন রাইডার" 🙏ধন্যবাদ`;
 
-export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT = `📜 *ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী*
-"সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:
-
-• যাতায়াতে ক্ষতি/দুর্ঘটনায় ‘সুন্দরবন রাইডার’ দায়ী থাকবে না।
-• চালক ও যাত্রী সম্পূর্ণ নিজ দায়িত্বে ও ঝুঁকিতে ভ্রমণ করবেন।
-• নির্ধারিত রেট চার্ট অনুযায়ী ভাড়া প্রযোজ্য হবে।
-
-(সম্পূর্ণ আইনি শর্তাবলী ও রেট চার্ট দেখতে 'বিস্তারিত দেখুন' চাপুন)`;
+export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT = `📜 আইনি ডিসক্লেইমার ও শর্তাবলী 
+"সুন্দরবন রাইডার" কেবল একটি ডিজিটাল তথ্যপ্রযুক্তি মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), 
+বুকিং করার পূর্বে সংযুক্ত PDF টি পড়ে নিন ।
+বুকিং নিশ্চিত করতে "সম্মত আছি" বাটনে চাপ দিন ।`;
 
 export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী* 🛺
 ==============================
@@ -899,35 +899,41 @@ export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন �
 export const PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.sundarbanriders.app";
 
 export const formatTotoWelcomeMessage = (name?: string) => {
-  const greeting = name && name.trim() && name.trim() !== "সুন্দরবন কাস্টমার" ? `🙏🏻 নমস্কার ${name.trim()} 🙏🏻` : `🙏🏻 নমস্কার 🙏🏻`;
+  const greeting = name && name.trim() && name.trim() !== "সুন্দরবন কাস্টমার" ? `🙏 নমস্কার ${name.trim()}, 🙏` : `🙏 নমস্কার, 🙏`;
   return `${greeting}
-            "সুন্দরবন রাইডার"  
-আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
-🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
-               🙏🏻 সুন্দরবন রাইডার 🙏🏻
+"সুন্দরবন রাইডার" একটি আধুনিক ডিজিটাল তথ্যপ্রযুক্তিভিত্তিক মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), যা আপনার যাত্রাকে দ্রুত, সহজ ও সুরক্ষিত করতে স্থানীয় অনুমোদিত স্বাধীন টোটো চালকদের সঙ্গে প্রযুক্তিগত সংযোগ স্থাপন পরিষেবা প্রদান করে ।
 
-📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
 👉 ${PLAYSTORE_APP_URL}
 
-Licence No :- 1554
-Reg. No :- WB-18-0208526
-Email :- sr.rider122@gmail.com
-Help No :- 8348122122 (WhatsApp)`;
+🏛️ সরকারি স্বীকৃতি ও আইনি তথ্য:
+📜 ট্রেড রেজিস্ট্রেশন নং: 1554
+🏛️ উদ্যম রেজিস্ট্রেশন নং: UDYAM-WB-18-0208526
+📞 হেল্পলাইন: 8348122122
+📧 ইমেল: sr.rider122@gmail.com
+
+🚨 জরুরি সহায়তা ও নিরাপত্তা নম্বর:
+ জাতীয় জরুরি হেল্পলাইন (পুলিশ ও আপদকালীন): 112
+নারী সুরক্ষা হেল্পলাইন: 1091 / 181
+অ্যাম্বুলেন্স পরিষেবা: 102`;
 };
 
-export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏🏻 নমস্কার 🙏🏻
-            "সুন্দরবন রাইডার"  
-আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
-🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
-               🙏🏻 সুন্দরবন রাইডার 🙏🏻
+export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 নমস্কার, 🙏
+"সুন্দরবন রাইডার" একটি আধুনিক ডিজিটাল তথ্যপ্রযুক্তিভিত্তিক মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), যা আপনার যাত্রাকে দ্রুত, সহজ ও সুরক্ষিত করতে স্থানীয় অনুমোদিত স্বাধীন টোটো চালকদের সঙ্গে প্রযুক্তিগত সংযোগ স্থাপন পরিষেবা প্রদান করে ।
 
-📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
 👉 ${PLAYSTORE_APP_URL}
 
-Licence No :- 1554
-Reg. No :- WB-18-0208526
-Email :- sr.rider122@gmail.com
-Help No :- 8348122122 (WhatsApp)`;
+🏛️ সরকারি স্বীকৃতি ও আইনি তথ্য:
+📜 ট্রেড রেজিস্ট্রেশন নং: 1554
+🏛️ উদ্যম রেজিস্ট্রেশন নং: UDYAM-WB-18-0208526
+📞 হেল্পলাইন: 8348122122
+📧 ইমেল: sr.rider122@gmail.com
+
+🚨 জরুরি সহায়তা ও নিরাপত্তা নম্বর:
+ জাতীয় জরুরি হেল্পলাইন (পুলিশ ও আপদকালীন): 112
+নারী সুরক্ষা হেল্পলাইন: 1091 / 181
+অ্যাম্বুলেন্স পরিষেবা: 102`;
 
 interface DriverRecord {
   id: string;
@@ -1126,24 +1132,18 @@ export async function processTotoMessage(
         : (driver?.name || ctx.senderName || "");
 
     const customWelcome =
+      settings.wa_tpl_welcome_message ||
       settings.welcome_message ||
-      settings.welcome_message_bengali ||
-      settings.wa_tpl_welcome_message;
+      settings.welcome_message_bengali;
 
     let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
-    if (customWelcome && customWelcome.trim().length > 0) {
+    if (customWelcome && customWelcome.trim().length > 0 && customWelcome.includes("UDYAM")) {
       welcomeText = customWelcome
         .replace("{{name}}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
         .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
         .replace("{{helpline}}", helpline)
         .replace("{helpline}", helpline)
         .replace("ABC", senderDisplayName || "");
-      if (!welcomeText.includes("play.google.com")) {
-        welcomeText = welcomeText.replace(
-          "Licence No",
-          `📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:\n👉 ${PLAYSTORE_APP_URL}\n\nLicence No`
-        );
-      }
     }
 
     return {
@@ -1306,11 +1306,29 @@ export async function processTotoMessage(
     const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "WB-96-T-8421";
     const fareAmount = booking.estimated_fare || bookingMeta.estimated_fare || 30;
 
+    const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
+    const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
+
     const extraNotifications: NonNullable<OutboundWhatsAppAction["extraNotifications"]> = [
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons",
-        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨\n=======================\n🆔 বুকিং আইডি: #${booking.booking_number || booking.id}\n🛺 চালক: ${driver?.name || "সুন্দরবন চালক"}\n📞 ফোন: ${driver?.phone || rawPhone}\n🛺 টোটো নং: ${driverBadge}\n=======================\n🔐 রাইড শুরুর ওটিপি: *${startOtp}*\n=======================\n(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ৪ সংখ্যার ওটিপিটি চালককে দিন। চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন)`,
+        bodyText: `✅ আপনার রাইড নিশ্চিত হয়েছে!
+=======================
+🔐 যাত্রার ওটিপি (OTP): *${startOtp}*
+(চালকের সঙ্গে ওটিপি শেয়ার করে যাত্রা শুরু করুন)
+👨‍✈️ চালক: ${driver?.name || "সুন্দরবন চালক"}
+📞 মোবাইল নং: ${driver?.phone || rawPhone}
+🛺 টোটো নম্বর: ${driverBadge}
+📍 পিক-আপ: ${cleanPickup}
+🏁 গন্তব্য: ${cleanDrop}
+=======================
+💰 ভাড়া সংক্রান্ত তথ্য:
+সুন্দরবন রাইডার কোনো ভাড়া নির্ধারণ, নিয়ন্ত্রণ বা অনুমোদন করে না। ট্রিপের ভাড়া সম্পূর্ণ চালকের নিজস্ব নির্ধারিত এবং ট্রিপ শেষে চালকের অ্যাপে প্রদর্শিত হিসাব অনুযায়ী চালকের সাথে সরাসরি মিটিয়ে নেবেন।
+⚠️ সুরক্ষা ও ট্রাফিক নিয়ম:
+টোটোতে চালকসহ সর্বোচ্চ ৫ জন (৪ জন যাত্রী + ১ জন চালক) বহন করা এবং সমস্ত ট্রাফিক আইন ও সরকারি বিধি মেনে চলা চালক ও যাত্রী উভয়েরই যৌথ আইনি দায়িত্ব। নিয়ম মেনে নিরাপদ যাত্রা নিশ্চিত করুন।
+
+সুন্দরবন রাইডার ব্যবহার করার জন্য আপনাকে ধন্যবাদ!`,
         buttons: [
           { id: `cancel_ride_${booking.id || booking.booking_number}`, title: "❌ বুকিং বাতিল" },
         ],
@@ -1318,9 +1336,6 @@ export async function processTotoMessage(
     ];
 
     // Only notify assigned driver and passenger; do not send unsolicited broadcasts to other drivers
-
-    const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
-    const cleanDrop = (booking.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
 
     return {
       toPhone: rawPhone,
@@ -1604,10 +1619,17 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons" as const,
-        bodyText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! 🙏\n=======================\n🆔 বুকিং নং: #${booking.booking_number || booking.id.slice(0, 8)}\n📍 পিকআপ: ${cleanPickup}\n🏁 গন্তব্য: ${cleanDrop}\n📏 মোট অতিক্রান্ত দূরত্ব: *${distKm} কিমি*\n💵 সংগৃহীত চূড়ান্ত ভাড়া: *₹${finalFare}.০০*\n=======================\n"সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। আমাদের সেবাকে আরও উন্নত করতে আপনার অভিজ্ঞতা জানান:`,
+        bodyText: `🎉 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে!
+=======================
+🏁 গন্তব্য: ${cleanDrop}
+💰 মোট প্রদেয় ভাড়া: ₹${finalFare}.০০
+=======================
+ℹ️ ভাড়ার এই হিসাবটি চালকের নিজস্ব এবং তাঁর অ্যাপ থেকে সরাসরি প্রদর্শিত। "সুন্দরবন রাইডার" কেবল ডিজিটাল প্রযুক্তি মধ্যস্থতাকারী (IT  Enabler); তাই নগদ বা UPI-এর মাধ্যমে ভাড়া সরাসরি চালককেই প্রদান করুন।
+
+আপনার মূল্যবান অভিজ্ঞতা ও সেবার মান উন্নত রাখতে নিচের অপশন বেছে নিন:`,
         buttons: [
-          { id: `give_review_${booking.id}`, title: "⭐ রিভিউ দিন" },
-          { id: "skip_review", title: "⏭️ স্কিপ করুন" },
+          { id: `give_review_${booking.id}`, title: "⭐ চালককে রেটিং দিন" },
+          { id: "customer_complaint", title: "📝 অভিযোগ বা মতামত" },
         ],
       },
     ] : [];
@@ -2090,10 +2112,19 @@ export async function processTotoMessage(
 
     // If exempt from strike (timeout / no rider found after 3 min), DO NOT penalize or add cancellation strike!
     if (isExemptFromStrike) {
+      const remainingAttempts = Math.max(0, 3 - (customer?.cancellation_count || 0));
+      const remainingAttemptsBengali = toBengaliDigits(remainingAttempts);
+
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে। চালক না পাওয়ার কারণে এই বাতিলের জন্য কোনো পেনাল্টি বা ৩ বার বাতিল নিয়মের আওতায় নেওয়া হয়নি।\n=======================\n(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(customer?.cancellation_count || 0)}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
+        bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।
+=======================
+ℹ️ কোনো স্বাধীন চালক উপলব্ধ না থাকায় বা অনুরোধের মেয়াদ শেষ হওয়ায় এই বাতিলের জন্য কোনো পেনাল্টি বা ৩ বার বাতিল নিয়মের আওতায় নেওয়া হয়নি (বাতিল কাউন্ট অপরিবর্তিত আছে)।
+
+🛑 বাতিলকরণের অবশিষ্ট সুযোগ: আর মাত্র ${remainingAttemptsBengali} বার (সর্বোচ্চ ৩ বার বাতিল করা যায়)।
+=======================
+🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
         buttons: [
           { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
         ],
@@ -2102,23 +2133,43 @@ export async function processTotoMessage(
     }
 
     const newCancels = (customer?.cancellation_count || 0) + 1;
+    const isBlocked = newCancels >= 3;
     void Promise.resolve(
       supabase
         .from("customers")
         .update({
           cancellation_count: newCancels,
-          is_blocked: newCancels >= 3,
+          is_blocked: isBlocked,
         })
         .eq("phone", cleanPhone)
     ).catch(() => {});
 
+    const remainingAttempts = Math.max(0, 3 - newCancels);
+    const remainingAttemptsBengali = toBengaliDigits(remainingAttempts);
+
+    const bodyText = `⚠️ বুকিং বাতিল সংক্রান্ত  বিজ্ঞপ্তি:
+=======================
+আপনার বর্তমান রাইডের অনুরোধটি বাতিল করা হয়েছে।
+দয়া করে মনে রাখবেন, চালকদের মূল্যবান সময় ও প্ল্যাটফর্মের সুষ্ঠু পরিষেবা বজায় রাখতে ঘন ঘন বুকিং বাতিল করা গ্রহণযোগ্য নয়।
+
+🛑 বাতিলকরণের অবশিষ্ট সুযোগ: আর মাত্র ${remainingAttemptsBengali} বার (সর্বোচ্চ ৩ বার বাতিল করা যায়)।
+${
+  isBlocked
+    ? `⚠️ আপনি সর্বোচ্চ ৩ বার বুকিং বাতিল করেছেন। প্ল্যাটফর্মের নীতি অনুযায়ী আপনার নম্বরটি সাময়িকভাবে স্থগিত (Blocked) করা হয়েছে। সহায়তার জন্য হেল্পলাইনে যোগাযোগ করুন।`
+    : `এভাবে বারবার বুকিং বাতিল করলে আপনার নম্বরটি প্ল্যাটফর্মে সাময়িকভাবে স্থগিত (Blocked) হতে পারে। তাই আপনার নম্বর সচল রাখতে এবং নিয়মিত সুবিধা পেতে অনুগ্রহ করে নিশ্চিত হয়েই রাইড বুক করুন।`
+}
+
+সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ!`;
+
+    const buttons = isBlocked
+      ? [{ id: "customer_complaint", title: "📝 যোগাযোগ বা অভিযোগ" }]
+      : [{ id: "book_toto", title: "🛺 নতুন টোটো বুকিং" }];
+
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `⚠️ আপনার বুকিংটি সফলভাবে বাতিল করা হয়েছে।\n=======================\n❌ ৩ বারের বেশি বুকিং বাতিল করলে আপনার নম্বরটি সাময়িকভাবে স্থগিত হতে পারে।\n(আপনার বর্তমান বাতিল সংখ্যা: ${toBengaliDigits(newCancels)}/৩)\n=======================\n🤝 সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ।`,
-      buttons: [
-        { id: "book_toto", title: "🛺 নতুন টোটো বুকিং" },
-      ],
+      bodyText,
+      buttons,
       extraNotifications,
     };
   }
@@ -2242,10 +2293,19 @@ export async function processTotoMessage(
       ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে পুনরায় অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে ওটিপি ও চালকের বিবরণ জানানো হবে।`
       : `⚠️ বর্তমানে আপনার ৫ কিমির মধ্যে কোনো সক্রিয় চালক অনলাইনে নেই। তবে আপনার বুকিংটি লাইভ রাখা হয়েছে, কাছাকাছি কোনো চালক ডিউটিতে এলে অনুরোধ পৌঁছে যাবে।`;
 
+    const bIdDisplay = bNum.startsWith("SR-") ? bNum.replace("SR-", "") : (bNum.replace(/\D/g, "") || bNum);
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bNum}*\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\n${statusLine}`,
+      bodyText: `✨ নিকটবর্তী চালকের সন্ধান চলছে... ✨
+=======================
+🆔 বুকিং আইডি: #SR${bIdDisplay}
+📍 পিক-আপ: ${bookingToRetry.pickup_location}
+🏁 গন্তব্য: ${bookingToRetry.drop_location}
+=======================
+🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে সক্রিয় অনুমোদিত স্বাধীন চালকদের কাছে অনুরোধ পাঠানো হয়েছে।
+⏳ চালক রাইড গ্রহণ করামাত্রই আপনাকে ওটিপি (OTP), চালকের নাম, ফোন নম্বর ও টোটো নম্বর জানিয়ে দেওয়া হবে।
+(অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...)`,
       buttons: [
         { id: `cancel_ride_${bookingToRetry.id || bNum}`, title: "❌ বুকিং বাতিল" },
       ],
@@ -2284,7 +2344,10 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:\n\nদয়া করে নিচের মতো করে আপনার পিকআপ লোকেশন শেয়ার করুন:\n👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার Current Location সেন্ড করুন।\n\n(অথবা আপনার পিকআপ জায়গার নাম লিখে পাঠান, যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর")`,
+      bodyText: `📍 আপনার বর্তমান অবস্থান (Current Pickup Location) প্রয়োজন:  
+দয়া করে নিচের নিয়ম অনুযায়ী আপনার পিকআপ লোকেশন শেয়ার করুন:  
+👉 WhatsApp-এর Attach (📎) আইকনে ক্লিক করে 'Location' সিলেক্ট করুন এবং আপনার "Current Location" সেন্ড করুন।  
+(অথবা আপনার পিকআপ জায়গার সুনির্দিষ্ট নাম লিখে পাঠান, যেমন: "কাকদ্বীপ স্টেশন", "নামখানা বাসস্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর" ইত্যাদি।)`,
     };
   }
 
@@ -2403,7 +2466,9 @@ export async function processTotoMessage(
         return {
           toPhone: rawPhone,
           type: "text",
-          bodyText: `📍 পিকআপ লোকেশন গ্রহণ করা হয়েছে:\n"${pickup}"\n\n🏁 এবার অনুগ্রহ করে আপনার গন্তব্যের নাম (Drop Location) লিখে পাঠান (যেমন: "লট ৮ ফেরিঘাট", "কাকদ্বীপ", "নামখানা", "ডায়মন্ড হারবার"):`,
+          bodyText: `✅ আপনার পিকআপ লোকেশন গ্রহণ করা হয়েছে!
+🏁 এবার আপনার গন্তব্যের নাম (Drop Location) লিখে পাঠান:
+(যেমন: "লট ৮ ফেরিঘাট", "কাকদ্বীপ স্টেশন", "নামখানা বাস স্ট্যান্ড", "ডায়মন্ড হারবার", "লক্ষ্মীকান্তপুর" ইত্যাদি)`,
         };
       }
     } else if (bookingState.step === "awaiting_drop" && incomingText) {
@@ -2517,10 +2582,20 @@ export async function processTotoMessage(
         ? `🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে ${toBengaliDigits(nearbyDrivers.length)} জন সক্রিয় চালকের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলেই আপনাকে ওটিপি ও চালকের বিবরণ জানানো হবে।`
         : `⚠️ বর্তমানে আপনার ৫ কিমির মধ্যে কোনো সক্রিয় চালক অনলাইনে নেই। তবে আপনার বুকিংটি লাইভ রাখা হয়েছে, কাছাকাছি কোনো চালক ডিউটিতে এলে অনুরোধ পৌঁছে যাবে।`;
 
+      const bIdDisplay = bookingNumber.startsWith("SR-") ? bookingNumber.replace("SR-", "") : (bookingNumber.replace(/\D/g, "") || bookingNumber);
+
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: `✨ চালক খোঁজা হচ্ছে... ✨\n=======================\n🆔 বুকিং নং: *#${bookingNumber}*\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\n${statusLine}`,
+        bodyText: `✨ নিকটবর্তী চালকের সন্ধান চলছে... ✨
+=======================
+🆔 বুকিং আইডি: #SR${bIdDisplay}
+📍 পিক-আপ: ${pickupLocation}
+🏁 গন্তব্য: ${dropLocation}
+=======================
+🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে সক্রিয় অনুমোদিত স্বাধীন চালকদের কাছে অনুরোধ পাঠানো হয়েছে।
+⏳ চালক রাইড গ্রহণ করামাত্রই আপনাকে ওটিপি (OTP), চালকের নাম, ফোন নম্বর ও টোটো নম্বর জানিয়ে দেওয়া হবে।
+(অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...)`,
         buttons: [
           { id: `cancel_ride_${newBooking?.id || bookingNumber}`, title: "❌ বুকিং বাতিল" },
         ],
@@ -2585,10 +2660,11 @@ export async function processTotoMessage(
     });
 
     const customerDisclaimerText =
-      settings.customer_disclaimer ||
-      settings.customer_disclaimer_bengali ||
-      settings.wa_tpl_customer_disclaimer ||
-      "নমস্কার! 'সুন্দরবন রাইডার'-এ টোটো বুক করার পূর্বে অনুগ্রহ করে সংযুক্ত যাত্রী সুরক্ষা ও ব্যবহার নির্দেশিকা PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন এবং নিচের '✅ সম্মত আছি' বাটনে চাপুন।\n\n📄 যাত্রী নির্দেশিকা (PDF) ডাউনলোড লিংক:\n👉 https://sundarbanrider.in/customer-disclaimer.pdf";
+      (settings.wa_tpl_customer_disclaimer && settings.wa_tpl_customer_disclaimer.includes("আইনি ডিসক্লেইমার"))
+        ? settings.wa_tpl_customer_disclaimer
+        : ((settings.customer_disclaimer && settings.customer_disclaimer.includes("আইনি ডিসক্লেইমার"))
+          ? settings.customer_disclaimer
+          : DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT);
 
     // Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
     return {
@@ -2612,7 +2688,9 @@ export async function processTotoMessage(
   // -------------------------------------------------------------
   if (
     payload === "customer_complaint" ||
+    payload === "customer_feedback" ||
     incomingText.includes("অভিযোগ") ||
+    incomingText.includes("মতামত") ||
     incomingText === "complaint"
   ) {
     customerBookingStates.set(cleanPhone, {
@@ -2623,7 +2701,7 @@ export async function processTotoMessage(
     return {
       toPhone: rawPhone,
       type: "text",
-      bodyText: `📢 অভিযোগ নিবন্ধন 📢\n=======================\nঅনুগ্রহ করে আপনার অভিযোগ বা সমস্যার কথা এখানে বিস্তারিত লিখে পাঠান। আমাদের কাস্টমার সাপোর্ট টিম দ্রুত বিষয়টি সমাধান করবে:`,
+      bodyText: `📝 অভিযোগ বা মতামত জানান 📝\n=======================\nঅনুগ্রহ করে আপনার অভিযোগ, মতামত বা পরামর্শ এখানে বিস্তারিত লিখে পাঠান। আমাদের টিম দ্রুত বিষয়টি পর্যালোচনা করে ব্যবস্থা নেবে:`,
     };
   }
 
@@ -2701,23 +2779,17 @@ export async function processTotoMessage(
 
   let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
   const customWelcome =
+    settings.wa_tpl_welcome_message ||
     settings.welcome_message ||
-    settings.welcome_message_bengali ||
-    settings.wa_tpl_welcome_message;
+    settings.welcome_message_bengali;
 
-  if (customWelcome && customWelcome.trim().length > 0) {
+  if (customWelcome && customWelcome.trim().length > 0 && customWelcome.includes("UDYAM")) {
     welcomeText = customWelcome
       .replace("{{name}}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
       .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
       .replace("{{helpline}}", helpline)
       .replace("{helpline}", helpline)
       .replace("ABC", senderDisplayName || "");
-    if (!welcomeText.includes("play.google.com")) {
-      welcomeText = welcomeText.replace(
-        "Licence No",
-        `📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:\n👉 ${PLAYSTORE_APP_URL}\n\nLicence No`
-      );
-    }
   }
 
   return {

@@ -196,6 +196,9 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
         driver_phone: driver.phone || "9593177885",
         driver_id: driverBadge,
         unique_id: driverBadge,
+        toto_number: driver.toto_number || driver.vehicle_number || driverBadge,
+        pickup_location: booking.pickup_location || "পিকআপ পয়েন্ট",
+        drop_location: booking.drop_location || "গন্তব্য পয়েন্ট",
         start_otp: startOtp,
       });
 
@@ -256,6 +259,7 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
       booking_number: booking.booking_number || booking.id,
       distance_km: actualDist,
       final_fare: finalFare,
+      drop_location: booking.drop_location || "গন্তব্য",
       driver_name: driverName,
     });
 
@@ -266,8 +270,8 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
         to: custPhone,
         bodyText,
         buttons: [
-          { id: "customer_complaint", title: "অভিযোগ জানান" },
-          { id: "customer_feedback", title: "মতামত দিন" },
+          { id: `give_review_${booking.id}`, title: "⭐ চালককে রেটিং দিন" },
+          { id: "customer_complaint", title: "📝 অভিযোগ বা মতামত" },
         ],
       });
       console.log(`[notifyTripCompleted] Customer receipt sent to ${custPhone}`);

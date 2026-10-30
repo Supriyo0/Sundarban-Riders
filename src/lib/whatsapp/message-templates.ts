@@ -19,34 +19,33 @@ export const ALL_WHATSAPP_TEMPLATES: WhatsAppTemplateDefinition[] = [
     category: "general",
     description: "গ্রাহক বা চালক প্রথমবার 'Hi' বা কোনো মেসেজ পাঠালে এই স্বাগতম বার্তাটি যাবে।",
     variables: ["{{name}}", "{{helpline}}"],
-    defaultText: `🙏🏻 নমস্কার {{name}} 🙏🏻
-            "সুন্দরবন রাইডার"  
-আপনার যাত্রাকে আরও দ্রুত, সহজ ও সুরক্ষিত করতে মাত্র ৫ মিনিটে অনলাইন স্মার্ট টোটো বুকিং ।
-🎯 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে..............
-               🙏🏻 সুন্দরবন রাইডার 🙏🏻
+    defaultText: `🙏 নমস্কার{{name}},🙏
+"সুন্দরবন রাইডার" একটি আধুনিক ডিজিটাল তথ্যপ্রযুক্তিভিত্তিক মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), যা আপনার যাত্রাকে দ্রুত, সহজ ও সুরক্ষিত করতে স্থানীয় অনুমোদিত স্বাধীন টোটো চালকদের সঙ্গে প্রযুক্তিগত সংযোগ স্থাপন পরিষেবা প্রদান করে ।
 
-📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
+📲 আমাদের অফিসিয়াল গুগল প্লে-স্টোর অ্যাপ:
 👉 https://play.google.com/store/apps/details?id=com.sundarbanriders.app
 
-Licence No :- 1554
-Reg. No :- WB-18-0208526
-Email :- sr.rider122@gmail.com
-Help No :- {{helpline}} (WhatsApp)`,
+🏛️ সরকারি স্বীকৃতি ও আইনি তথ্য:
+📜 ট্রেড রেজিস্ট্রেশন নং: 1554
+🏛️ উদ্যম রেজিস্ট্রেশন নং: UDYAM-WB-18-0208526
+📞 হেল্পলাইন: {{helpline}}
+📧 ইমেল: sr.rider122@gmail.com
+
+🚨 জরুরি সহায়তা ও নিরাপত্তা নম্বর:
+ জাতীয় জরুরি হেল্পলাইন (পুলিশ ও আপদকালীন): 112
+নারী সুরক্ষা হেল্পলাইন: 1091 / 181
+অ্যাম্বুলেন্স পরিষেবা: 102`,
   },
   {
     key: "customer_disclaimer",
-    nameBengali: "যাত্রী ডিসক্লেইমার ও শর্তাবলী",
+    nameBengali: "আইনি ডিসক্লেইমার ও শর্তাবলী",
     category: "general",
-    description: "যাত্রী বুকিং শুরু করার পূর্বে প্রাথমিক নিরাপত্তা ও আইনি নির্দেশিকা।",
+    description: "যাত্রী বুকিং শুরু করার পূর্বে আইনি ডিসক্লেইমার ও শর্তাবলী নির্দেশিকা।",
     variables: ["{{name}}"],
-    defaultText: `📜 *ভার্চুয়াল ডিসক্লেইমার ও শর্তাবলী*
-"সুন্দরবন রাইডার" একটি নিবন্ধিত IT & ITES প্ল্যাটফর্ম। রেজিস্ট্রেশন, লাইসেন্স ও GST নিয়মাফিক সুরক্ষিত। রাইড বুক করার পূর্বে শর্তাবলি পড়ে নিন:
-
-• যাতায়াতে ক্ষতি/দুর্ঘটনায় ‘সুন্দরবন রাইডার’ দায়ী থাকবে না।
-• চালক ও যাত্রী সম্পূর্ণ নিজ দায়িত্বে ও ঝুঁকিতে ভ্রমণ করবেন।
-• নির্ধারিত রেট চার্ট অনুযায়ী ভাড়া প্রযোজ্য হবে।
-
-(সম্পূর্ণ আইনি শর্তাবলী ও রেট চার্ট দেখতে 'বিস্তারিত দেখুন' চাপুন)`,
+    defaultText: `📜 আইনি ডিসক্লেইমার ও শর্তাবলী 
+"সুন্দরবন রাইডার" কেবল একটি ডিজিটাল তথ্যপ্রযুক্তি মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), 
+বুকিং করার পূর্বে সংযুক্ত PDF টি পড়ে নিন ।
+বুকিং নিশ্চিত করতে "সম্মত আছি" বাটনে চাপ দিন ।`,
   },
   {
     key: "driver_terms",
@@ -111,48 +110,55 @@ Help No :- {{helpline}} (WhatsApp)`,
   // -------------------------------------------------------------
   {
     key: "passenger_booking_created",
-    nameBengali: "যাত্রী বুকিং তৈরি নিশ্চিতকরণ",
+    nameBengali: "নিকটবর্তী চালকের সন্ধান নোটিফিকেশন",
     category: "customer_ride",
-    description: "যাত্রী রাইড রিকোয়েস্ট পাঠালে সাথে সাথে এই প্রতিক্রিয়াটি পায়।",
+    description: "নিকটস্থ ৫ কিমির মধ্যে চালক খোঁজার সময় এই নোটিফিকেশন যাবে।",
     variables: [
       "{{booking_number}}",
       "{{pickup_location}}",
       "{{drop_location}}",
-      "{{estimated_fare}}",
     ],
-    defaultText: `✨ আপনার বুকিং তৈরি হয়েছে! ✨
+    defaultText: `✨ নিকটবর্তী চালকের সন্ধান চলছে... ✨
 =======================
-🆔 বুকিং নং: *#{{booking_number}}*
-📍 পিকআপ: {{pickup_location}}
+🆔 বুকিং আইডি: #SR{{booking_number}}
+📍 পিক-আপ: {{pickup_location}}
 🏁 গন্তব্য: {{drop_location}}
-💵 আনুমানিক ভাড়া: ₹{{estimated_fare}}.০০
 =======================
-🔍 আপনার কাছাকাছি টোটো চালকদের কাছে অনুরোধ পাঠানো হয়েছে... চালক গ্রহণ করলে আপনাকে সাথে সাথে জানানো হবে।`,
+🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে সক্রিয় অনুমোদিত স্বাধীন চালকদের কাছে অনুরোধ পাঠানো হয়েছে।
+⏳ চালক রাইড গ্রহণ করামাত্রই আপনাকে ওটিপি (OTP), চালকের নাম, ফোন নম্বর ও টোটো নম্বর জানিয়ে দেওয়া হবে।
+(অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...)`,
   },
   {
     key: "passenger_ride_assigned",
     nameBengali: "চালক রাইড গ্রহণ করলে যাত্রীকে ওটিপি সহ নোটিফিকেশন",
     category: "customer_ride",
-    description: "চালক রাইড গ্রহণ করলে যাত্রীর কাছে বুকিং আইডি, চালকের বিস্তারিত ও যাত্রা শুরুর ৪ ডিজিটের OTP যায়।",
+    description: "চালক রাইড গ্রহণ করলে যাত্রীর কাছে বুকিং আইডি, চালকের বিস্তারিত ও যাত্রা শুরুর OTP যায়।",
     variables: [
       "{{booking_id}}",
       "{{booking_number}}",
       "{{driver_name}}",
       "{{driver_phone}}",
-      "{{driver_id}}",
+      "{{toto_number}}",
+      "{{pickup_location}}",
+      "{{drop_location}}",
       "{{start_otp}}",
     ],
-    defaultText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨
+    defaultText: `✅ আপনার রাইড নিশ্চিত হয়েছে!
 =======================
-🆔 বুকিং আইডি: #{{booking_id}}
-🛺 চালক: {{driver_name}}
-📞 ফোন: {{driver_phone}}
-🆔 চালক আইডি: {{driver_id}}
+🔐 যাত্রার ওটিপি (OTP): {{start_otp}}
+(চালকের সঙ্গে ওটিপি শেয়ার করে যাত্রা শুরু করুন)
+👨‍✈️ চালক: {{driver_name}}
+📞 মোবাইল নং: {{driver_phone}}
+🛺 টোটো নম্বর: {{toto_number}}
+📍 পিক-আপ: {{pickup_location}}
+🏁 গন্তব্য: {{drop_location}}
 =======================
-🔐 রাইড শুরুর ওটিপি: *{{start_otp}}*
-(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ওটিপিটি চালককে দিন)
-=======================
-চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।`,
+💰 ভাড়া সংক্রান্ত তথ্য:
+সুন্দরবন রাইডার কোনো ভাড়া নির্ধারণ, নিয়ন্ত্রণ বা অনুমোদন করে না। ট্রিপের ভাড়া সম্পূর্ণ চালকের নিজস্ব নির্ধারিত এবং ট্রিপ শেষে চালকের অ্যাপে প্রদর্শিত হিসাব অনুযায়ী চালকের সাথে সরাসরি মিটিয়ে নেবেন।
+⚠️ সুরক্ষা ও ট্রাফিক নিয়ম:
+টোটোতে চালকসহ সর্বোচ্চ ৫ জন (৪ জন যাত্রী + ১ জন চালক) বহন করা এবং সমস্ত ট্রাফিক আইন ও সরকারি বিধি মেনে চলা চালক ও যাত্রী উভয়েরই যৌথ আইনি দায়িত্ব। নিয়ম মেনে নিরাপদ যাত্রা নিশ্চিত করুন।
+
+সুন্দরবন রাইডার ব্যবহার করার জন্য আপনাকে ধন্যবাদ!`,
   },
   {
     key: "passenger_trip_started",
@@ -172,13 +178,15 @@ Help No :- {{helpline}} (WhatsApp)`,
     nameBengali: "ডিজিটাল রসিদ ও ট্রিপ সমাপ্তি",
     category: "customer_ride",
     description: "গন্তব্যে পৌঁছালে দূরত্ব ও চূড়ান্ত সংগৃহীত ভাড়া সহ রসিদ।",
-    variables: ["{{booking_number}}", "{{distance_km}}", "{{final_fare}}"],
-    defaultText: `🙏 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে! "সুন্দরবন রাইডার"-এ ভ্রমণের জন্য অসংখ্য ধন্যবাদ। "সুন্দরবন রাইডার" আপনার সুস্বাস্থ্য ও নিরাপদ যাত্রা কামনা করে ।🙏
+    variables: ["{{booking_number}}", "{{drop_location}}", "{{final_fare}}"],
+    defaultText: `🎉 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে!
 =======================
-📍 মোট অতিক্রান্ত দূরত্ব: {{distance_km}} কিমি
-💵 সংগৃহীত চূড়ান্ত ভাড়া: ₹{{final_fare}}.00
+🏁 গন্তব্য: {{drop_location}}
+💰 মোট প্রদেয় ভাড়া: ₹{{final_fare}}
 =======================
-🛺 আমাদের পরিষেবাকে আরও উন্নত করতে; আপনার অভিজ্ঞতা, অভিযোগ বা মূল্যবান পরামর্শ জানাতে নিচের বোতামে ক্লিক করুন :`,
+ℹ️ ভাড়ার এই হিসাবটি চালকের নিজস্ব এবং তাঁর অ্যাপ থেকে সরাসরি প্রদর্শিত। "সুন্দরবন রাইডার" কেবল ডিজিটাল প্রযুক্তি মধ্যস্থতাকারী (IT  Enabler); তাই নগদ বা UPI-এর মাধ্যমে ভাড়া সরাসরি চালককেই প্রদান করুন।
+
+আপনার মূল্যবান অভিজ্ঞতা ও সেবার মান উন্নত রাখতে নিচের অপশন বেছে নিন:`,
   },
   {
     key: "ride_cancelled_to_passenger",
@@ -190,12 +198,21 @@ Help No :- {{helpline}} (WhatsApp)`,
   },
   {
     key: "customer_strike_warning",
-    nameBengali: "যাত্রী বাতিল সতর্কবার্তা (৩ বার বাতিল নীতি)",
+    nameBengali: "বুকিং বাতিল সংক্রান্ত বিজ্ঞপ্তি (৩ বার বাতিল নীতি)",
     category: "customer_ride",
-    description: "যাত্রী বুকিং বাতিল করলে স্ট্রাইক সংখ্যা এবং অ্যাকাউন্ট স্থগিতের সতর্কতা বার্তা।",
-    variables: ["{{strike_count}}", "{{helpline}}"],
-    defaultText: `⚠️ সতর্কবার্তা: আপনি এই নিয়ে {{strike_count}} বার বুকিং বাতিল করলেন। ৩ বার বাতিল করলে আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হবে। যেকোনো তথ্যের জন্য হেল্পলাইনে ({{helpline}}) যোগাযোগ করুন।`,
+    description: "যাত্রী স্বেচ্ছায় বুকিং বাতিল করলে অবশিষ্ট সুযোগ ও সতর্কবার্তা।",
+    variables: ["{{remaining_attempts}}", "{{strike_count}}", "{{helpline}}"],
+    defaultText: `⚠️ বুকিং বাতিল সংক্রান্ত  বিজ্ঞপ্তি:
+=======================
+আপনার বর্তমান রাইডের অনুরোধটি বাতিল করা হয়েছে।
+দয়া করে মনে রাখবেন, চালকদের মূল্যবান সময় ও প্ল্যাটফর্মের সুষ্ঠু পরিষেবা বজায় রাখতে ঘন ঘন বুকিং বাতিল করা গ্রহণযোগ্য নয়।
+
+🛑 বাতিলকরণের অবশিষ্ট সুযোগ: আর মাত্র {{remaining_attempts}} বার (সর্বোচ্চ ৩ বার বাতিল করা যায়)।
+এভাবে বারবার বুকিং বাতিল করলে আপনার নম্বরটি প্ল্যাটফর্মে সাময়িকভাবে স্থগিত (Blocked) হতে পারে। তাই আপনার নম্বর সচল রাখতে এবং নিয়মিত সুবিধা পেতে অনুগ্রহ করে নিশ্চিত হয়েই রাইড বুক করুন।
+
+সুন্দরবন রাইডারের সাথে থাকার জন্য ধন্যবাদ!`,
   },
+
 
   // -------------------------------------------------------------
   // DRIVER KYC & APPROVAL
@@ -256,6 +273,32 @@ export function interpolateTemplate(
     normalizedVars.booking_number = normalizedVars.booking_id;
   } else if (normalizedVars.booking_number && !normalizedVars.booking_id) {
     normalizedVars.booking_id = normalizedVars.booking_number;
+  }
+  if (normalizedVars.start_otp && !normalizedVars.OTP) {
+    normalizedVars.OTP = normalizedVars.start_otp;
+  } else if (normalizedVars.OTP && !normalizedVars.start_otp) {
+    normalizedVars.start_otp = normalizedVars.OTP;
+  }
+  if (normalizedVars.driver_name && !normalizedVars["Driver Name"]) {
+    normalizedVars["Driver Name"] = normalizedVars.driver_name;
+  }
+  if (normalizedVars.driver_phone && !normalizedVars["Driver Phone"]) {
+    normalizedVars["Driver Phone"] = normalizedVars.driver_phone;
+  }
+  if (normalizedVars.toto_number && !normalizedVars["Toto Number"]) {
+    normalizedVars["Toto Number"] = normalizedVars.toto_number;
+  }
+  if (normalizedVars.pickup_location && !normalizedVars["Pickup Location"]) {
+    normalizedVars["Pickup Location"] = normalizedVars.pickup_location;
+  }
+  if (normalizedVars.drop_location && !normalizedVars["Drop Location"]) {
+    normalizedVars["Drop Location"] = normalizedVars.drop_location;
+  }
+  if (normalizedVars.final_fare && !normalizedVars["Total Fare"]) {
+    normalizedVars["Total Fare"] = normalizedVars.final_fare;
+  }
+  if (normalizedVars.remaining_attempts !== undefined && !normalizedVars["Remaining Attempts"]) {
+    normalizedVars["Remaining Attempts"] = normalizedVars.remaining_attempts;
   }
 
   for (const [key, val] of Object.entries(normalizedVars)) {

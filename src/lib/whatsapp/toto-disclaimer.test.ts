@@ -32,7 +32,23 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
   });
 
   it("returns driver disclaimer with attached PDF for first-time rider login", async () => {
-    // 919883838854 is a registered driver with agreed_terms: false in DB
+    const { getSupabaseAdmin, invalidateCachedSettings } = await import("./toto-engine");
+    const supabase = getSupabaseAdmin();
+    invalidateCachedSettings();
+    const { data: existingDriver } = await supabase.from("drivers").select("id").or("phone.eq.919883838854,phone.eq.+919883838854,phone.ilike.%9883838854%").maybeSingle();
+    if (!existingDriver) {
+      await supabase.from("drivers").insert({
+        phone: "+919883838854",
+        name: "টেস্ট চালক",
+        agreed_terms: false,
+        is_active: true,
+        is_available: true,
+        toto_number: "WB-96-T-1234",
+      });
+    } else {
+      await supabase.from("drivers").update({ agreed_terms: false }).eq("id", existingDriver.id);
+    }
+
     const action = await processTotoMessage({
       fromPhone: "+919883838854",
       buttonPayload: "take_ride",
@@ -226,6 +242,67 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
       // Cleanup
       await supabase.from("bookings").delete().eq("id", b.id);
     }
+  });
+
+  it("verifies welcome message contains registration, helpline and emergency numbers", async () => {
+    const action = await processTotoMessage({
+      fromPhone: "+919000000002",
+      textBody: "Hi",
+    });
+
+    expect(action).not.toBeNull();
+    expect(action?.bodyText).toContain("UDYAM-WB-18-0208526");
+    expect(action?.bodyText).toContain("1554");
+    expect(action?.bodyText).toContain("8348122122");
+    expect(action?.bodyText).toContain("112");
+    expect(action?.bodyText).toContain("1091 / 181");
+    expect(action?.bodyText).toContain("102");
+  });
+
+  it("verifies customer booking lifecycle messages and cancellation notice format", async () => {
+    const testPhone = "+919333344445";
+
+    // 1. Customer initiates booking
+    const bookStep = await processTotoMessage({
+      fromPhone: testPhone,
+      buttonPayload: "book_toto",
+    });
+    expect(bookStep?.bodyText).toContain("আইনি ডিসক্লেইমার ও শর্তাবলী");
+
+    // 2. Agrees to disclaimer -> asks for location
+    const agreeStep = await processTotoMessage({
+      fromPhone: testPhone,
+      buttonPayload: "agree_disclaimer",
+    });
+    expect(agreeStep?.bodyText).toContain("Current Pickup Location");
+    expect(agreeStep?.bodyText).toContain("Current Location");
+
+    // 3. Sends pickup location -> asks for drop location
+    const pickupStep = await processTotoMessage({
+      fromPhone: testPhone,
+      textBody: "কাকদ্বীপ স্টেশন",
+    });
+    expect(pickupStep?.bodyText).toContain("✅ আপনার পিকআপ লোকেশন গ্রহণ করা হয়েছে!");
+    expect(pickupStep?.bodyText).toContain("🏁 এবার আপনার গন্তব্যের নাম (Drop Location) লিখে পাঠান:");
+
+    // 4. Sends drop location -> searching driver
+    const dropStep = await processTotoMessage({
+      fromPhone: testPhone,
+      textBody: "নামখানা বাসস্ট্যান্ড",
+    });
+    expect(dropStep?.bodyText).toContain("✨ নিকটবর্তী চালকের সন্ধান চলছে... ✨");
+    expect(dropStep?.bodyText).toContain("🆔 বুকিং আইডি: #SR");
+    expect(dropStep?.bodyText).toContain("৫ কিমির মধ্যে সক্রিয় অনুমোদিত স্বাধীন চালকদের");
+    expect(dropStep?.buttons?.[0]?.title).toBe("❌ বুকিং বাতিল");
+
+    // 5. Customer cancels searching -> strikes counted (0/3 counted) with cancellation notice
+    const cancelStep = await processTotoMessage({
+      fromPhone: testPhone,
+      buttonPayload: dropStep?.buttons?.[0]?.id,
+    });
+    expect(cancelStep?.bodyText).toContain("⚠️ বুকিং বাতিল সংক্রান্ত  বিজ্ঞপ্তি:");
+    expect(cancelStep?.bodyText).toContain("বাতিলকরণের অবশিষ্ট সুযোগ: আর মাত্র");
+    expect(cancelStep?.bodyText).toContain("(সর্বোচ্চ ৩ বার বাতিল করা যায়)");
   });
 });
 

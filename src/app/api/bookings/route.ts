@@ -1812,15 +1812,15 @@ export async function PATCH(request: Request) {
       }
       if (calculatedRoadDist <= 0) calculatedRoadDist = 1.0;
 
-      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number" && body.finalDistanceKm > 0) {
-        // Enforce 1:1 true odometer distance reported by driver's device GPS tracking up to safe regional limit
-        distanceKm = Math.min(Math.max(0.1, Math.round(body.finalDistanceKm * 10) / 10), 60.0);
-      } else if (meta.live_distance_km !== undefined && typeof meta.live_distance_km === "number" && meta.live_distance_km > 0) {
-        distanceKm = Math.min(Math.max(0.1, Math.round(meta.live_distance_km * 10) / 10), 60.0);
+      if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number" && !isNaN(body.finalDistanceKm)) {
+        // Enforce 1:1 true odometer distance reported by driver's device GPS tracking (respects 0 km if stationary)
+        distanceKm = Math.min(Math.max(0.0, Math.round(body.finalDistanceKm * 10) / 10), 60.0);
+      } else if (meta.live_distance_km !== undefined && typeof meta.live_distance_km === "number" && !isNaN(meta.live_distance_km)) {
+        distanceKm = Math.min(Math.max(0.0, Math.round(meta.live_distance_km * 10) / 10), 60.0);
       } else if (!isMeteredTrip) {
         distanceKm = calculatedRoadDist;
       } else {
-        distanceKm = 1.0;
+        distanceKm = 0.0;
       }
 
       const pricingConfig = await loadActivePricingConfig(admin);

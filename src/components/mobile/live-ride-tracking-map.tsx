@@ -354,9 +354,9 @@ export function LiveRideTrackingMap({
         }
 
         // Live distance & fare synchronization from backend
-        if (b.actual_distance_km) {
+        if (typeof b.actual_distance_km === "number" || (b.actual_distance_km !== undefined && b.actual_distance_km !== null)) {
           setLiveMeterKm(Number(b.actual_distance_km));
-        } else if (b.feedback?.live_distance_km) {
+        } else if (typeof b.feedback?.live_distance_km === "number" || (b.feedback?.live_distance_km !== undefined && b.feedback?.live_distance_km !== null)) {
           setLiveMeterKm(Number(b.feedback.live_distance_km));
         }
 

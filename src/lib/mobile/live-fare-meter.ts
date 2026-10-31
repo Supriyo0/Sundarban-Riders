@@ -80,20 +80,19 @@ export class LiveFareMeter {
     const dtHrs = (now - this.lastAccumPoint.ts) / 3600000;
 
     // Strict Deadband Filter for Stationary GPS Jitter:
-    // 1. Minimum distance: 18 meters (0.018 km) to avoid table/pocket sensor drift
-    // 2. Minimum speed: 3.0 km/h (a moving Toto moves >= 4 km/h; stationary drift is < 2.5 km/h)
-    // 3. Maximum speed: 75 km/h (filters impossible GPS teleport jumps)
-    if (d >= 0.018) {
+    // 1. Minimum distance: 20 meters (0.020 km) to avoid table/pocket sensor drift
+    // 2. Minimum speed: 3.5 km/h (a moving Toto moves >= 4 km/h; stationary drift is < 3 km/h)
+    // 3. Maximum speed: 65 km/h (filters impossible GPS teleport jumps)
+    if (d >= 0.020) {
       const speedKmh = dtHrs > 0 ? d / dtHrs : 0;
-      const isBurstPacket = dtHrs < (1.2 / 3600) && d <= 0.040;
-      if ((speedKmh >= 3.0 && speedKmh <= 75) || isBurstPacket) {
+      if (speedKmh >= 3.5 && speedKmh <= 65) {
         this.totalKm += d;
         this.lastAccumPoint = { lat, lng, ts: now };
-      } else if (speedKmh > 75) {
-        // Teleport anomaly: re-anchor without accumulating
+      } else if (speedKmh > 65) {
+        // Teleport anomaly / noisy GPS jump: re-anchor without accumulating
         this.lastAccumPoint = { lat, lng, ts: now };
       }
-      // If speedKmh < 3.0: driver is stationary / sitting in place, do NOT accumulate distance!
+      // If speedKmh < 3.5: driver is stationary / sitting in place, do NOT accumulate distance!
     }
 
     this.gpsPath.push({ lat, lng, ts: now });

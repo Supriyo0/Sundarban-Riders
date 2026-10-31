@@ -3903,9 +3903,9 @@ function MobileAppPageContent() {
                 onCompleteTrip={async (finalKm) => {
                   const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
                   const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
-                  const distKm = typeof finalKm === "number" && finalKm > 0
-                    ? Math.max(0.1, Math.round(finalKm * 10) / 10)
-                    : (Number(activeRide.distanceKm) || Number(activeRide.estimated_distance_km) || 1.0);
+                  const distKm = typeof finalKm === "number" && !isNaN(finalKm)
+                    ? Math.max(0, Math.round(finalKm * 10) / 10)
+                    : (typeof activeRide.actual_distance_km === "number" ? Math.max(0, activeRide.actual_distance_km) : 0);
                   
                   // Odometer-based exact fare calculation matching server & WhatsApp:
                   const finalFareResult = calculateTotoFare(

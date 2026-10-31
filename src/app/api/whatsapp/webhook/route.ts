@@ -593,23 +593,57 @@ async function handleReaction(
   }
 }
 
+const recentlyProcessedMessageIds = new Map<string, number>()
+const recentDispatchesByPhone = new Map<string, { payload: string; time: number }>()
+
+function isDuplicateInbound(messageId: string, fromPhone: string, textOrPayload: string): boolean {
+  const now = Date.now()
+  for (const [id, time] of recentlyProcessedMessageIds.entries()) {
+    if (now - time > 120_000) recentlyProcessedMessageIds.delete(id)
+  }
+  for (const [phone, item] of recentDispatchesByPhone.entries()) {
+    if (now - item.time > 120_000) recentDispatchesByPhone.delete(phone)
+  }
+
+  if (messageId && recentlyProcessedMessageIds.has(messageId)) {
+    return true
+  }
+  if (messageId) {
+    recentlyProcessedMessageIds.set(messageId, now)
+  }
+
+  const cleanPhone = fromPhone.replace(/\D/g, '')
+  const last = recentDispatchesByPhone.get(cleanPhone)
+  if (last && last.payload === textOrPayload && now - last.time < 2000) {
+    return true
+  }
+  recentDispatchesByPhone.set(cleanPhone, { payload: textOrPayload, time: now })
+
+  return false
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
-  // Tenancy. Resolved from the matched whatsapp_config row; every
-  // contact / conversation / message row created downstream is
-  // stamped with this so any member of the account can see it.
   accountId: string,
-  // Sender-of-record for inserts that need a NOT NULL user_id FK
-  // (contacts, conversations). Always the admin who saved the
-  // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
   accessToken: string,
-  // Per-account opt-out for the inbound-media mirror (migration 039).
-  // See parseMessageContent for what it turns off.
   mirrorMedia: boolean,
   phoneNumberId: string
 ) {
+  const tapPayload =
+    message.interactive?.button_reply?.id ||
+    message.interactive?.list_reply?.id ||
+    message.button?.payload ||
+    message.button?.text ||
+    message.text?.body ||
+    ''
+
+  if (isDuplicateInbound(message.id, message.from, tapPayload)) {
+    console.log(`[INBOUND:DROPPED_DUPLICATE] id=${message.id} from=${message.from} payload="${tapPayload}"`)
+    return
+  }
+
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 

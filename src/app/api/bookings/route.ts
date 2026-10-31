@@ -170,7 +170,7 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
         try {
           const { data } = await admin
             .from("drivers")
-            .select("id, unique_id, toto_number, vehicle_number, name, phone, current_location_name")
+            .select("id, toto_number, name, phone, current_location_name")
             .eq("id", driver.id)
             .maybeSingle();
           dRec = data;
@@ -182,7 +182,7 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
           try {
             const { data } = await admin
               .from("drivers")
-              .select("id, unique_id, toto_number, vehicle_number, name, phone, current_location_name")
+              .select("id, toto_number, name, phone, current_location_name")
               .or(`phone.eq.${cleanP},phone.eq.91${cleanP},phone.eq.+91${cleanP},phone.ilike.%${cleanP}%`)
               .limit(1)
               .maybeSingle();
@@ -192,8 +192,7 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
       }
 
       if (dRec) {
-        if (!driverUid && dRec.unique_id) driverUid = dRec.unique_id;
-        if (!driverToto && (dRec.toto_number || dRec.vehicle_number)) driverToto = dRec.toto_number || dRec.vehicle_number;
+        if (!driverToto && dRec.toto_number) driverToto = dRec.toto_number;
         if (!driverName && dRec.name) driverName = dRec.name;
         if (!driverPhone && dRec.phone) driverPhone = dRec.phone;
         if (!driverUid && dRec.current_location_name) {
@@ -211,7 +210,8 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
         } catch {}
       }
 
-      const finalDriverUid = driverUid || "SR/KAK/0020";
+      const cleanPhoneDigits = (driverPhone || "").replace(/\D/g, "").slice(-10);
+      const finalDriverUid = driverUid || (cleanPhoneDigits ? `SR-${cleanPhoneDigits.slice(-4)}` : "SR-DRV");
       const finalTotoNumber = driverToto || "WB-96-T-8421";
       const finalDriverName = driverName || "সুন্দরবন চালক";
       const finalDriverPhone = driverPhone || "9547110730";
@@ -1385,7 +1385,7 @@ export async function PATCH(request: Request) {
     const bookingId = body.bookingId || body.booking_id || body.id;
     const driverId = body.driverId || body.driver_id;
     let driverName = body.driverName || body.driver_name;
-    const driverPhone = body.driverPhone || body.driver_phone || body.phone;
+    let driverPhone = body.driverPhone || body.driver_phone || body.phone;
     let totoNumber = body.totoNumber || body.toto_number;
     const phone = body.phone || body.customer_phone || body.customerPhone;
 
@@ -1447,52 +1447,90 @@ export async function PATCH(request: Request) {
       // Resolve valid UUID for driver_id that exists in drivers table (satisfies bookings_driver_id_fkey)
       let validDriverId: string | null = null;
       let resolvedUniqueId: string = "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let foundDriverRec: any = null;
 
       // 1. Resolve by UUID if valid UUID supplied
       if (driverId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(driverId)) {
-        const { data: existing } = await admin
-          .from("drivers")
-          .select("id, unique_id, toto_number, vehicle_number, name, phone")
-          .eq("id", driverId)
-          .maybeSingle();
-        if (existing?.id) {
-          validDriverId = existing.id;
-          if (existing.unique_id) resolvedUniqueId = existing.unique_id;
-          if (!driverName && existing.name) driverName = existing.name;
-          if (!totoNumber && (existing.toto_number || existing.vehicle_number)) totoNumber = existing.toto_number || existing.vehicle_number;
-        }
+        try {
+          const { data: existing } = await admin
+            .from("drivers")
+            .select("id, toto_number, name, phone, current_location_name")
+            .eq("id", driverId)
+            .maybeSingle();
+          if (existing?.id) {
+            foundDriverRec = existing;
+          }
+        } catch {}
       }
 
-      // 2. Resolve by unique_id (e.g. SR/KAK/0020 or SR-0730)
-      if (!validDriverId && driverId) {
-        const { data: byUid } = await admin
-          .from("drivers")
-          .select("id, unique_id, toto_number, vehicle_number, name, phone")
-          .or(`unique_id.eq.${driverId},unique_id.ilike.%${driverId}%`)
-          .limit(1)
-          .maybeSingle();
-        if (byUid?.id) {
-          validDriverId = byUid.id;
-          if (byUid.unique_id) resolvedUniqueId = byUid.unique_id;
-          if (!driverName && byUid.name) driverName = byUid.name;
-          if (!totoNumber && (byUid.toto_number || byUid.vehicle_number)) totoNumber = byUid.toto_number || byUid.vehicle_number;
-        }
+      // 2. Resolve by phone number if not yet resolved (most reliable for app logins)
+      if (!foundDriverRec && cleanPhone) {
+        try {
+          const { data: foundDrivers } = await admin
+            .from("drivers")
+            .select("id, toto_number, name, phone, current_location_name")
+            .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.eq.+91${cleanPhone},phone.ilike.%${cleanPhone}%`)
+            .limit(1);
+          if (foundDrivers && foundDrivers.length > 0 && foundDrivers[0]?.id) {
+            foundDriverRec = foundDrivers[0];
+          }
+        } catch {}
       }
 
-      // 3. Resolve by phone number
-      if (!validDriverId && cleanPhone) {
-        const { data: foundDrivers } = await admin
-          .from("drivers")
-          .select("id, unique_id, toto_number, vehicle_number, name, phone")
-          .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.ilike.%${cleanPhone}%`)
-          .limit(1);
-        if (foundDrivers && foundDrivers.length > 0 && foundDrivers[0]?.id) {
-          validDriverId = foundDrivers[0].id;
-          if (foundDrivers[0].unique_id) resolvedUniqueId = foundDrivers[0].unique_id;
-          if (!driverName && foundDrivers[0].name) driverName = foundDrivers[0].name;
-          if (!totoNumber && (foundDrivers[0].toto_number || foundDrivers[0].vehicle_number)) totoNumber = foundDrivers[0].toto_number || foundDrivers[0].vehicle_number;
-        } else if (cleanPhone.length === 10) {
+      // 3. Resolve by unique_id or toto_number (search in current_location_name or toto_number)
+      if (!foundDriverRec && driverId) {
+        try {
+          const { data: byMeta } = await admin
+            .from("drivers")
+            .select("id, toto_number, name, phone, current_location_name")
+            .or(`current_location_name.ilike.%${driverId}%,toto_number.ilike.%${driverId}%`)
+            .limit(1);
+          if (byMeta && byMeta.length > 0 && byMeta[0]?.id) {
+            foundDriverRec = byMeta[0];
+          }
+        } catch {}
+      }
+
+      // If driver record found, extract fields and official unique_id assigned by admin
+      if (foundDriverRec) {
+        validDriverId = foundDriverRec.id;
+        if (!driverName && foundDriverRec.name) driverName = foundDriverRec.name;
+        if (!totoNumber && foundDriverRec.toto_number) totoNumber = foundDriverRec.toto_number;
+        if (!driverPhone && foundDriverRec.phone) driverPhone = foundDriverRec.phone;
+
+        // Extract official unique_id entered by admin on approval
+        let uId = "";
+        if (foundDriverRec.current_location_name) {
           try {
+            const m = JSON.parse(foundDriverRec.current_location_name);
+            if (m.unique_id) uId = m.unique_id;
+          } catch {}
+        }
+        resolvedUniqueId = uId || (cleanPhone ? `SR-${cleanPhone.slice(-4)}` : "SR-DRV");
+      } else if (cleanPhone && cleanPhone.length === 10) {
+        // Fallback: check if driver exists by exact 10 digits before attempting insert
+        try {
+          const { data: fallbackDriver } = await admin
+            .from("drivers")
+            .select("id, toto_number, name, phone, current_location_name")
+            .ilike("phone", `%${cleanPhone}%`)
+            .limit(1);
+          if (fallbackDriver && fallbackDriver.length > 0 && fallbackDriver[0]?.id) {
+            foundDriverRec = fallbackDriver[0];
+            validDriverId = foundDriverRec.id;
+            if (!driverName && foundDriverRec.name) driverName = foundDriverRec.name;
+            if (!totoNumber && foundDriverRec.toto_number) totoNumber = foundDriverRec.toto_number;
+            let uId = "";
+            if (foundDriverRec.current_location_name) {
+              try {
+                const m = JSON.parse(foundDriverRec.current_location_name);
+                if (m.unique_id) uId = m.unique_id;
+              } catch {}
+            }
+            resolvedUniqueId = uId || `SR-${cleanPhone.slice(-4)}`;
+          } else {
+            const defaultUid = `SR-${cleanPhone.slice(-4)}`;
             const { data: newDriver } = await admin
               .from("drivers")
               .insert({
@@ -1501,15 +1539,17 @@ export async function PATCH(request: Request) {
                 toto_number: totoNumber || "WB-96-T-8421",
                 is_active: true,
                 is_available: true,
+                current_location_name: JSON.stringify({ unique_id: defaultUid, status: "approved" }),
               })
               .select("id")
               .maybeSingle();
             if (newDriver?.id) {
               validDriverId = newDriver.id;
+              resolvedUniqueId = defaultUid;
             }
-          } catch (createDriverErr) {
-            console.warn("[accept ride] auto-create driver error:", createDriverErr);
           }
+        } catch (createDriverErr) {
+          console.warn("[accept ride] driver resolution error:", createDriverErr);
         }
       }
 

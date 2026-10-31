@@ -1186,7 +1186,21 @@ function MobileAppPageContent() {
           } catch {}
 
           const finalFare = b.final_fare || bMeta.calculated_fare || b.estimated_fare || tripFare;
-          const finalKm = b.actual_distance_km || bMeta.actual_distance_km || b.estimated_distance_km || tripDistance;
+          const finalKm = typeof b.actual_distance_km === "number"
+            ? b.actual_distance_km
+            : (typeof bMeta.actual_distance_km === "number"
+                ? bMeta.actual_distance_km
+                : (typeof b.estimated_distance_km === "number" ? b.estimated_distance_km : tripDistance));
+          const estDist = typeof b.estimated_distance_km === "number"
+            ? b.estimated_distance_km
+            : (typeof bMeta.estimated_distance_km === "number"
+                ? bMeta.estimated_distance_km
+                : tripDistance);
+          const estFare = typeof b.estimated_fare === "number"
+            ? b.estimated_fare
+            : (typeof bMeta.estimated_fare === "number"
+                ? bMeta.estimated_fare
+                : tripFare);
           const acceptMs = bMeta.trip_accepted_time
             ? Number(bMeta.trip_accepted_time)
             : (bMeta.accepted_at ? new Date(bMeta.accepted_at).getTime() : (b.created_at ? new Date(b.created_at).getTime() : Date.now()));
@@ -1204,10 +1218,10 @@ function MobileAppPageContent() {
             final_fare: finalFare,
             distanceKm: finalKm,
             actual_distance_km: finalKm,
-            estimatedDistanceKm: b.estimated_distance_km || bMeta.estimated_distance_km || tripDistance,
-            estimated_distance_km: b.estimated_distance_km || bMeta.estimated_distance_km || tripDistance,
-            estimatedFare: b.estimated_fare || bMeta.estimated_fare || tripFare,
-            estimated_fare: b.estimated_fare || bMeta.estimated_fare || tripFare,
+            estimatedDistanceKm: estDist,
+            estimated_distance_km: estDist,
+            estimatedFare: estFare,
+            estimated_fare: estFare,
             durationMinutes: calcDuration,
             duration_minutes: calcDuration,
             driverName: b.driver_name || bMeta.driver_name || passengerBooking?.driverName || "টোটো চালক",
@@ -1818,6 +1832,10 @@ function MobileAppPageContent() {
       b.id
     );
 
+    const initialTripDist = typeof b.estimated_distance_km === "number"
+      ? b.estimated_distance_km
+      : (typeof b.trip_distance_km === "number" ? b.trip_distance_km : (tripDistKm || 1.5));
+
     setIncomingRide({
       id: b.id,
       bookingNumber: b.booking_number || b.id?.slice(0, 8),
@@ -1829,6 +1847,9 @@ function MobileAppPageContent() {
       pickupDistance: `${dKm.toFixed(1)} কিমি দূরে`,
       drop: isMetered ? "মিটার অনুযায়ী গন্তব্য" : (b.drop_location || "গন্তব্য"),
       tripDistance: isMetered ? "মিটার অনুযায়ী" : `${tripDistKm ? tripDistKm.toFixed(1) : "1.5"} কিমি ট্রিপ`,
+      distanceKm: initialTripDist,
+      estimatedDistanceKm: initialTripDist,
+      estimatedFare: displayFare,
       pickupCoords: hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920],
       dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
     });
@@ -3774,6 +3795,9 @@ function MobileAppPageContent() {
                   id: b.id,
                   bookingNumber: b.booking_number || b.bookingNumber || b.id?.slice(0, 8),
                   fare: b.estimated_fare || b.fare || 50,
+                  estimatedFare: b.estimated_fare || b.fare || 50,
+                  distanceKm: typeof b.estimated_distance_km === "number" ? b.estimated_distance_km : (typeof b.trip_distance_km === "number" ? b.trip_distance_km : (typeof b.distanceKm === "number" ? b.distanceKm : 1.5)),
+                  estimatedDistanceKm: typeof b.estimated_distance_km === "number" ? b.estimated_distance_km : (typeof b.trip_distance_km === "number" ? b.trip_distance_km : (typeof b.distanceKm === "number" ? b.distanceKm : 1.5)),
                   passengerName: b.customer_name || b.passengerName || "যাত্রী",
                   passengerPhone: b.customer_phone || b.passengerPhone || "",
                   pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
@@ -3929,8 +3953,8 @@ function MobileAppPageContent() {
                   const startMs = activeRide.tripStartTime || (activeRide.created_at ? new Date(activeRide.created_at).getTime() : Date.now());
                   const actualDurationMinutes = Math.max(1, Math.round((Date.now() - startMs) / 60000));
                   const distKm = typeof finalKm === "number" && !isNaN(finalKm)
-                    ? Math.max(0, Math.round(finalKm * 10) / 10)
-                    : (typeof activeRide.actual_distance_km === "number" ? Math.max(0, activeRide.actual_distance_km) : 0);
+                    ? Math.max(0, Math.round(finalKm * 100) / 100)
+                    : (typeof activeRide.actual_distance_km === "number" ? Math.max(0, Math.round(activeRide.actual_distance_km * 100) / 100) : 0);
                   
                   // Odometer-based exact fare calculation matching server & WhatsApp:
                   const finalFareResult = calculateTotoFare(
@@ -3939,6 +3963,11 @@ function MobileAppPageContent() {
                     DEFAULT_TOTO_PRICING
                   );
                   const finalFare = finalFareResult.totalFare;
+
+                  const estDist = typeof activeRide.estimatedDistanceKm === "number"
+                    ? activeRide.estimatedDistanceKm
+                    : (typeof activeRide.distanceKm === "number" ? activeRide.distanceKm : distKm);
+                  const estFare = activeRide.estimatedFare || activeRide.fare || finalFare;
 
                   const completedData = {
                     id: activeRide.bookingNumber || activeRide.id,
@@ -3951,10 +3980,10 @@ function MobileAppPageContent() {
                     actual_distance_km: distKm,
                     durationMinutes: actualDurationMinutes,
                     duration_minutes: actualDurationMinutes,
-                    estimatedDistanceKm: activeRide.distanceKm || distKm,
-                    estimated_distance_km: activeRide.distanceKm || distKm,
-                    estimatedFare: activeRide.fare || finalFare,
-                    estimated_fare: activeRide.fare || finalFare,
+                    estimatedDistanceKm: estDist,
+                    estimated_distance_km: estDist,
+                    estimatedFare: estFare,
+                    estimated_fare: estFare,
                     passengerName: activeRide.passengerName,
                     passengerPhone: activeRide.passengerPhone,
                     status: "completed",
@@ -3999,9 +4028,9 @@ function MobileAppPageContent() {
                       if (data?.booking) {
                         const b = data.booking;
                         const sFare = b.final_fare || finalFare;
-                        const sDist = b.actual_distance_km || distKm;
-                        const sEstDist = b.estimated_distance_km || completedData.estimatedDistanceKm;
-                        const sEstFare = b.estimated_fare || completedData.estimatedFare;
+                        const sDist = typeof b.actual_distance_km === "number" ? b.actual_distance_km : distKm;
+                        const sEstDist = typeof b.estimated_distance_km === "number" ? b.estimated_distance_km : completedData.estimatedDistanceKm;
+                        const sEstFare = typeof b.estimated_fare === "number" ? b.estimated_fare : completedData.estimatedFare;
                         const sDur = b.duration_minutes || actualDurationMinutes;
                         const refreshed = {
                           ...completedData,
@@ -4120,6 +4149,9 @@ function MobileAppPageContent() {
                     const startMs = Date.now();
                     const optimisticRide = {
                       ...rideToAccept,
+                      distanceKm: typeof rideToAccept.distanceKm === "number" ? rideToAccept.distanceKm : (typeof rideToAccept.estimated_distance_km === "number" ? rideToAccept.estimated_distance_km : 1.5),
+                      estimatedDistanceKm: typeof rideToAccept.estimatedDistanceKm === "number" ? rideToAccept.estimatedDistanceKm : (typeof rideToAccept.estimated_distance_km === "number" ? rideToAccept.estimated_distance_km : 1.5),
+                      estimatedFare: rideToAccept.estimatedFare || rideToAccept.fare || 50,
                       status: "heading_pickup",
                       tripStartTime: startMs,
                       trip_start_time: startMs,
@@ -4431,10 +4463,10 @@ function MobileAppPageContent() {
         totoNumber={session?.uniqueId || session?.totoNumber || "SR-DRV"}
         pickup={driverCompletedRide.pickup}
         drop={driverCompletedRide.drop}
-        distanceKm={driverCompletedRide.distanceKm || 1.0}
-        fare={driverCompletedRide.fare || 50}
-        estimatedDistanceKm={driverCompletedRide.estimatedDistanceKm}
-        estimatedFare={driverCompletedRide.estimatedFare}
+        distanceKm={typeof driverCompletedRide.actual_distance_km === "number" ? driverCompletedRide.actual_distance_km : (typeof driverCompletedRide.distanceKm === "number" ? driverCompletedRide.distanceKm : 0)}
+        fare={driverCompletedRide.final_fare || driverCompletedRide.fare || 0}
+        estimatedDistanceKm={driverCompletedRide.estimated_distance_km || driverCompletedRide.estimatedDistanceKm}
+        estimatedFare={driverCompletedRide.estimated_fare || driverCompletedRide.estimatedFare}
         durationMinutes={driverCompletedRide.durationMinutes || 1}
         completedAt={driverCompletedRide.completedAt || new Date().toISOString()}
         onBookAnother={() => {
@@ -4479,7 +4511,7 @@ function MobileAppPageContent() {
         totoNumber={passengerCompletedRide?.totoNumber || passengerBooking?.totoNumber || ""}
         pickup={passengerCompletedRide?.pickup_location || passengerCompletedRide?.pickup || pickupText}
         drop={passengerCompletedRide?.drop_location || passengerCompletedRide?.drop || dropText}
-        distanceKm={passengerCompletedRide?.actual_distance_km ?? passengerCompletedRide?.distanceKm ?? tripDistance}
+        distanceKm={typeof passengerCompletedRide?.actual_distance_km === "number" ? passengerCompletedRide.actual_distance_km : (typeof passengerCompletedRide?.distanceKm === "number" ? passengerCompletedRide.distanceKm : tripDistance)}
         fare={passengerCompletedRide?.final_fare ?? passengerCompletedRide?.fare ?? passengerCompletedRide?.estimated_fare ?? tripFare}
         estimatedDistanceKm={passengerCompletedRide?.estimated_distance_km ?? passengerCompletedRide?.estimatedDistanceKm ?? tripDistance}
         estimatedFare={passengerCompletedRide?.estimated_fare ?? passengerCompletedRide?.estimatedFare ?? tripFare}
@@ -4848,9 +4880,21 @@ function MobileAppPageContent() {
                       bMeta = typeof b?.feedback === "string" ? JSON.parse(b.feedback) : (b?.feedback || {});
                     } catch {}
                     const finalFare = b?.final_fare || bMeta?.calculated_fare || bMeta?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
-                    const finalKm = b?.actual_distance_km || bMeta?.actual_distance_km || b?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
-                    const estDist = b?.estimated_distance_km || bMeta?.estimated_distance_km || passengerBooking?.distanceKm || tripDistance;
-                    const estFare = b?.estimated_fare || bMeta?.estimated_fare || passengerBooking?.fare || tripFare;
+                    const finalKm = typeof b?.actual_distance_km === "number"
+                      ? b.actual_distance_km
+                      : (typeof bMeta?.actual_distance_km === "number"
+                          ? bMeta.actual_distance_km
+                          : (typeof b?.estimated_distance_km === "number" ? b.estimated_distance_km : (passengerBooking?.distanceKm || tripDistance)));
+                    const estDist = typeof b?.estimated_distance_km === "number"
+                      ? b.estimated_distance_km
+                      : (typeof bMeta?.estimated_distance_km === "number"
+                          ? bMeta.estimated_distance_km
+                          : (passengerBooking?.distanceKm || tripDistance));
+                    const estFare = typeof b?.estimated_fare === "number"
+                      ? b.estimated_fare
+                      : (typeof bMeta?.estimated_fare === "number"
+                          ? bMeta.estimated_fare
+                          : (passengerBooking?.fare || tripFare));
                     const durMin = b?.duration_minutes || bMeta?.duration_minutes || passengerBooking?.durationMinutes || 1;
                     const completedData = {
                       ...b,

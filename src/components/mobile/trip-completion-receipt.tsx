@@ -120,9 +120,13 @@ export function TripCompletionReceipt({
     }
   };
 
-  const safeEstDist = Number(estimatedDistanceKm || distanceKm || 1.0);
+  const safeActualDist = (typeof distanceKm === "number" && !isNaN(distanceKm))
+    ? Number(distanceKm.toFixed(2))
+    : (typeof estimatedDistanceKm === "number" && !isNaN(estimatedDistanceKm) ? Number(estimatedDistanceKm.toFixed(2)) : 0);
+  const safeEstDist = (typeof estimatedDistanceKm === "number" && !isNaN(estimatedDistanceKm))
+    ? Number(estimatedDistanceKm.toFixed(2))
+    : (safeActualDist > 0 ? safeActualDist : 1.0);
   const safeEstFare = Number(estimatedFare || fare || 30);
-  const safeActualDist = Number(distanceKm || safeEstDist);
   const safeDuration = Number(durationMinutes || 1);
   const safeFinalFare = Number(fare || safeEstFare);
 
@@ -139,8 +143,8 @@ export function TripCompletionReceipt({
 
 📍 *পিকআপ:* ${pickup}
 🏁 *গন্তব্য:* ${drop}
-📌 *প্রাথমিক বুকিং অনুমান:* ${safeEstDist} কিমি (আনুমানিক ₹${safeEstFare}.০০)
-📏 *প্রকৃত ভ্রমণ দূরত্ব (ওডোমিটার):* ${safeActualDist} কিমি
+📌 *প্রাথমিক বুকিং অনুমান:* ${safeEstDist.toFixed(2)} কিমি (আনুমানিক ₹${safeEstFare}.০০)
+📏 *প্রকৃত ভ্রমণ দূরত্ব (ওডোমিটার):* ${safeActualDist.toFixed(2)} কিমি
 ⏱️ *মোট ভ্রমণের সময়:* ~${safeDuration} মিনিট
 
 💵 *ভাড়ার বিবরণ:*
@@ -357,14 +361,14 @@ export function TripCompletionReceipt({
                     <span>📌</span>
                     <span>প্রাথমিক বুকিং অনুমান:</span>
                   </span>
-                  <span className="font-mono font-bold text-slate-800">{safeEstDist} কিমি • ₹{safeEstFare}</span>
+                  <span className="font-mono font-bold text-slate-800">{safeEstDist.toFixed(2)} কিমি • ₹{safeEstFare}</span>
                 </div>
                 <div className="flex items-center justify-between font-black text-amber-950 pt-1.5 border-t border-amber-200">
                   <span className="flex items-center gap-1.5">
                     <span>🏁</span>
                     <span>প্রকৃত ভ্রমণ (ওডোমিটার):</span>
                   </span>
-                  <span className="text-emerald-700 font-mono text-sm">{safeActualDist} কিমি • ~{safeDuration} মিনিট</span>
+                  <span className="text-emerald-700 font-mono text-sm">{safeActualDist.toFixed(2)} কিমি • ~{safeDuration} মিনিট</span>
                 </div>
               </div>
 
@@ -372,7 +376,7 @@ export function TripCompletionReceipt({
               <div className="space-y-1.5 pt-1 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>প্রকৃত ভ্রমণ দূরত্ব (Travel Distance):</span>
-                  <span className="font-bold text-slate-900">{safeActualDist} কিমি</span>
+                  <span className="font-bold text-slate-900">{safeActualDist.toFixed(2)} কিমি</span>
                 </div>
                 <div className="flex justify-between text-slate-600 font-medium">
                   <span>মোট ভ্রমণের সময় (Accept to Finish):</span>

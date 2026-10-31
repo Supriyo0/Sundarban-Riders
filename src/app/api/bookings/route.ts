@@ -301,7 +301,12 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
     const meta = typeof booking.feedback === "string" ? (() => { try { return JSON.parse(booking.feedback); } catch { return {}; } })() : (booking.feedback || {});
-    const actualDist = booking.actual_distance_km !== undefined ? booking.actual_distance_km : (meta.actual_distance_km !== undefined ? meta.actual_distance_km : "0.0");
+    const actualDistNum = typeof booking.actual_distance_km === "number"
+      ? booking.actual_distance_km
+      : (typeof meta.actual_distance_km === "number"
+          ? meta.actual_distance_km
+          : (parseFloat(booking.actual_distance_km || meta.actual_distance_km || "0") || 0));
+    const actualDist = actualDistNum.toFixed(2);
     const finalFare = booking.final_fare || meta.final_fare || meta.calculated_fare || booking.estimated_fare || 25;
     const driverName = booking.driver_name || booking.drivers?.name || meta.driver_name || "সুন্দরবন চালক";
 
@@ -1835,7 +1840,7 @@ export async function PATCH(request: Request) {
     // ACTION: UPDATE LIVE ODOMETER & FARE METER
     // -------------------------------------------------------------
     if (action === "update_odometer" || action === "sync_live_trip") {
-      const distanceKm = typeof body.distanceKm === "number" ? Math.max(0.1, body.distanceKm) : null;
+      const distanceKm = typeof body.distanceKm === "number" ? Math.max(0.0, Math.round(body.distanceKm * 100) / 100) : null;
       const currentCoords = body.currentCoords;
 
       const meta = getBookingMeta(booking);
@@ -1853,6 +1858,7 @@ export async function PATCH(request: Request) {
       };
       if (distanceKm !== null) {
         metaUpdates.live_distance_km = distanceKm;
+        metaUpdates.actual_distance_km = distanceKm;
         metaUpdates.live_fare = liveFare;
       }
       if (currentCoords && Array.isArray(currentCoords) && currentCoords.length === 2) {
@@ -1942,9 +1948,11 @@ export async function PATCH(request: Request) {
 
       if (body.finalDistanceKm !== undefined && typeof body.finalDistanceKm === "number" && !isNaN(body.finalDistanceKm)) {
         // Enforce 1:1 true odometer distance reported by driver's device GPS tracking (respects 0 km if stationary)
-        distanceKm = Math.min(Math.max(0.0, Math.round(body.finalDistanceKm * 10) / 10), 60.0);
+        distanceKm = Math.min(Math.max(0.0, Math.round(body.finalDistanceKm * 100) / 100), 60.0);
+      } else if (meta.actual_distance_km !== undefined && typeof meta.actual_distance_km === "number" && !isNaN(meta.actual_distance_km)) {
+        distanceKm = Math.min(Math.max(0.0, Math.round(meta.actual_distance_km * 100) / 100), 60.0);
       } else if (meta.live_distance_km !== undefined && typeof meta.live_distance_km === "number" && !isNaN(meta.live_distance_km)) {
-        distanceKm = Math.min(Math.max(0.0, Math.round(meta.live_distance_km * 10) / 10), 60.0);
+        distanceKm = Math.min(Math.max(0.0, Math.round(meta.live_distance_km * 100) / 100), 60.0);
       } else if (!isMeteredTrip) {
         distanceKm = calculatedRoadDist;
       } else {

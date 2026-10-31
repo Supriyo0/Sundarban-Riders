@@ -4944,7 +4944,7 @@ function MobileAppPageContent() {
                           {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 shrink-0">
-                          👥 {passengerCount} যাত্রী
+                          👥 সর্বোচ্চ ৪ জন যাত্রী
                         </span>
                       </div>
                       <span className="text-[11px] font-bold text-slate-700 ml-auto shrink-0">

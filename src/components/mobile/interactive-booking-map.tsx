@@ -2957,52 +2957,15 @@ export function InteractiveBookingMap({
                   </div>
                 )}
 
-                {/* Passenger Selector - Tactile Liquid Pills */}
-                <div className="p-2.5 rounded-2xl liquid-glass-pill bg-white/30 dark:bg-slate-800/30 border border-white/60 dark:border-white/10 shadow-xs space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Passenger Limit:</span>
-                    </div>
-                    <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                      সর্বোচ্চ ৪ জন (সরকারি নিয়মে অনুমোদিত)
-                    </span>
+                {/* Vehicle Capacity Info (No quantity selection needed as fare is flat for up to 4 riders) */}
+                <div className="p-2.5 rounded-2xl liquid-glass-pill bg-white/40 dark:bg-slate-800/40 border border-white/60 dark:border-white/10 shadow-2xs flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-bold text-slate-800">
+                    <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>টোটো ধারণক্ষমতা:</span>
                   </div>
-
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
-                      { cnt: 1, label: "1 Rider", tag: "অনুমোদিত" },
-                      { cnt: 2, label: "2 Riders", tag: "অনুমোদিত" },
-                      { cnt: 3, label: "3 Riders", tag: "অনুমোদিত" },
-                      { cnt: 4, label: "4 Riders", tag: "সর্বোচ্চ ৪ জন" },
-                    ].map((item) => {
-                      const isSelected = passengerCount === item.cnt;
-                      return (
-                        <button
-                          key={item.cnt}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic(15);
-                            setPassengerCount(item.cnt);
-                          }}
-                          className={`py-2 px-1 rounded-xl text-center flex flex-col items-center justify-center transition-all cursor-pointer active:scale-95 ${
-                            isSelected
-                              ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/40 scale-[1.03]"
-                              : "bg-white/70 backdrop-blur-md text-slate-700 hover:bg-white/90 border border-white/80 shadow-2xs"
-                          }`}
-                        >
-                          <span className="text-xs font-black leading-tight">{item.label}</span>
-                          <span
-                            className={`text-[9px] font-bold leading-tight mt-0.5 ${
-                              isSelected ? "text-emerald-100" : "text-emerald-700"
-                            }`}
-                          >
-                            {item.tag}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-1 rounded-full border border-emerald-200">
+                    সর্বোচ্চ ৪ জন যাত্রী (সরকারি নিয়মে অনুমোদিত)
+                  </span>
                 </div>
 
                 {/* Payment Mode */}

@@ -856,7 +856,7 @@ export async function sendInteractiveButtons(
       })),
     },
   }
-  if (headerMedia) {
+  if (headerMedia && (headerMedia.kind === 'image' || headerMedia.kind === 'video')) {
     interactive.header = {
       type: headerMedia.kind,
       [headerMedia.kind]: {

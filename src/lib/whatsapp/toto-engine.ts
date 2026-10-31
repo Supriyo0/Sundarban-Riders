@@ -876,10 +876,13 @@ export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER = `বিশেষ দ্রষ্
 
 💫 সময়ের সাথে, সুরক্ষার সাথে, আপনার পাশে... "সুন্দরবন রাইডার" 🙏ধন্যবাদ`;
 
-export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT = `📜 আইনি ডিসক্লেইমার ও শর্তাবলী 
-"সুন্দরবন রাইডার" কেবল একটি ডিজিটাল তথ্যপ্রযুক্তি মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler), 
-বুকিং করার পূর্বে সংযুক্ত PDF টি পড়ে নিন ।
-বুকিং নিশ্চিত করতে "সম্মত আছি" বাটনে চাপ দিন ।`;
+export const DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT = `📜 *আইনি ডিসক্লেইমার ও শর্তাবলী*
+"সুন্দরবন রাইডার" কেবল একটি ডিজিটাল তথ্যপ্রযুক্তি মধ্যস্থতাকারী প্ল্যাটফর্ম (IT & ITeS Enabler)। স্থানীয় অনুমোদিত স্বাধীন টোটো চালকদের সঙ্গে প্রযুক্তিগত সংযোগ স্থাপন পরিষেবা প্রদান করে।
+
+📄 সম্পূর্ণ যাত্রী সুরক্ষা ও নির্দেশিকা PDF:
+👉 ${CUSTOMER_DISCLAIMER_PDF_URL}
+
+বুকিং নিশ্চিত করতে নিচের বাটনে চাপ দিন:`;
 
 export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী* 🛺
 ==============================
@@ -892,9 +895,10 @@ export const DEFAULT_TOTO_DRIVER_DISCLAIMER = `🛺 *সুন্দরবন �
 ৫. প্ল্যাটফর্ম টেকনোলজি ফি প্রযোজ্য হতে পারে।
 ৬. নিয়মানুবর্তিতা ও আইনি সুরক্ষায় সুন্দরবন রাইডার্স পূর্ণ অধিকার সংরক্ষণ করে।
 
-📄 বিস্তারিত অফিসিয়াল চালক চুক্তি PDF ফাইলে সংযুক্ত করা হলো।
+📄 বিস্তারিত অফিসিয়াল চালক চুক্তি PDF:
+👉 ${RIDER_DISCLAIMER_PDF_URL}
 
-> আপনি কি উপরোক্ত সকল শর্তাবলীতে সম্মত আছেন?`;
+পরিষেবা শুরু করতে নিচের বাটনে চাপ দিন:`;
 
 export const PLAYSTORE_APP_URL = "https://play.google.com/store/apps/details?id=com.sundarbanriders.app";
 
@@ -1102,25 +1106,56 @@ export async function processTotoMessage(
   // [ 🛺 রাইডার লগইন ] and [ 🛺 টোটো বুকিং করুন ]
   // Clears any stuck / in-progress booking state so user starts fresh
   // -------------------------------------------------------------
-  const isHiGreeting = [
+  const cleanIncoming = incomingText.replace(/^[!?,.\s👋🙏❤]+|[!?,.\s👋🙏❤]+$/gu, "").trim();
+  const GREETINGS_LIST = [
     "hi",
     "hii",
     "hiii",
+    "hiiii",
     "hello",
+    "hellow",
+    "helo",
+    "hlw",
+    "hlo",
     "hey",
     "heyy",
+    "hy",
+    "hai",
     "হায়",
     "হাই",
     "হ্যালো",
     "হে",
     "নমস্কার",
+    "নমস্তে",
+    "প্রণাম",
     "menu",
     "মেনু",
     "start",
     "শুরু",
     "reset",
     "রিসেট",
-  ].includes(incomingText) || payload === "welcome_menu" || payload === "main_menu";
+    "sundarban",
+    "সুন্দরবন",
+    "help",
+    "সাহায্য",
+    "info",
+    "তথ্য",
+    "home",
+    "হোম",
+  ];
+
+  const isHiGreeting =
+    GREETINGS_LIST.includes(cleanIncoming) ||
+    GREETINGS_LIST.includes(incomingText) ||
+    cleanIncoming.startsWith("hi ") ||
+    cleanIncoming.startsWith("hlw ") ||
+    cleanIncoming.startsWith("hello ") ||
+    cleanIncoming.startsWith("hey ") ||
+    cleanIncoming.startsWith("hlo ") ||
+    cleanIncoming.startsWith("মেনু") ||
+    cleanIncoming.startsWith("menu") ||
+    payload === "welcome_menu" ||
+    payload === "main_menu";
 
   if (isHiGreeting) {
     clearBookingState(cleanPhone);
@@ -1811,18 +1846,14 @@ export async function processTotoMessage(
           settings.driver_terms ||
           settings.driver_terms_bengali ||
           settings.wa_tpl_driver_terms ||
-          "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।";
+          "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে চালক চুক্তি ও শর্তাবলি পড়ে সম্মতি দিন:\n\n১. আপনি একজন স্বাধীন সেবা প্রদানকারী (Independent Service Provider)।\n২. যেকোনো দুর্ঘটনার দায় সম্পূর্ণ চালকের, সুন্দরবন রাইডার্স কোনোভাবেই দায়ী থাকবে না।\n৩. যাত্রী নিরাপত্তা ও ট্রাফিক নিয়ম মানা বাধ্যতামূলক।\n৪. যাত্রীদের সাথে মার্জিত ও বিনম্র আচরণ বজায় রাখতে হবে।\n৫. প্ল্যাটফর্ম টেকনোলজি ফি প্রযোজ্য হতে পারে।\n৬. নিয়মানুবর্তিতা ও আইনি সুরক্ষায় সুন্দরবন রাইডার্স পূর্ণ অধিকার সংরক্ষণ করে।";
+
+        const driverBody = `${driverTermsText}\n\n📄 সম্পূর্ণ অফিসিয়াল চালক চুক্তি PDF:\n👉 ${RIDER_DISCLAIMER_PDF_URL}\n\nপরিষেবা শুরু করতে নিচের বাটনে চাপ দিন:`;
 
         return {
           toPhone: rawPhone,
           type: "interactive_buttons",
-          bodyText: driverTermsText,
-          media: {
-            kind: "document",
-            url: RIDER_DISCLAIMER_PDF_URL,
-            filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-            caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
-          },
+          bodyText: driverBody,
           buttons: [
             { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
           ],
@@ -1967,18 +1998,14 @@ export async function processTotoMessage(
       settings.driver_terms ||
       settings.driver_terms_bengali ||
       settings.wa_tpl_driver_terms ||
-      "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।";
+      "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে চালক চুক্তি ও শর্তাবলি পড়ে সম্মতি দিন:\n\n১. আপনি একজন স্বাধীন সেবা প্রদানকারী (Independent Service Provider)।\n২. যেকোনো দুর্ঘটনার দায় সম্পূর্ণ চালকের, সুন্দরবন রাইডার্স কোনোভাবেই দায়ী থাকবে না।\n৩. যাত্রী নিরাপত্তা ও ট্রাফিক নিয়ম মানা বাধ্যতামূলক।\n৪. যাত্রীদের সাথে মার্জিত ও বিনম্র আচরণ বজায় রাখতে হবে।\n৫. প্ল্যাটফর্ম টেকনোলজি ফি প্রযোজ্য হতে পারে।\n৬. নিয়মানুবর্তিতা ও আইনি সুরক্ষায় সুন্দরবন রাইডার্স পূর্ণ অধিকার সংরক্ষণ করে।";
+
+    const driverBody = `${driverTermsText}\n\n📄 সম্পূর্ণ অফিসিয়াল চালক চুক্তি PDF:\n👉 ${RIDER_DISCLAIMER_PDF_URL}\n\nপরিষেবা শুরু করতে নিচের বাটনে চাপ দিন:`;
 
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: driverTermsText,
-      media: {
-        kind: "document",
-        url: RIDER_DISCLAIMER_PDF_URL,
-        filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-        caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
-      },
+      bodyText: driverBody,
       buttons: [
         { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
       ],
@@ -2668,17 +2695,16 @@ ${
           ? settings.customer_disclaimer
           : DEFAULT_TOTO_CUSTOMER_DISCLAIMER_SHORT);
 
-    // Send customer disclaimer PDF document directly with single '✅ সম্মত আছি' button
+    const hasPdfLink = customerDisclaimerText.includes(CUSTOMER_DISCLAIMER_PDF_URL) || customerDisclaimerText.includes("sundarbanrider.in");
+    const customerBody = hasPdfLink
+      ? customerDisclaimerText
+      : `${customerDisclaimerText}\n\n📄 সম্পূর্ণ যাত্রী সুরক্ষা ও নির্দেশিকা PDF:\n👉 ${CUSTOMER_DISCLAIMER_PDF_URL}\n\nবুকিং নিশ্চিত করতে নিচের বাটনে চাপ দিন:`;
+
+    // Send customer disclaimer with direct PDF link and single '✅ সম্মত আছি' button
     return {
       toPhone: rawPhone,
       type: "interactive_buttons",
-      bodyText: customerDisclaimerText,
-      media: {
-        kind: "document",
-        url: CUSTOMER_DISCLAIMER_PDF_URL,
-        filename: "Customer_Disclaimer_Sundarban_Riders.pdf",
-        caption: "📄 সুন্দরবন রাইডার — যাত্রী সুরক্ষা ও নির্দেশিকা (PDF)",
-      },
+      bodyText: customerBody,
       buttons: [
         { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
       ],
@@ -2730,18 +2756,14 @@ ${
   // DEFAULT: MAIN WELCOME MENU (100% Bengali)
   // -------------------------------------------------------------
   if (isRegisteredDriver && driver) {
-    // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button and attached PDF
+    // FIRST TIME: Rider has NOT agreed to terms yet -> Show rider disclaimer with accept button and PDF link
     if (!driver.agreed_terms) {
+      const driverTermsBody = `নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে চালক চুক্তি ও শর্তাবলি পড়ে সম্মতি দিন:\n\n১. আপনি একজন স্বাধীন সেবা প্রদানকারী (Independent Service Provider)।\n২. যেকোনো দুর্ঘটনার দায় সম্পূর্ণ চালকের, সুন্দরবন রাইডার্স কোনোভাবেই দায়ী থাকবে না।\n৩. যাত্রী নিরাপত্তা ও ট্রাফিক নিয়ম মানা বাধ্যতামূলক।\n\n📄 সম্পূর্ণ অফিসিয়াল চালক চুক্তি PDF:\n👉 ${RIDER_DISCLAIMER_PDF_URL}\n\nপরিষেবা শুরু করতে নিচের বাটনে চাপ দিন:`;
+
       return {
         toPhone: rawPhone,
         type: "interactive_buttons",
-        bodyText: "নমস্কার! 'সুন্দরবন রাইডার'-এ চালক হিসেবে যুক্ত হওয়ার পূর্বে অনুগ্রহ করে সংযুক্ত PDF ফাইলটি সম্পূর্ণ মনোযোগ সহকারে পড়ুন, তারপর নিচের '✅ সম্মত আছি' বাটনে ক্লিক করুন।",
-        media: {
-          kind: "document",
-          url: RIDER_DISCLAIMER_PDF_URL,
-          filename: "Rider_Disclaimer_Sundarban_Riders.pdf",
-          caption: "📄 সুন্দরবন রাইডার — চালক চুক্তি ও শর্তাবলী (PDF)",
-        },
+        bodyText: driverTermsBody,
         buttons: [
           { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
         ],

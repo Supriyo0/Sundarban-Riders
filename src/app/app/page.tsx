@@ -717,12 +717,22 @@ function MobileAppPageContent() {
     }
   }, [bottomNavTab, role, session?.phone, fetchCustomerHistory]);
 
-  const handleConfirmBooking = useCallback(async () => {
+  const handleConfirmBooking = useCallback(async (overrides?: {
+    pickupText?: string;
+    dropText?: string;
+    pickupCoords?: [number, number];
+    dropCoords?: [number, number];
+    estimatedFare?: number;
+    tripDistance?: number;
+    passengerCount?: number;
+  }) => {
     if (isCustomerBlocked || customerStrikes >= 3) {
       toast.error("⚠️ ৩ বার বুকিং বাতিল করায় আপনার অ্যাকাউন্ট সাময়িকভাবে স্থগিত করা হয়েছে। অ্যাকাউন্ট সচল করতে হেল্পলাইনে (8348122122) যোগাযোগ করুন।");
       return;
     }
-    if (!dropText || !dropText.trim()) {
+
+    const effectiveDropText = overrides?.dropText || dropText;
+    if (!effectiveDropText || !effectiveDropText.trim()) {
       toast.error("অনুগ্রহ করে আপনার গন্তব্য (Drop Location) নির্বাচন করুন");
       return;
     }
@@ -734,7 +744,7 @@ function MobileAppPageContent() {
     }
 
     // Auto-recover coordinates from localStorage if state was temporarily 0
-    let effectivePickupCoords = pickupCoords;
+    let effectivePickupCoords = overrides?.pickupCoords || pickupCoords;
     if (effectivePickupCoords[0] === 0 && typeof window !== "undefined") {
       const latStr = localStorage.getItem("sr_last_known_lat");
       const lngStr = localStorage.getItem("sr_last_known_lng");
@@ -748,14 +758,29 @@ function MobileAppPageContent() {
       }
     }
 
-    if (!pickupText || !pickupText.trim() || effectivePickupCoords[0] === 0) {
+    const effectivePickupText = overrides?.pickupText || pickupText;
+    if (!effectivePickupText || !effectivePickupText.trim() || effectivePickupCoords[0] === 0) {
       toast.error("⚠️ সঠিক পিকআপ স্থান নির্বাচন করুন! জিপিএস সক্রিয় করুন অথবা ওপরে পিকআপ লিখুন।");
       return;
     }
-    if (!dropText || !dropText.trim()) {
-      toast.error("⚠️ আপনার গন্তব্য স্থান (Drop Location) নির্বাচন করুন।");
-      return;
+
+    const effectiveDropCoords = overrides?.dropCoords !== undefined ? overrides.dropCoords : dropCoords;
+    const effectiveTripDistance = overrides?.tripDistance !== undefined ? overrides.tripDistance : tripDistance;
+    const isMetered = effectiveDropText.includes("মিটার") || (effectiveDropCoords && effectiveDropCoords[0] === 0);
+    const meteredBaseFare = calculateTotoFare(0, 4, DEFAULT_TOTO_PRICING).totalFare;
+    const effectiveTripFare = isMetered
+      ? (overrides?.estimatedFare || meteredBaseFare)
+      : (overrides?.estimatedFare || tripFare || 20);
+
+    if (overrides) {
+      if (overrides.pickupText) setPickupText(overrides.pickupText);
+      if (overrides.dropText) setDropText(overrides.dropText);
+      if (overrides.pickupCoords) setPickupCoords(overrides.pickupCoords);
+      if (overrides.dropCoords) setDropCoords(overrides.dropCoords);
+      if (overrides.estimatedFare !== undefined) setTripFare(overrides.estimatedFare);
+      if (overrides.tripDistance !== undefined) setTripDistance(overrides.tripDistance);
     }
+
     setPhase("passenger_home");
     setSearchStatus("searching");
     setSearchCountdown(180);
@@ -769,13 +794,13 @@ function MobileAppPageContent() {
         body: JSON.stringify({
           customerName: session?.passengerName || "যাত্রী বন্ধু",
           customerPhone: session.phone,
-          pickupLocation: pickupText,
-          dropLocation: dropText,
+          pickupLocation: effectivePickupText,
+          dropLocation: effectiveDropText,
           pickupCoords: effectivePickupCoords,
-          dropCoords: (dropCoords && dropCoords[0] !== 0 ? dropCoords : undefined),
-          estimatedFare: tripFare || 20,
-          tripDistance,
-          passengerCount: passengerCount || 4,
+          dropCoords: (effectiveDropCoords && effectiveDropCoords[0] !== 0 ? effectiveDropCoords : undefined),
+          estimatedFare: effectiveTripFare,
+          tripDistance: effectiveTripDistance,
+          passengerCount: overrides?.passengerCount || passengerCount || 4,
           rideTier: selectedTier || "standard",
           paymentMode: "cash",
         }),
@@ -1774,9 +1799,9 @@ function MobileAppPageContent() {
       ? null
       : Number(b.trip_distance_km) || (hasValidPickup && hasValidDrop ? calculateDistanceKm(pLat, pLng, dDropLat, dDropLng) : 1.5);
 
-    let displayFare = Number(b.estimated_fare) || Number(b.fare) || 25;
-    if (isMetered || displayFare > 5000) {
-      displayFare = 25;
+    let displayFare = Number(b.estimated_fare) || Number(b.fare) || 34;
+    if (displayFare > 5000) {
+      displayFare = 34;
     }
 
     setAlertCountdown(30);
@@ -4948,7 +4973,9 @@ function MobileAppPageContent() {
                         </span>
                       </div>
                       <span className="text-[11px] font-bold text-slate-700 ml-auto shrink-0">
-                        {tripDistance} কিমি • ₹{tripFare}.০০
+                        {dropText.includes("মিটার") || tripDistance === 0
+                          ? `মিটারযুক্ত রাইড • প্রারম্ভিক বেস ₹${tripFare}.০০`
+                          : `${tripDistance} কিমি • ₹${tripFare}.০০`}
                       </span>
                     </div>
 

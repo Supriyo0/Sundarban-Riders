@@ -694,9 +694,9 @@ export function DriverRadarPanel({
           const pText = cleanLocation(first.pickup_location) || "পিকআপ";
           const isMetered = !first.drop_lat || (typeof first.drop_location === "string" && (first.drop_location.includes("মিটার") || first.drop_location.includes("বিনা গন্তব্য")));
           const dText = isMetered ? "মিটার অনুযায়ী গন্তব্য" : (cleanLocation(first.drop_location) || "গন্তব্য");
-          let fare = Number(first.estimated_fare) || Number(first.fare) || 25;
-          if (isMetered || fare > 5000) {
-            fare = 25;
+          let fare = Number(first.estimated_fare) || Number(first.fare) || 34;
+          if (fare > 5000) {
+            fare = 34;
           }
           showLocalRideAlertNotification(
             "🔔 নতুন রাইড অনুরোধ এসেছে!",
@@ -1412,7 +1412,9 @@ export function DriverRadarPanel({
                                 👤 {booking.customer_name || "যাত্রী"}
                               </span>
                               <span className="text-xs font-black font-mono text-emerald-700">
-                                ₹{booking.estimated_fare || 40}.০০
+                                {booking.drop_location?.includes("মিটার") || !booking.drop_lat
+                                  ? `মিটার বেস: ₹${booking.estimated_fare || 34}.০০`
+                                  : `₹${booking.estimated_fare || 40}.০০`}
                               </span>
                             </div>
                             <span className="text-[10.5px] text-slate-600 truncate block mt-0.5">

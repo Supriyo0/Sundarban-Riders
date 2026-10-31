@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       const last10 = cleanPhone.slice(-10);
       query = query.or(`phone.eq.${filterPhone},phone.eq.${cleanPhone},phone.eq.+${cleanPhone},phone.eq.${last10},phone.ilike.%${last10}`);
     } else if (!showAll) {
-      query = query.select("id, name, phone, toto_number, is_active, latitude, longitude, current_location_name, rating, total_trips").eq("is_active", true);
+      query = query.select("id, name, phone, toto_number, is_active, is_available, unique_id, latitude, longitude, current_location_name, rating, total_trips").eq("is_active", true);
     }
 
     const { data, error } = await query;
@@ -151,6 +151,7 @@ export async function POST(request: Request) {
     const rawPhone = phone.trim().replace(/[^0-9+]/g, "");
     const cleanDigits = rawPhone.replace(/[^0-9]/g, "");
     const last10 = cleanDigits.slice(-10);
+    const normalizedPhone = last10.length === 10 ? `91${last10}` : cleanDigits;
 
     const distStr = (district || "").toString().trim();
     const blockStr = (block || "").toString().trim();
@@ -160,10 +161,23 @@ export async function POST(request: Request) {
     const licenseNo = (body.license_no || "").toString().trim();
     const licenseDocUrl = (body.license_doc_url || "").toString().trim();
 
+    // Derive block code e.g. KAK, NAM, PTP, JOY
+    let blockCode = "KAK";
+    const bLower = (blockStr || district || "").toLowerCase();
+    if (bLower.includes("nam") || bLower.includes("নাম")) blockCode = "NAM";
+    else if (bLower.includes("pathar") || bLower.includes("পাথর")) blockCode = "PTP";
+    else if (bLower.includes("kul") || bLower.includes("কুল")) blockCode = "KUL";
+    else if (bLower.includes("joy") || bLower.includes("জয়নগর")) blockCode = "JOY";
+    else if (bLower.includes("dia") || bLower.includes("ডায়মন্ড")) blockCode = "DH";
+    const generatedUniqueId = `SR/${blockCode}/${last10 ? last10.slice(-4) : "0001"}`;
+
     const metaObj: Record<string, unknown> = {
       district: distStr,
       block: blockStr,
       aadhar_no: aadharStr,
+      status: "approved",
+      approved_at: new Date().toISOString(),
+      unique_id: generatedUniqueId,
     };
     if (aadharCardUrl) metaObj.aadhar_card_url = aadharCardUrl;
     if (totoReceiptDocUrl) {
@@ -182,26 +196,38 @@ export async function POST(request: Request) {
     const { data: existing } = await admin
       .from("drivers")
       .select("*")
-      .or(`phone.eq.${rawPhone},phone.eq.${cleanDigits},phone.eq.+${cleanDigits},phone.eq.${last10}`)
+      .or(`phone.eq.${normalizedPhone},phone.eq.${cleanDigits},phone.eq.${last10},phone.ilike.%${last10}%`)
       .limit(1)
       .maybeSingle();
 
     if (existing) {
       // Update existing driver
+      const existingUid = existing.unique_id || generatedUniqueId;
+      metaObj.unique_id = existingUid;
       const updateData: Record<string, unknown> = {
         name: name.trim(),
+        phone: normalizedPhone,
         toto_number: toto_number.trim().toUpperCase(),
         license_number: aadharStr || existing.license_number,
-        current_location_name: metaString,
+        current_location_name: JSON.stringify(metaObj),
+        unique_id: existingUid,
+        is_active: true,
+        is_available: true,
         updated_at: new Date().toISOString(),
       };
 
-      const { data: updated, error: updateErr } = await admin
-        .from("drivers")
-        .update(updateData)
-        .eq("id", existing.id)
-        .select()
-        .single();
+      let updated: any = null;
+      let updateErr: any = null;
+      const res = await admin.from("drivers").update(updateData).eq("id", existing.id).select().single();
+      updated = res.data;
+      updateErr = res.error;
+
+      if (updateErr && updateErr.message?.includes("unique_id")) {
+        delete updateData.unique_id;
+        const retryRes = await admin.from("drivers").update(updateData).eq("id", existing.id).select().single();
+        updated = retryRes.data;
+        updateErr = retryRes.error;
+      }
 
       if (updateErr) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -210,6 +236,9 @@ export async function POST(request: Request) {
       return NextResponse.json({
         driver: {
           ...updated,
+          unique_id: existingUid,
+          is_active: true,
+          is_available: true,
           district: distStr,
           block: blockStr,
           aadhar_no: aadharStr,
@@ -219,30 +248,38 @@ export async function POST(request: Request) {
           license_no: licenseNo,
           license_doc_url: licenseDocUrl,
         },
-        message: "চালক তথ্য আপডেট করা হয়েছে",
+        message: "চালক তথ্য আপডেট ও সক্রিয় করা হয়েছে",
       });
     }
 
-    // Insert new driver
+    // Insert new driver as approved & active
     const insertPayload: Record<string, unknown> = {
       name: name.trim(),
-      phone: rawPhone,
+      phone: normalizedPhone,
       toto_number: toto_number.trim().toUpperCase(),
       vehicle_type: "toto",
-      is_active: false,
-      is_available: false,
-      agreed_terms: false,
+      is_active: true,
+      is_available: true,
+      agreed_terms: true,
+      unique_id: generatedUniqueId,
       license_number: aadharStr,
       current_location_name: metaString,
       rating: 5,
       total_trips: 0,
     };
 
-    const { data: created, error: insertErr } = await admin
-      .from("drivers")
-      .insert(insertPayload)
-      .select()
-      .single();
+    let created: any = null;
+    let insertErr: any = null;
+    const res = await admin.from("drivers").insert(insertPayload).select().single();
+    created = res.data;
+    insertErr = res.error;
+
+    if (insertErr && insertErr.message?.includes("unique_id")) {
+      delete insertPayload.unique_id;
+      const retryRes = await admin.from("drivers").insert(insertPayload).select().single();
+      created = retryRes.data;
+      insertErr = retryRes.error;
+    }
 
     if (insertErr) {
       return NextResponse.json({ error: insertErr.message }, { status: 500 });

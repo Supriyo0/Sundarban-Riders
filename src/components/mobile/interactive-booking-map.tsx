@@ -156,7 +156,15 @@ interface InteractiveBookingMapProps {
     paymentMode?: "cash" | "upi";
     passengerCount?: number;
   }) => void;
-  onConfirmBooking?: () => void;
+  onConfirmBooking?: (overrides?: {
+    pickupText?: string;
+    dropText?: string;
+    pickupCoords?: [number, number];
+    dropCoords?: [number, number];
+    estimatedFare?: number;
+    tripDistance?: number;
+    passengerCount?: number;
+  }) => void;
   isBlocked?: boolean;
 }
 
@@ -2138,19 +2146,29 @@ export function InteractiveBookingMap({
     setDropInputValue(dropText);
     setDropCoords([0, 0]);
 
+    const meteredBaseFare = calculateTotoFare(0, 4, pricingConfig).totalFare;
+
     onRouteSelectedRef.current?.({
       pickup: pickupText,
       drop: dropText,
       distanceKm: 0,
-      estimatedFare: fareResult.totalFare || 30,
+      estimatedFare: meteredBaseFare,
       rideTier: "standard",
       pickupCoords: currentPCoords,
       dropCoords: [0, 0],
       paymentMode: "cash",
-      passengerCount,
+      passengerCount: 4,
     });
 
-    onConfirmBooking?.();
+    onConfirmBooking?.({
+      pickupText,
+      dropText,
+      pickupCoords: currentPCoords,
+      dropCoords: [0, 0],
+      estimatedFare: meteredBaseFare,
+      tripDistance: 0,
+      passengerCount: 4,
+    });
   };
 
   return (
@@ -3069,7 +3087,7 @@ export function InteractiveBookingMap({
                     }}
                     className="w-full h-12 rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white cursor-pointer active:scale-[0.98] transition-all"
                   >
-                    <span>🛺 Book Metered Toto Ride (Pay at Finish)</span>
+                    <span>🛺 Book Metered Toto Ride (প্রারম্ভিক বেস: ₹{calculateTotoFare(0, 4, pricingConfig).totalFare})</span>
                   </Button>
                   <p className="text-[10.5px] text-center text-slate-500 font-semibold">
                     No fixed drop needed • Live GPS road meter calculates fare on ride finish

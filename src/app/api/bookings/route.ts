@@ -1447,6 +1447,8 @@ export async function PATCH(request: Request) {
       // Resolve valid UUID for driver_id that exists in drivers table (satisfies bookings_driver_id_fkey)
       let validDriverId: string | null = null;
       let resolvedUniqueId: string = "";
+
+      // 1. Resolve by UUID if valid UUID supplied
       if (driverId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(driverId)) {
         const { data: existing } = await admin
           .from("drivers")
@@ -1461,11 +1463,28 @@ export async function PATCH(request: Request) {
         }
       }
 
+      // 2. Resolve by unique_id (e.g. SR/KAK/0020 or SR-0730)
+      if (!validDriverId && driverId) {
+        const { data: byUid } = await admin
+          .from("drivers")
+          .select("id, unique_id, toto_number, vehicle_number, name, phone")
+          .or(`unique_id.eq.${driverId},unique_id.ilike.%${driverId}%`)
+          .limit(1)
+          .maybeSingle();
+        if (byUid?.id) {
+          validDriverId = byUid.id;
+          if (byUid.unique_id) resolvedUniqueId = byUid.unique_id;
+          if (!driverName && byUid.name) driverName = byUid.name;
+          if (!totoNumber && (byUid.toto_number || byUid.vehicle_number)) totoNumber = byUid.toto_number || byUid.vehicle_number;
+        }
+      }
+
+      // 3. Resolve by phone number
       if (!validDriverId && cleanPhone) {
         const { data: foundDrivers } = await admin
           .from("drivers")
           .select("id, unique_id, toto_number, vehicle_number, name, phone")
-          .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.eq.+91${cleanPhone},phone.ilike.%${cleanPhone}%`)
+          .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.ilike.%${cleanPhone}%`)
           .limit(1);
         if (foundDrivers && foundDrivers.length > 0 && foundDrivers[0]?.id) {
           validDriverId = foundDrivers[0].id;
@@ -1481,7 +1500,7 @@ export async function PATCH(request: Request) {
                 phone: `91${cleanPhone}`,
                 toto_number: totoNumber || "WB-96-T-8421",
                 is_active: true,
-                is_available: false,
+                is_available: true,
               })
               .select("id")
               .maybeSingle();
@@ -1547,13 +1566,13 @@ export async function PATCH(request: Request) {
         );
       }
 
-      // Check if booking was created more than 3 minutes ago
-      const isOver3MinExpired = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 3 * 60 * 1000);
-      if (isOver3MinExpired) {
+      // Check if booking was created more than 15 minutes ago (matching radar window)
+      const isOver15MinExpired = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 15 * 60 * 1000);
+      if (isOver15MinExpired) {
         return NextResponse.json(
           {
             error: "booking_expired_timeout",
-            message: "⚠️ দুঃখিত! ৩ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে।",
+            message: "⚠️ দুঃখিত! ১৫ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে।",
           },
           { status: 410 }
         );

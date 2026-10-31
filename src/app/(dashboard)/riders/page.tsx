@@ -183,7 +183,7 @@ export default function RidersPage() {
   // Helper to determine status
   const getDriverStatus = (d: Driver): "online" | "busy" | "offline" => {
     if (!d.is_active) return "offline";
-    if (!d.is_available) return "busy";
+    if (d.is_available === false) return "busy";
     return "online";
   };
 
@@ -191,7 +191,7 @@ export default function RidersPage() {
   const loadDrivers = async (isSilent = false) => {
     try {
       if (!isSilent && drivers.length === 0) setLoading(true);
-      const res = await fetch("/api/drivers");
+      const res = await fetch("/api/drivers?all=true");
       if (res.ok) {
         const json = await res.json();
         setDrivers(json.drivers || []);

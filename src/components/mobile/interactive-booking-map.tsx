@@ -650,7 +650,7 @@ export function InteractiveBookingMap({
   }, []);
 
   // Passenger count & Pricing
-  const [passengerCount, setPassengerCount] = useState<number>(3);
+  const [passengerCount, setPassengerCount] = useState<number>(4);
   const [pricingConfig, setPricingConfig] = useState<TotoPricingConfig>(DEFAULT_TOTO_PRICING);
 
   // Fetch live pricing
@@ -2932,11 +2932,14 @@ export function InteractiveBookingMap({
                   </div>
 
                   <div className="text-right shrink-0">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      আনুমানিক (Anumanik)
+                    </span>
                     <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
                       {isCalculatingRoute ? "₹--" : `₹${fareResult.totalFare}.00`}
                     </div>
                     <span className="text-[9px] sm:text-[9.5px] font-bold text-slate-500 block">
-                      {isCalculatingRoute ? "⏳ Calculating..." : distanceKm > 0 ? `${distanceKm} km` : "Base Fare: ₹30"}
+                      {isCalculatingRoute ? "⏳ Calculating..." : distanceKm > 0 ? `${distanceKm} km` : "আনুমানিক বেস: ₹30"}
                     </span>
                   </div>
                 </div>
@@ -2959,19 +2962,19 @@ export function InteractiveBookingMap({
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                     <div className="flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Passenger Count:</span>
+                      <span>Passenger Limit:</span>
                     </div>
                     <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                      After 3 passengers: +₹2/km per rider
+                      সর্বোচ্চ ৪ জন যাত্রী • কোনো অতিরিক্ত চার্জ নেই
                     </span>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
-                      { cnt: 3, label: "3 Riders", tag: "Base Fare" },
-                      { cnt: 4, label: "4 Riders", tag: "+₹2/km" },
-                      { cnt: 5, label: "5 Riders", tag: "+₹4/km" },
-                      { cnt: 6, label: "6 Riders", tag: "+₹6/km" },
+                      { cnt: 1, label: "1 Rider", tag: "No Extra Cost" },
+                      { cnt: 2, label: "2 Riders", tag: "No Extra Cost" },
+                      { cnt: 3, label: "3 Riders", tag: "No Extra Cost" },
+                      { cnt: 4, label: "4 Riders", tag: "Max Limit" },
                     ].map((item) => {
                       const isSelected = passengerCount === item.cnt;
                       return (
@@ -3008,7 +3011,7 @@ export function InteractiveBookingMap({
                     <span>💵 Payment:</span> Cash / UPI at destination
                   </span>
                   <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                    ✓ Verified road meter fare
+                    ✓ পারস্পরিক নির্ধারিত লোকাল ভাড়া (Parosporik Nirdharito Local Vara)
                   </span>
                 </div>
 
@@ -3036,7 +3039,7 @@ export function InteractiveBookingMap({
                       ? "⏳ Calculating road route & fare..."
                       : !hasValidPickup
                       ? "⚠️ Please select pickup location first"
-                      : `🛺 Book Toto Ride • ₹${fareResult.totalFare}.00`}
+                      : `🛺 Request Ride • আনুমানিক ₹${fareResult.totalFare}.00`}
                   </span>
                 </Button>
               </>

@@ -225,11 +225,11 @@ export default function PricingPage() {
                       max="4"
                       value={config.includedPassengers}
                       onChange={(e) =>
-                        setConfig({ ...config, includedPassengers: parseInt(e.target.value) || 3 })
+                        setConfig({ ...config, includedPassengers: parseInt(e.target.value) || 4 })
                       }
                       className="font-bold bg-background"
                     />
-                    <p className="text-[10px] text-muted-foreground">ডিফল্ট: ৩ জন যাত্রী অন্তর্ভুক্ত</p>
+                    <p className="text-[10px] text-muted-foreground">ডিফল্ট: ৪ জন যাত্রী অন্তর্ভুক্ত (কোনো অতিরিক্ত চার্জ নেই)</p>
                   </div>
 
                   <div className="space-y-1.5">
@@ -253,7 +253,7 @@ export default function PricingPage() {
                         className="pl-9 font-black text-blue-700 bg-background"
                       />
                     </div>
-                    <p className="text-[10px] text-muted-foreground">৩ জনের বেশি হলে প্রতি জনে ₹২/কিমি</p>
+                    <p className="text-[10px] text-muted-foreground">সর্বোচ্চ ৪ জন যাত্রী পর্যন্ত কোনো অতিরিক্ত খরচ নেই (₹০/কিমি)</p>
                   </div>
                 </div>
               </CardContent>
@@ -273,7 +273,7 @@ export default function PricingPage() {
                     </CardDescription>
                   </div>
                   <span className="text-[11px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
-                    ৩ জনের হিসাব (3 Jon)
+                    ৪ জনের হিসাব (4 Jon - কোনো অতিরিক্ত খরচ নেই)
                   </span>
                 </div>
               </CardHeader>
@@ -286,8 +286,8 @@ export default function PricingPage() {
                         <th className="py-2.5 px-3">দূরত্ব (KM)</th>
                         <th className="py-2.5 px-3">বুকিং চার্জ (₹) [সম্পাদনাযোগ্য]</th>
                         <th className="py-2.5 px-3">রাইড চার্জ (KM x ₹{perKm})</th>
-                        <th className="py-2.5 px-3 font-black text-emerald-800">মোট চার্জ (৩ জন)</th>
-                        <th className="py-2.5 px-3 text-blue-700">অতিরিক্ত যাত্রী (৩+)</th>
+                        <th className="py-2.5 px-3 font-black text-emerald-800">মোট চার্জ (সর্বোচ্চ ৪ জন)</th>
+                        <th className="py-2.5 px-3 text-blue-700">অতিরিক্ত যাত্রী চার্জ</th>
                         <th className="py-2.5 px-3 text-purple-700">নাইট চার্জ</th>
                       </tr>
                     </thead>
@@ -386,7 +386,7 @@ export default function PricingPage() {
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-muted/40 p-2.5 rounded-xl border border-border">
                   <Info className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
-                    <strong>নোট:</strong> ০-২ কিমি সর্বনিম্ন ২ কিমি চার্জ করা হয় (২ x ₹{perKm} = ₹{2 * perKm})। ৩ জনের বেশি যাত্রী হলে প্রতি জনের জন্য ₹{config.extraPassengerRatePerKm}/কিমি যোগ হবে।
+                    <strong>নোট:</strong> ০-২ কিমি সর্বনিম্ন ২ কিমি চার্জ করা হয় (২ x ₹{perKm} = ₹{2 * perKm})। সর্বোচ্চ ৪ জন যাত্রী কোনো অতিরিক্ত চার্জ ছাড়াই অন্তর্ভুক্ত।
                   </span>
                 </div>
               </CardContent>
@@ -585,8 +585,8 @@ export default function PricingPage() {
                   <span>যাত্রী সংখ্যা (Passengers):</span>
                   <span className="text-blue-600 font-bold">{simPassengers} জন</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[3, 4, 5, 6].map((cnt) => (
+                <div className="grid grid-cols-4 gap-2">
+                  {[1, 2, 3, 4].map((cnt) => (
                     <button
                       key={cnt}
                       type="button"
@@ -597,7 +597,7 @@ export default function PricingPage() {
                           : "bg-muted text-foreground border-border hover:bg-muted/80"
                       }`}
                     >
-                      {cnt} যাত্রী {cnt > 3 && `(+₹${(cnt - 3) * (config.extraPassengerRatePerKm ?? 2)}/কিমি)`}
+                      {cnt} জন (বিনা অতিরিক্ত খরচে)
                     </button>
                   ))}
                 </div>

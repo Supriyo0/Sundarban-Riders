@@ -17,7 +17,7 @@ describe("Ride Security & Anti-Fraud Audit Test Suite (5 Core Attack Vectors)", 
 
       // Server authoritative computation
       const pricingConfig = DEFAULT_TOTO_PRICING;
-      const passengerCount = Math.max(3, Math.min(6, maliciousClientPayload.passengerCount));
+      const passengerCount = Math.max(1, Math.min(pricingConfig.maxPassengers || 4, maliciousClientPayload.passengerCount));
       const authoritativeFare = calculateTotoFare(
         maliciousClientPayload.tripDistance,
         passengerCount,

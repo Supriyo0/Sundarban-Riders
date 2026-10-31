@@ -409,7 +409,7 @@ function MobileAppPageContent() {
   const [dropCoords, setDropCoords] = useState<[number, number]>([0, 0]);
   const [tripDistance, setTripDistance] = useState(0);
   const [tripFare, setTripFare] = useState(0);
-  const [passengerCount, setPassengerCount] = useState(3);
+  const [passengerCount, setPassengerCount] = useState(4);
   const [selectedTier, setSelectedTier] = useState<"standard" | "shared" | "reserved">("standard");
   const [paymentMode, setPaymentMode] = useState<"cash" | "upi">("cash");
   const [showSosModal, setShowSosModal] = useState(false);
@@ -775,7 +775,7 @@ function MobileAppPageContent() {
           dropCoords: (dropCoords && dropCoords[0] !== 0 ? dropCoords : undefined),
           estimatedFare: tripFare || 20,
           tripDistance,
-          passengerCount: passengerCount || 3,
+          passengerCount: passengerCount || 4,
           rideTier: selectedTier || "standard",
           paymentMode: "cash",
         }),
@@ -2741,7 +2741,7 @@ function MobileAppPageContent() {
                   অ্যাপের প্রয়োজনীয় অনুমতি ও সম্মতি
                 </h2>
                 <p className="text-slate-500 text-xs mt-1 font-medium leading-relaxed">
-                  সুন্দরবনের নির্ভরযোগ্য লাইভ ট্র্যাকিং ও দ্রুত টোটো বুকিং সেবার জন্য নিচের অনুমতিগুলো স্পর্শ করে চালু করুন:
+                  নিকটবর্তী স্বাধীন টোটো চালকদের সাথে সংযোগ স্থাপন এবং রাইড অনুরোধ পাঠানোর সুবিধার জন্য নিচের অনুমতিগুলি সক্রিয় করুন:
                 </p>
               </div>
 
@@ -2752,7 +2752,7 @@ function MobileAppPageContent() {
                   <span>সুস্পষ্ট নোটিশ ও ডেটা সুরক্ষা (Prominent Disclosure)</span>
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed">
-                  <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী ৫ কিমির মধ্যে সক্রিয় টোটো চালক খুঁজে পাওয়া যায়, (২) আসল সড়কের সঠিক টার্ন-বাই-টার্ন রুট ম্যাপ দেখানো যায়, এবং (৩) দূরত্বের ভিত্তিতে ন্যায্য মিটার ভাড়া গণনা করা যায়। আপনার অবস্থান ডেটা কেবল চলমান ট্রিপের সুরক্ষায় ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
+                  <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী ৫ কিমির মধ্যে উপলব্ধ স্বাধীন টোটো চালকদের খুঁজে পাওয়া যায়, (২) রুট ম্যাপ প্রদর্শন করা যায়, এবং (৩) আনুমানিক দূরত্ব ভিত্তিক প্রস্তাবিত ভাড়া নির্ধারণে সহায়তা করা যায়। আপনার অবস্থান সংক্রান্ত তথ্য কেবল এই প্রযুক্তি সংযোগ সফল করতে ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
                 </p>
               </div>
 
@@ -2789,7 +2789,7 @@ function MobileAppPageContent() {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                      নিকটস্থ ৫ কিমির মধ্যে সক্রিয় চালক খোঁজা, সঠিক রোড রুট ও ন্যায্য মিটার ভাড়া পরিমাপের জন্য স্পর্শ করুন।
+                      নিকটস্থ স্বাধীন চালকদের অবস্থান দেখা, সঠিক রুট এবং আনুমানিক যাতায়াত দূরত্ব জানার জন্য স্পর্শ করুন।
                     </p>
                   </div>
                 </div>
@@ -2824,7 +2824,7 @@ function MobileAppPageContent() {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                      নতুন রাইড, চালক পৌঁছানোর অ্যালার্ট ও বুকিং নিশ্চিতকরণের তাৎক্ষণিক নোটিফিকেশন পেতে স্পর্শ করুন।
+                      রাইড অনুরোধের স্ট্যাটাস, চালকের সম্মতি ও ট্রিপ আপডেট তাৎক্ষণিক জানতে স্পর্শ করুন।
                     </p>
                   </div>
                 </div>
@@ -2857,7 +2857,7 @@ function MobileAppPageContent() {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 font-medium leading-snug">
-                      রাইড আসার সময় এবং স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট অডিও ও ভাইব্রেশন বাজবে। স্পর্শ করে আওয়াজ শুনুন।
+                      চালক অনুরোধ গ্রহণ করলে এবং ট্রিপের স্ট্যাটাস পরিবর্তনের সময় স্পষ্ট অডিও ও অ্যালার্ট পেতে চালু করুন।
                     </p>
                   </div>
                 </div>
@@ -3910,7 +3910,7 @@ function MobileAppPageContent() {
                   // Odometer-based exact fare calculation matching server & WhatsApp:
                   const finalFareResult = calculateTotoFare(
                     distKm,
-                    activeRide.passengerCount || 3,
+                    activeRide.passengerCount || 4,
                     DEFAULT_TOTO_PRICING
                   );
                   const finalFare = finalFareResult.totalFare;

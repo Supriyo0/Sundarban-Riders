@@ -117,7 +117,7 @@ async function notifyOnlineDriversViaWhatsApp(
       }
 
       const bMeta = getBookingMeta(booking);
-      const pCount = bMeta.passenger_count || 3;
+      const pCount = bMeta.passenger_count || 4;
       const bodyText = await getCustomWhatsAppMessage(admin, "driver_new_booking_alert", {
         booking_number: booking.booking_number,
         customer_name: booking.customer_name,
@@ -1159,7 +1159,7 @@ export async function POST(request: Request) {
     const dropCoords = body.dropCoords || body.drop_coords;
     const estimatedFare = body.estimatedFare || body.estimated_fare;
     const tripDistance = body.tripDistance || body.trip_distance;
-    const passengerCount = body.passengerCount || body.passenger_count || 3;
+    const passengerCount = body.passengerCount || body.passenger_count || 4;
 
     if (!pickupLocation || !dropLocation) {
       return NextResponse.json({ error: "পিকআপ ও গন্তব্য অবস্থান আবশ্যক" }, { status: 400 });
@@ -1208,8 +1208,8 @@ export async function POST(request: Request) {
 
     const pricingConfig = await loadActivePricingConfig(admin);
     const validPassengerCount = Math.max(
-      pricingConfig.minPassengers || 3,
-      Math.min(pricingConfig.maxPassengers || 6, Number(passengerCount) || 3)
+      pricingConfig.minPassengers || 1,
+      Math.min(pricingConfig.maxPassengers || 4, Number(passengerCount) || 4)
     );
 
     // Authoritative Server-side Distance & Fare Validation (Zero-trust client fare)
@@ -1712,7 +1712,7 @@ export async function PATCH(request: Request) {
 
       const meta = getBookingMeta(booking);
       const pricingConfig = await loadActivePricingConfig(admin);
-      const passengerCount = meta.passenger_count || 3;
+      const passengerCount = meta.passenger_count || 4;
       const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
       let liveFare = booking.final_fare || booking.estimated_fare;
       if (distanceKm !== null) {
@@ -1824,7 +1824,7 @@ export async function PATCH(request: Request) {
       }
 
       const pricingConfig = await loadActivePricingConfig(admin);
-      const passengerCount = meta.passenger_count || 3;
+      const passengerCount = meta.passenger_count || 4;
       const rideStartTime = meta.trip_start_time ? new Date(meta.trip_start_time) : new Date();
       const fareResult = calculateTotoFare(distanceKm, passengerCount, pricingConfig, rideStartTime);
       const calculatedFare = fareResult.totalFare;

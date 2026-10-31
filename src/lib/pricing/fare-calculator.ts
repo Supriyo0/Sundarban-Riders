@@ -10,8 +10,8 @@ export interface TotoSlabConfig {
 export interface TotoPricingConfig {
   perKmRate: number; // Flat ride charge rate: ₹12/km
   minBillableKm: number; // Minimum billable distance: 2 km (2 x ₹12 = ₹24)
-  includedPassengers: number; // 3 persons included
-  extraPassengerRatePerKm: number; // ₹2/km per extra person (3+)
+  includedPassengers: number; // 4 persons included at no extra cost
+  extraPassengerRatePerKm: number; // ₹0/km (no extra cost within 4 passenger limit)
   nightStartTime: string; // "21:30" (9:30 PM)
   nightEndTime: string; // "05:00" (5:00 AM)
   nightChargeTier1: number; // ₹50 (0-13 km, slabs 1-4)
@@ -52,8 +52,8 @@ export const DEFAULT_TOTO_SLABS: TotoSlabConfig[] = [
 export const DEFAULT_TOTO_PRICING: TotoPricingConfig = {
   perKmRate: 12,
   minBillableKm: 1, // Minimum billable distance: 1 km (1 x ₹12 = ₹12 + ₹10 booking charge = ₹22 base fare)
-  includedPassengers: 3,
-  extraPassengerRatePerKm: 2,
+  includedPassengers: 4,
+  extraPassengerRatePerKm: 0,
   nightStartTime: "21:30",
   nightEndTime: "05:00",
   nightChargeTier1: 50,
@@ -67,9 +67,9 @@ export const DEFAULT_TOTO_PRICING: TotoPricingConfig = {
   ratePerKm10to20: 12,
   ratePerKm20to25: 12,
   maxServiceKm: 50,
-  defaultPassengerCount: 3,
-  minPassengers: 3,
-  maxPassengers: 6,
+  defaultPassengerCount: 4,
+  minPassengers: 1,
+  maxPassengers: 4,
   nightCharge0to10: 50,
   nightCharge10to20: 75,
   nightCharge20to25: 100,
@@ -149,16 +149,15 @@ export interface FareCalculationResult {
  * Accurately calculates Toto ride fare according to the Official Sundarban Rider Rate Chart:
  * 1. Booking Charge: Determined strictly by distance slab (Slabs 1 to 10)
  * 2. Ride Charge: Flat ₹12/km (0-2 km is charged minimum 2 km = ₹24)
- * 3. 3 Passengers Included: Standard rate applies for 1 to 3 passengers.
- * 4. Extra Passengers (3+): ₹2 per extra passenger per km (4 pax = +₹2/km, 5 pax = +₹4/km, 6 pax = +₹6/km)
- * 5. Night Charge (9:30 PM to 5:00 AM):
+ * 3. 4 Passengers Included: Standard rate applies for up to 4 passengers with no extra cost.
+ * 4. Night Charge (9:30 PM to 5:00 AM):
  *    - 0 to 13 km (Slabs 1-4): ₹50/-
  *    - 14 to 20 km (Slabs 5-7): ₹75/-
  *    - 21+ km (Slabs 8-10): ₹100/-
  */
 export function calculateTotoFare(
   distanceKm: number,
-  passengerCount: number = 3,
+  passengerCount: number = 4,
   config: TotoPricingConfig = DEFAULT_TOTO_PRICING,
   rideTime: Date = new Date()
 ): FareCalculationResult {
@@ -169,7 +168,8 @@ export function calculateTotoFare(
   };
 
   const d = Math.max(0.1, Math.round(distanceKm * 100) / 100);
-  const p = Math.max(1, Math.min(10, Math.round(passengerCount || 3)));
+  const maxPaxLimit = effectiveConfig.maxPassengers ?? 4;
+  const p = Math.max(1, Math.min(maxPaxLimit, Math.round(passengerCount || 4)));
 
   // 1. Matched Slab & Booking Charge
   const matchedSlab = getSlabForDistance(d, effectiveConfig.slabs);
@@ -181,10 +181,10 @@ export function calculateTotoFare(
   const billableKm = Math.max(minBillableKm, d);
   const distanceFare = Math.round(billableKm * perKmRate);
 
-  // 3. Extra Passenger Charge: ₹2/km per passenger over included (default 3)
-  const includedPax = effectiveConfig.includedPassengers ?? 3;
+  // 3. Extra Passenger Charge: 4 passengers included with no extra cost
+  const includedPax = effectiveConfig.includedPassengers ?? 4;
   const extraPassengerCount = Math.max(0, p - includedPax);
-  const extraRatePerKm = effectiveConfig.extraPassengerRatePerKm ?? 2;
+  const extraRatePerKm = effectiveConfig.extraPassengerRatePerKm ?? 0;
   const extraPassengerFare = Math.round(extraPassengerCount * extraRatePerKm * d);
 
   // 4. Night Charge (9:30 PM to 5:00 AM)
@@ -211,7 +211,7 @@ export function calculateTotoFare(
     `বুকিং চার্জ (${matchedSlab.name}): ₹${bookingCharge}`,
     `রাইড চার্জ (${d} কিমি x ₹${perKmRate}): ₹${distanceFare}`,
   ];
-  if (extraPassengerCount > 0) {
+  if (extraPassengerCount > 0 && extraPassengerFare > 0) {
     parts.push(`অতিরিক্ত যাত্রী (${extraPassengerCount} জন x ₹${extraRatePerKm}/কিমি): ₹${extraPassengerFare}`);
   }
   if (isNight) {

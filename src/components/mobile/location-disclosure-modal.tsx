@@ -55,7 +55,7 @@ export function LocationDisclosureModal({
             </li>
             <li className="flex items-start gap-2">
               <span className="text-emerald-400 mt-0.5">✓</span>
-              <span><strong>সঠিক রোড রুট ও ভাড়া গণনা:</strong> আসল পাকা ও মেঠো রাস্তার দূরত্ব মেপে ন্যায্য মিটার ভাড়া নির্ধারণ করতে।</span>
+              <span><strong>রুট ও আনুমানিক দূরত্ব:</strong> আসল পাকা ও মেঠো রাস্তার দূরত্ব মেপে আনুমানিক প্রস্তাবিত ভাড়া নির্ধারণে সহায়তা করতে।</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-emerald-400 mt-0.5">✓</span>

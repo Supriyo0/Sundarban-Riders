@@ -30,15 +30,15 @@ export class LiveFareMeter {
   private totalKm: number = 0;
   private startTime: number = Date.now();
   private pricingConfig: TotoPricingConfig = DEFAULT_TOTO_PRICING;
-  private passengerCount: number = 3;
+  private passengerCount: number = 4;
 
   constructor(
-    passengerCount: number = 3,
+    passengerCount: number = 4,
     config: TotoPricingConfig = DEFAULT_TOTO_PRICING,
     startTime?: Date | string,
     initialKm: number = 0
   ) {
-    this.passengerCount = Math.max(3, passengerCount);
+    this.passengerCount = Math.max(1, Math.min(config.maxPassengers || 4, passengerCount));
     this.pricingConfig = config;
     if (startTime) {
       this.startTime = new Date(startTime).getTime();
@@ -55,7 +55,7 @@ export class LiveFareMeter {
   }
 
   public setPassengerCount(count: number): void {
-    this.passengerCount = Math.max(3, count);
+    this.passengerCount = Math.max(1, Math.min(this.pricingConfig.maxPassengers || 4, count));
   }
 
   /**

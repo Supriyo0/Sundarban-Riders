@@ -300,7 +300,7 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-black text-slate-950 tracking-tight leading-tight">
-                        টোটো বুক করুন (Book Toto)
+                        রাইডের অনুরোধ (Request Ride)
                       </div>
                       <span className="text-[10px] font-bold text-slate-800 block truncate">
                         যাত্রী মোড • ম্যাপে ৫ মিনিটে ক্যাব

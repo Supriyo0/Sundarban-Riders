@@ -1579,7 +1579,7 @@ export async function processTotoMessage(
     
     // Accurately calculate final fare strictly matching app's pricing configuration based on rider movement
     const pricingConfig = await loadActivePricingConfig(supabase);
-    const passengerCount = meta.passenger_count || 3;
+    const passengerCount = meta.passenger_count || 4;
     const rideStartTime = meta.trip_start_time
       ? new Date(meta.trip_start_time)
       : (booking?.created_at ? new Date(booking.created_at) : new Date());
@@ -2281,7 +2281,7 @@ ${
       return {
         toPhone: recipientPhone,
         type: "interactive_buttons" as const,
-        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bNum}\n👤 যাত্রী: ${bookingToRetry.customer_name || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bNum}\n👤 যাত্রী: ${bookingToRetry.customer_name || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৪ জন (সর্বোচ্চ সীমা)\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
         buttons: [
           { id: `driver_accept_${bookingToRetry.id}`, title: "✅ রাইড গ্রহণ" },
           { id: `driver_decline_${bookingToRetry.id}`, title: "❌ বাতিল" },
@@ -2503,7 +2503,7 @@ ${
 
       // Calculate estimated fare using official Sundarban Riders Toto Fare Calculator
       const pricingConfig = await loadActivePricingConfig(supabase);
-      const passengerCount = 3;
+      const passengerCount = 4;
       const fareResult = calculateTotoFare(estDistanceKm, passengerCount, pricingConfig, new Date());
       const estimatedFare = fareResult.totalFare;
 
@@ -2570,7 +2570,7 @@ ${
         return {
           toPhone: recipientPhone,
           type: "interactive_buttons" as const,
-          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৩ জন\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+          bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bookingNumber}\n👤 যাত্রী: ${ctx.senderName || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৪ জন (সর্বোচ্চ সীমা)\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${pickupLocation}\n🏁 গন্তব্য: ${dropLocation}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
           buttons: [
             { id: `driver_accept_${newBooking?.id || bookingNumber}`, title: "✅ রাইড গ্রহণ" },
             { id: `driver_decline_${newBooking?.id || bookingNumber}`, title: "❌ বাতিল" },

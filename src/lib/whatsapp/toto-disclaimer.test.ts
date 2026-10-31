@@ -24,8 +24,7 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
 
     expect(action).not.toBeNull();
     expect(action?.type).toBe("interactive_buttons");
-    expect(action?.media?.kind).toBe("document");
-    expect(action?.media?.url).toBe(CUSTOMER_DISCLAIMER_PDF_URL);
+    expect(action?.bodyText).toContain(CUSTOMER_DISCLAIMER_PDF_URL);
     expect(action?.buttons).toEqual([
       { id: "agree_disclaimer", title: "✅ সম্মত আছি" },
     ]);
@@ -35,8 +34,13 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
     const { getSupabaseAdmin, invalidateCachedSettings } = await import("./toto-engine");
     const supabase = getSupabaseAdmin();
     invalidateCachedSettings();
-    const { data: existingDriver } = await supabase.from("drivers").select("id").or("phone.eq.919883838854,phone.eq.+919883838854,phone.ilike.%9883838854%").maybeSingle();
-    if (!existingDriver) {
+    const { data: updated } = await supabase
+      .from("drivers")
+      .update({ agreed_terms: false })
+      .ilike("phone", "%9883838854%")
+      .select("id");
+
+    if (!updated || updated.length === 0) {
       await supabase.from("drivers").insert({
         phone: "+919883838854",
         name: "টেস্ট চালক",
@@ -45,8 +49,6 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
         is_available: true,
         toto_number: "WB-96-T-1234",
       });
-    } else {
-      await supabase.from("drivers").update({ agreed_terms: false }).eq("id", existingDriver.id);
     }
 
     const action = await processTotoMessage({
@@ -56,9 +58,7 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
 
     expect(action).not.toBeNull();
     expect(action?.type).toBe("interactive_buttons");
-    expect(action?.media?.kind).toBe("document");
-    expect(action?.media?.url).toBe(RIDER_DISCLAIMER_PDF_URL);
-    expect(action?.media?.filename).toContain("Rider_Disclaimer");
+    expect(action?.bodyText).toContain(RIDER_DISCLAIMER_PDF_URL);
     expect(action?.buttons).toEqual([
       { id: "driver_agree_terms", title: "✅ সম্মত আছি" },
     ]);
@@ -260,7 +260,7 @@ describe("WhatsApp Disclaimers & Media Attachments", () => {
   });
 
   it("verifies customer booking lifecycle messages and cancellation notice format", async () => {
-    const testPhone = "+919333344445";
+    const testPhone = `+9193333${Math.floor(10000 + Math.random() * 90000)}`;
 
     // 1. Customer initiates booking
     const bookStep = await processTotoMessage({

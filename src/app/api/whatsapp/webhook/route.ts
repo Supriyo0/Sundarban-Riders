@@ -388,6 +388,31 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
+interface PendingDispatch {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  type: 'interactive_buttons' | 'text' | 'media'
+  bodyText: string
+  buttons?: Array<{ id: string; title: string }>
+  media?: { kind: 'image' | 'video'; url: string; filename?: string }
+  retries: number
+}
+
+const pendingDispatchesByWamid = new Map<string, PendingDispatch>()
+const lastOutboundTimeByPhone = new Map<string, number>()
+
+async function paceOutbound(phone: string, minIntervalMs = 600) {
+  const clean = phone.replace(/\D/g, '')
+  const now = Date.now()
+  const last = lastOutboundTimeByPhone.get(clean) || 0
+  const elapsed = now - last
+  if (elapsed < minIntervalMs) {
+    await new Promise((resolve) => setTimeout(resolve, minIntervalMs - elapsed))
+  }
+  lastOutboundTimeByPhone.set(clean, Date.now())
+}
+
 async function handleStatusUpdate(status: {
   id: string
   status: string
@@ -403,6 +428,54 @@ async function handleStatusUpdate(status: {
 
   if (msgErr) {
     console.error('Error updating message status:', msgErr)
+  }
+
+  // Auto-retry if Meta failed the message with rate limit (Error 130429)
+  if (status.status === 'failed') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isRateLimit = Array.isArray(status.errors) && status.errors.some((e: any) =>
+      e.code === 130429 ||
+      String(e.title || '').toLowerCase().includes('rate limit') ||
+      String(e.message || '').toLowerCase().includes('rate limit') ||
+      String(e.error_data?.details || '').toLowerCase().includes('short period of time')
+    )
+
+    const pending = pendingDispatchesByWamid.get(status.id)
+    if (isRateLimit && pending && pending.retries < 2) {
+      pending.retries += 1
+      console.log(`[RATE_LIMIT_RETRY] Meta throttled wamid=${status.id} to=${pending.to}. Scheduling auto-retry in 2500ms (attempt ${pending.retries})...`)
+      setTimeout(async () => {
+        try {
+          await paceOutbound(pending.to, 1000)
+          if (pending.type === 'interactive_buttons' && pending.buttons) {
+            const res = await sendInteractiveButtons({
+              phoneNumberId: pending.phoneNumberId,
+              accessToken: pending.accessToken,
+              to: pending.to,
+              bodyText: pending.bodyText,
+              buttons: pending.buttons,
+              headerMedia: pending.media,
+            })
+            pendingDispatchesByWamid.set(res.messageId, pending)
+            console.log(`[RATE_LIMIT_RETRY_SUCCESS] Resent interactive to=${pending.to} new_wamid=${res.messageId}`)
+          } else if (pending.type === 'text') {
+            const res = await sendTextMessage({
+              phoneNumberId: pending.phoneNumberId,
+              accessToken: pending.accessToken,
+              to: pending.to,
+              text: pending.bodyText,
+            })
+            pendingDispatchesByWamid.set(res.messageId, pending)
+            console.log(`[RATE_LIMIT_RETRY_SUCCESS] Resent text to=${pending.to} new_wamid=${res.messageId}`)
+          }
+        } catch (retryErr) {
+          console.error('[RATE_LIMIT_RETRY_FAILED] Retry error:', retryErr)
+        }
+      }, 2500)
+    }
+    pendingDispatchesByWamid.delete(status.id)
+  } else if (status.status === 'delivered' || status.status === 'read') {
+    pendingDispatchesByWamid.delete(status.id)
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -681,6 +754,9 @@ async function processMessage(
       let metaMessageId: string | null = null
       const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')
 
+      // Pace outbound send to recipient to prevent Meta 130429 throughput rate limits
+      await paceOutbound(recipientPhone, 600)
+
       // 1. Send interactive buttons or text message (with headerMedia if media provided)
       if (
         totoAction.type === 'interactive_buttons' &&
@@ -701,10 +777,25 @@ async function processMessage(
             buttons: totoAction.buttons.slice(0, 3),
           })
           metaMessageId = res.messageId
+          pendingDispatchesByWamid.set(res.messageId, {
+            phoneNumberId,
+            accessToken,
+            to: recipientPhone,
+            type: 'interactive_buttons',
+            bodyText: totoAction.bodyText,
+            buttons: totoAction.buttons.slice(0, 3),
+            media: totoAction.media && (totoAction.media.kind === 'image' || totoAction.media.kind === 'video') ? {
+              kind: totoAction.media.kind,
+              url: totoAction.media.url,
+              filename: totoAction.media.filename,
+            } : undefined,
+            retries: 0,
+          })
         } catch (btnErr) {
           console.error('[webhook] Interactive buttons send failed, trying text fallback:', btnErr)
           const fallbackText = `${totoAction.bodyText}\n\n${totoAction.buttons.map((b) => `• ${b.title}`).join('\n')}`
           try {
+            await paceOutbound(recipientPhone, 500)
             const res = await sendTextMessage({
               phoneNumberId,
               accessToken,
@@ -712,6 +803,14 @@ async function processMessage(
               text: fallbackText,
             })
             metaMessageId = res.messageId
+            pendingDispatchesByWamid.set(res.messageId, {
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              type: 'text',
+              bodyText: fallbackText,
+              retries: 0,
+            })
           } catch (textErr) {
             console.error('[webhook] Text fallback send also failed:', textErr)
           }
@@ -737,6 +836,7 @@ async function processMessage(
 
         if (totoAction.type === 'text' || (!totoAction.media && totoAction.bodyText)) {
           try {
+            await paceOutbound(recipientPhone, 500)
             const res = await sendTextMessage({
               phoneNumberId,
               accessToken,
@@ -744,65 +844,72 @@ async function processMessage(
               text: totoAction.bodyText,
             })
             metaMessageId = res.messageId
+            pendingDispatchesByWamid.set(res.messageId, {
+              phoneNumberId,
+              accessToken,
+              to: recipientPhone,
+              type: 'text',
+              bodyText: totoAction.bodyText,
+              retries: 0,
+            })
           } catch (textErr) {
             console.error('[webhook] Send text message failed:', textErr)
           }
         }
       }
 
-      // Dispatch any secondary notifications (e.g. alerts to customer or online drivers) concurrently
+      // Dispatch secondary notifications (serialized with safe delay so we don't trigger Meta burst limit 130429)
       if (totoAction.extraNotifications && totoAction.extraNotifications.length > 0) {
-        await Promise.all(
-          totoAction.extraNotifications.map(async (notif) => {
-            const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
-            if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
+        for (const notif of totoAction.extraNotifications) {
+          const destPhone = notif.toPhone.replace(/[^0-9]/g, '')
+          await paceOutbound(destPhone, 400)
+          if (notif.type === 'interactive_buttons' && notif.buttons && notif.buttons.length > 0) {
+            try {
+              await sendInteractiveButtons({
+                phoneNumberId,
+                accessToken,
+                to: destPhone,
+                bodyText: notif.bodyText,
+                headerMedia: notif.media && (notif.media.kind === 'image' || notif.media.kind === 'video') ? {
+                  kind: notif.media.kind,
+                  url: notif.media.url,
+                  filename: notif.media.filename,
+                } : undefined,
+                buttons: notif.buttons.slice(0, 3),
+              })
+            } catch (err) {
+              console.error('[webhook] extraNotification button error:', err)
+            }
+          } else {
+            if (notif.media) {
               try {
-                await sendInteractiveButtons({
+                await sendMediaMessage({
                   phoneNumberId,
                   accessToken,
                   to: destPhone,
-                  bodyText: notif.bodyText,
-                  headerMedia: notif.media && (notif.media.kind === 'image' || notif.media.kind === 'video') ? {
-                    kind: notif.media.kind,
-                    url: notif.media.url,
-                    filename: notif.media.filename,
-                  } : undefined,
-                  buttons: notif.buttons.slice(0, 3),
+                  kind: notif.media.kind,
+                  link: notif.media.url,
+                  filename: notif.media.filename,
+                  caption: notif.media.caption,
                 })
               } catch (err) {
-                console.error('[webhook] extraNotification button error:', err)
-              }
-            } else {
-              if (notif.media) {
-                try {
-                  await sendMediaMessage({
-                    phoneNumberId,
-                    accessToken,
-                    to: destPhone,
-                    kind: notif.media.kind,
-                    link: notif.media.url,
-                    filename: notif.media.filename,
-                    caption: notif.media.caption,
-                  })
-                } catch (err) {
-                  console.error('[webhook] extraNotification media error:', err)
-                }
-              }
-              if (notif.bodyText) {
-                try {
-                  await sendTextMessage({
-                    phoneNumberId,
-                    accessToken,
-                    to: destPhone,
-                    text: notif.bodyText,
-                  })
-                } catch (err) {
-                  console.error('[webhook] extraNotification text error:', err)
-                }
+                console.error('[webhook] extraNotification media error:', err)
               }
             }
-          })
-        )
+            if (notif.bodyText) {
+              try {
+                await sendTextMessage({
+                  phoneNumberId,
+                  accessToken,
+                  to: destPhone,
+                  text: notif.bodyText,
+                })
+              } catch (err) {
+                console.error('[webhook] extraNotification text error:', err)
+              }
+            }
+          }
+        }
       }
 
       return { totoAction, metaMessageId }
@@ -1065,6 +1172,11 @@ async function processMessage(
     } catch (totoErr) {
       console.error('[webhook] Toto bot logging error:', totoErr)
     }
+  }
+
+  // If Toto bot handled this message, return early so we do not run CRM flows/automations that trigger unnecessary errors and queries.
+  if (totoRes) {
+    return
   }
 
   // If this contact was a recent broadcast recipient, flag the reply

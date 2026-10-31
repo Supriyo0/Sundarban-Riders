@@ -913,8 +913,13 @@ export const formatTotoWelcomeMessage = (name?: string) => {
 🏛️ সরকারি স্বীকৃতি ও আইনি তথ্য:
 📜 ট্রেড রেজিস্ট্রেশন নং: 1554
 🏛️ উদ্যম রেজিস্ট্রেশন নং: UDYAM-WB-18-0208526
-📞 হেল্পলাইন: 8348122122 (WhatsApp)
-📧 ইমেল: sr.rider122@gmail.com`;
+📞 হেল্পলাইন: 8348122122
+📧 ইমেল: sr.rider122@gmail.com
+
+🚨 জরুরি সহায়তা ও নিরাপত্তা নম্বর:
+জাতীয় জরুরি হেল্পলাইন (পুলিশ ও আপদকালীন): 112
+নারী সুরক্ষা হেল্পলাইন: 1091 / 181
+অ্যাম্বুলেন্স পরিষেবা: 102`;
 };
 
 export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 নমস্কার, 🙏
@@ -926,8 +931,13 @@ export const DEFAULT_TOTO_WELCOME_MESSAGE = `🙏 নমস্কার, 🙏
 🏛️ সরকারি স্বীকৃতি ও আইনি তথ্য:
 📜 ট্রেড রেজিস্ট্রেশন নং: 1554
 🏛️ উদ্যম রেজিস্ট্রেশন নং: UDYAM-WB-18-0208526
-📞 হেল্পলাইন: 8348122122 (WhatsApp)
-📧 ইমেল: sr.rider122@gmail.com`;
+📞 হেল্পলাইন: 8348122122
+📧 ইমেল: sr.rider122@gmail.com
+
+🚨 জরুরি সহায়তা ও নিরাপত্তা নম্বর:
+জাতীয় জরুরি হেল্পলাইন (পুলিশ ও আপদকালীন): 112
+নারী সুরক্ষা হেল্পলাইন: 1091 / 181
+অ্যাম্বুলেন্স পরিষেবা: 102`;
 
 interface DriverRecord {
   id: string;
@@ -980,7 +990,7 @@ export async function processTotoMessage(
     driverQuery = Promise.resolve(
       supabase
         .from("drivers")
-        .select("id, unique_id, name, phone, toto_number, vehicle_number, is_active, is_available, agreed_terms, latitude, longitude, current_location_name")
+        .select("id, name, phone, toto_number, is_active, is_available, agreed_terms, latitude, longitude, current_location_name")
         .or(driverOrClause)
         .limit(1)
         .maybeSingle()
@@ -1162,7 +1172,7 @@ export async function processTotoMessage(
       settings.welcome_message_bengali;
 
     let welcomeText = formatTotoWelcomeMessage(senderDisplayName);
-    if (customWelcome && customWelcome.trim().length > 0) {
+    if (customWelcome && customWelcome.includes("UDYAM")) {
       welcomeText = customWelcome
         .replace("{{name}}", senderDisplayName ? ` ${senderDisplayName} ` : " ")
         .replace("{name}", senderDisplayName ? ` ${senderDisplayName} ` : " ")

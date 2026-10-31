@@ -138,38 +138,40 @@ export const ALL_WHATSAPP_TEMPLATES: WhatsAppTemplateDefinition[] = [
       "{{booking_number}}",
       "{{driver_name}}",
       "{{driver_phone}}",
+      "{{driver_id}}",
+      "{{unique_id}}",
       "{{toto_number}}",
       "{{pickup_location}}",
       "{{drop_location}}",
       "{{start_otp}}",
     ],
-    defaultText: `✅ আপনার রাইড নিশ্চিত হয়েছে!
+    defaultText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨
 =======================
-🔐 যাত্রার ওটিপি (OTP): {{start_otp}}
-(চালকের সঙ্গে ওটিপি শেয়ার করে যাত্রা শুরু করুন)
-👨‍✈️ চালক: {{driver_name}}
-📞 মোবাইল নং: {{driver_phone}}
+🆔 বুকিং আইডি: #SR-{{booking_id}}
+🛺 চালক: {{driver_name}} (স্বাধীন চালক)
+📞 ফোন: {{driver_phone}}
+🆔 চালক আইডি: {{driver_id}}
 🛺 টোটো নম্বর: {{toto_number}}
-📍 পিক-আপ: {{pickup_location}}
-🏁 গন্তব্য: {{drop_location}}
 =======================
-💰 ভাড়া সংক্রান্ত তথ্য:
-সুন্দরবন রাইডার কোনো ভাড়া নির্ধারণ, নিয়ন্ত্রণ বা অনুমোদন করে না। ট্রিপের ভাড়া সম্পূর্ণ চালকের নিজস্ব নির্ধারিত এবং ট্রিপ শেষে চালকের অ্যাপে প্রদর্শিত হিসাব অনুযায়ী চালকের সাথে সরাসরি মিটিয়ে নেবেন।
-⚠️ সুরক্ষা ও ট্রাফিক নিয়ম:
-টোটোতে চালকসহ সর্বোচ্চ ৫ জন (৪ জন যাত্রী + ১ জন চালক) বহন করা এবং সমস্ত ট্রাফিক আইন ও সরকারি বিধি মেনে চলা চালক ও যাত্রী উভয়েরই যৌথ আইনি দায়িত্ব। নিয়ম মেনে নিরাপদ যাত্রা নিশ্চিত করুন।
+🔐 রাইড শুরুর ওটিপি: *{{start_otp}}*
+(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ওটিপিটি চালককে দিন)
+=======================
+চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।
 
-সুন্দরবন রাইডার ব্যবহার করার জন্য আপনাকে ধন্যবাদ!`,
+💰 প্রস্তাবিত ভাড়া (Mutual Fare): চালকের মিটার অনুযায়ী সরাসরি চালককে প্রদান করবেন।
+⚠️ সরকারি নিয়মে টোটোতে চালকসহ সর্বোচ্চ ৫ জন অনুমোদিত।`,
   },
   {
     key: "passenger_trip_started",
     nameBengali: "যাত্রা শুরু নোটিফিকেশন (OTP ভেরিফাইড)",
     category: "customer_ride",
     description: "চালক যাত্রীর কাছ থেকে OTP নিয়ে যাত্রা শুরু করলে যাত্রীকে পাঠানো নোটিফিকেশন।",
-    variables: ["{{booking_number}}", "{{driver_name}}"],
+    variables: ["{{booking_number}}", "{{driver_name}}", "{{helpline}}", "{{sos_number}}"],
     defaultText: `🛺 আপনার সুন্দরবন রাইডার্স যাত্রা শুরু হয়েছে!
 =======================
 🆔 বুকিং নং: #{{booking_number}}
 🛺 চালক: {{driver_name}}
+📞 হেল্পলাইন / SOS: 8348122122 / 112
 =======================
 নিরাপদে ভ্রমণ করুন। যেকোনো জরুরি প্রয়োজনে অ্যাপে SOS হেল্পলাইন ব্যবহার করুন।`,
   },
@@ -347,9 +349,39 @@ export async function getCustomWhatsAppMessage(
     }
   }
 
-  // Also resolve {{helpline}} default if not provided
+  // Also resolve {{helpline}} and {{sos_number}} default if not provided
   if (!vars.helpline) {
     vars.helpline = "8348122122";
+  }
+  if (!vars.sos_number) {
+    vars.sos_number = "8348122122 / 112";
+  }
+
+  // Ensure toto_number is present in passenger_ride_assigned
+  if (templateKey === "passenger_ride_assigned") {
+    if (!templateText.includes("{{toto_number}}") && !templateText.includes("টোটো নম্বর")) {
+      if (templateText.includes("{{driver_id}}")) {
+        templateText = templateText.replace(
+          /(🆔 চালক আইডি:.*?\n)/,
+          `$1🛺 টোটো নম্বর: {{toto_number}}\n`
+        );
+      } else if (templateText.includes("{{driver_phone}}")) {
+        templateText = templateText.replace(
+          /(📞.*?{{driver_phone}}.*?\n)/,
+          `$1🛺 টোটো নম্বর: {{toto_number}}\n`
+        );
+      }
+    }
+  }
+
+  // Ensure SOS numbers are present in passenger_trip_started
+  if (templateKey === "passenger_trip_started") {
+    if (!templateText.includes("8348122122") && !templateText.includes("112")) {
+      templateText = templateText.replace(
+        /(=======================[\s\S]*?=======================)/,
+        `$1\n📞 হেল্পলাইন / SOS: 8348122122 / 112`
+      );
+    }
   }
 
   return interpolateTemplate(templateText, vars);

@@ -4911,9 +4911,8 @@ function MobileAppPageContent() {
                       <h4 className="font-extrabold text-base text-slate-900 leading-tight">
                         কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
                       </h4>
-                      <p className="text-xs text-slate-500 mt-0.5 font-medium flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>অনলাইন টোটো চালকদের কাছে রিকোয়েস্ট প্রেরিত</span>
+                      <p className="text-xs text-slate-600 mt-1 font-medium leading-snug">
+                        উপলব্ধ স্বাধীন চালকদের তথ্য পাঠানো হচ্ছে। চালক সম্মতি জানালে ওটিপি, চালকের নাম, যোগাযোগ নম্বর ও টোটোর বিবরণ প্রদর্শিত হবে।
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -4929,6 +4928,12 @@ function MobileAppPageContent() {
                       className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full transition-all duration-1000 rounded-full"
                       style={{ width: `${(searchCountdown / 180) * 100}%` }}
                     />
+                  </div>
+
+                  {/* Dark status badge requested by user */}
+                  <div className="p-3 rounded-2xl bg-slate-900 text-white border border-slate-800 flex items-center gap-2.5 text-xs font-semibold shadow-md">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                    <span className="leading-snug">নিকটবর্তী স্বাধীন চালকদের কাছে অনুরোধ পাঠানো হয়েছে...</span>
                   </div>
 
                   {/* Trip Details Preview */}
@@ -4964,7 +4969,7 @@ function MobileAppPageContent() {
                     className="w-full h-11 rounded-2xl text-xs text-red-600 border-red-200 hover:bg-red-50 font-bold shadow-xs cursor-pointer active:scale-95 transition-transform"
                     onClick={handleInstantCancelSearch}
                   >
-                    ❌ রাইড রিকোয়েস্ট বাতিল করুন
+                    ✕ রাইড রিকোয়েস্ট বাতিল করুন
                   </Button>
                 </div>
               ) : (

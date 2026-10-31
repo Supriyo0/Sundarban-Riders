@@ -2933,13 +2933,13 @@ export function InteractiveBookingMap({
 
                   <div className="text-right shrink-0">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      আনুমানিক (Anumanik)
+                      প্রস্তাবিত ভাড়া
                     </span>
                     <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
-                      {isCalculatingRoute ? "₹--" : `₹${fareResult.totalFare}.00`}
+                      {isCalculatingRoute ? "₹--" : `Est. ₹${fareResult.totalFare}.00`}
                     </div>
                     <span className="text-[9px] sm:text-[9.5px] font-bold text-slate-500 block">
-                      {isCalculatingRoute ? "⏳ Calculating..." : distanceKm > 0 ? `${distanceKm} km` : "আনুমানিক বেস: ₹30"}
+                      (Driver proposed fare)
                     </span>
                   </div>
                 </div>
@@ -2965,16 +2965,16 @@ export function InteractiveBookingMap({
                       <span>Passenger Limit:</span>
                     </div>
                     <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full">
-                      সর্বোচ্চ ৪ জন যাত্রী • কোনো অতিরিক্ত চার্জ নেই
+                      সর্বোচ্চ ৪ জন (সরকারি নিয়মে অনুমোদিত)
                     </span>
                   </div>
 
                   <div className="grid grid-cols-4 gap-1.5">
                     {[
-                      { cnt: 1, label: "1 Rider", tag: "No Extra Cost" },
-                      { cnt: 2, label: "2 Riders", tag: "No Extra Cost" },
-                      { cnt: 3, label: "3 Riders", tag: "No Extra Cost" },
-                      { cnt: 4, label: "4 Riders", tag: "Max Limit" },
+                      { cnt: 1, label: "1 Rider", tag: "অনুমোদিত" },
+                      { cnt: 2, label: "2 Riders", tag: "অনুমোদিত" },
+                      { cnt: 3, label: "3 Riders", tag: "অনুমোদিত" },
+                      { cnt: 4, label: "4 Riders", tag: "সর্বোচ্চ ৪ জন" },
                     ].map((item) => {
                       const isSelected = passengerCount === item.cnt;
                       return (
@@ -3008,10 +3008,10 @@ export function InteractiveBookingMap({
                 {/* Payment Mode */}
                 <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
                   <span className="flex items-center gap-1 font-bold text-slate-700">
-                    <span>💵 Payment:</span> Cash / UPI at destination
+                    <span>💵</span> Pay directly to Driver (Cash/UPI)
                   </span>
-                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                    ✓ পারস্পরিক নির্ধারিত লোকাল ভাড়া (Parosporik Nirdharito Local Vara)
+                  <span className="text-emerald-700 font-bold flex items-center gap-1">
+                    ✓ Mutual Local Fare
                   </span>
                 </div>
 
@@ -3039,7 +3039,7 @@ export function InteractiveBookingMap({
                       ? "⏳ Calculating road route & fare..."
                       : !hasValidPickup
                       ? "⚠️ Please select pickup location first"
-                      : `🛺 Request Ride • আনুমানিক ₹${fareResult.totalFare}.00`}
+                      : `🛺 Request Ride (Est. ₹${fareResult.totalFare}.00)`}
                   </span>
                 </Button>
               </>

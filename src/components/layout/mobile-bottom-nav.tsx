@@ -19,7 +19,7 @@ export function MobileBottomNav({
   const tabs = [
     {
       id: "home" as const,
-      label: role === "rider" ? "ডিউটি" : "রাইড বুক",
+      label: role === "rider" ? "ডিউটি" : "রাইড রিকোয়েস্ট",
       icon: Car,
       activeColor: "from-emerald-500/25 to-teal-500/10",
       textColor: "text-emerald-800",
@@ -27,7 +27,7 @@ export function MobileBottomNav({
     },
     {
       id: "trips" as const,
-      label: "হিস্ট্রি",
+      label: "ট্রিপ হিস্ট্রি",
       icon: History,
       activeColor: "from-purple-500/25 to-indigo-500/10",
       textColor: "text-purple-800",
@@ -35,7 +35,7 @@ export function MobileBottomNav({
     },
     {
       id: "safety" as const,
-      label: "সুরক্ষা",
+      label: "জরুরি সহায়তা",
       icon: Shield,
       activeColor: "from-rose-500/25 to-red-500/10",
       textColor: "text-red-700",

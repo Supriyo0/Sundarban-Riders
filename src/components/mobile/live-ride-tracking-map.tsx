@@ -580,7 +580,9 @@ export function LiveRideTrackingMap({
 
   const driverPhone = (booking?.driver_phone || booking?.driverPhone || "9593177885").replace(/\D/g, "").slice(-10);
   const otp = booking?.start_otp || booking?.startOtp || "";
-  const totoNum = booking?.toto_number || booking?.totoNumber || booking?.uniqueId || "WB-96-T-8421";
+  const bAny = booking as any;
+  const driverUid = bAny?.unique_id || bAny?.uniqueId || bAny?.feedback?.unique_id || bAny?.feedback?.driver_unique_id || "";
+  const totoNum = bAny?.toto_number || bAny?.totoNumber || bAny?.feedback?.toto_number || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
   const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : tripFare;
   const displayKm = effectiveRideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
@@ -877,8 +879,8 @@ export function LiveRideTrackingMap({
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="text-xs font-black text-slate-900 truncate">{driverName}</p>
-                    <span className="text-[9px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
-                      {totoNum}
+                    <span className="text-[9px] font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">
+                      {driverUid || totoNum} • স্বাধীন চালক
                     </span>
                   </div>
                   <p className="text-[10.5px] font-bold text-emerald-600 truncate mt-0.5">
@@ -1010,9 +1012,14 @@ export function LiveRideTrackingMap({
                         <h3 className="text-sm font-black text-slate-900">{driverName}</h3>
                         <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">★ 4.9</span>
                       </div>
-                      <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
-                        {totoNum}
-                      </span>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
+                          {driverUid ? `${driverUid} (${totoNum})` : totoNum}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-lg border border-emerald-300">
+                          স্বাধীন চালক
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1041,17 +1048,22 @@ export function LiveRideTrackingMap({
 
                 {/* Ride OTP + Fare row */}
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-amber-50 border-2 border-amber-300 p-3 rounded-2xl flex items-center gap-2.5 shadow-2xs">
-                    <KeyRound className="w-5 h-5 text-amber-600 shrink-0" />
-                    <div>
-                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
-                      <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                  <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-2xl flex flex-col justify-between shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                      <div>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
+                        <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                      </div>
                     </div>
+                    <span className="text-[8.5px] font-bold text-amber-900/90 leading-tight mt-1.5 block">
+                      ⚠️ টোটো চালক পৌঁছানোর পর ওটিপি দিন
+                    </span>
                   </div>
-                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl flex items-center justify-between">
+                  <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between">
                     <div>
                       <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
-                        {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "নির্ধারিত ভাড়া"}
+                        {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "প্রস্তাবিত ভাড়া (Mutual Fare)"}
                       </span>
                       <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
                     </div>
@@ -1087,10 +1099,10 @@ export function LiveRideTrackingMap({
                   <button
                     type="button"
                     onClick={onCancelRide}
-                    className="w-full py-3 rounded-2xl border-2 border-red-200 text-red-600 text-sm font-bold hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-2.5 rounded-2xl border-2 border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
-                    রাইড বাতিল করুন
+                    ✕ রাইড রিকোয়েস্ট বাতিল করুন
                   </button>
                 )}
               </div>

@@ -160,31 +160,62 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
     if (booking.customer_phone) {
       const custPhone = formatWhatsAppPhone(booking.customer_phone);
       let driverUid = driver.unique_id || "";
-      if (!driverUid && driver.id) {
+      let driverToto = driver.toto_number || driver.vehicle_number || "";
+      let driverName = driver.name || "";
+      let driverPhone = driver.phone || "";
+
+      // Fetch driver record by driver.id or driver.phone
+      let dRec: any = null;
+      if (driver.id) {
         try {
-          const { data: dRec } = await admin.from("drivers").select("unique_id, current_location_name, phone").eq("id", driver.id).maybeSingle();
-          if (dRec) {
-            driverUid = dRec.unique_id || "";
-            if (!driverUid && dRec.current_location_name) {
-              try {
-                const m = JSON.parse(dRec.current_location_name);
-                if (m.unique_id) driverUid = m.unique_id;
-              } catch {}
-            }
-          }
+          const { data } = await admin
+            .from("drivers")
+            .select("id, unique_id, toto_number, vehicle_number, name, phone, current_location_name")
+            .eq("id", driver.id)
+            .maybeSingle();
+          dRec = data;
         } catch {}
       }
+      if (!dRec && driver.phone) {
+        const cleanP = driver.phone.replace(/\D/g, "").slice(-10);
+        if (cleanP) {
+          try {
+            const { data } = await admin
+              .from("drivers")
+              .select("id, unique_id, toto_number, vehicle_number, name, phone, current_location_name")
+              .or(`phone.eq.${cleanP},phone.eq.91${cleanP},phone.eq.+91${cleanP},phone.ilike.%${cleanP}%`)
+              .limit(1)
+              .maybeSingle();
+            dRec = data;
+          } catch {}
+        }
+      }
+
+      if (dRec) {
+        if (!driverUid && dRec.unique_id) driverUid = dRec.unique_id;
+        if (!driverToto && (dRec.toto_number || dRec.vehicle_number)) driverToto = dRec.toto_number || dRec.vehicle_number;
+        if (!driverName && dRec.name) driverName = dRec.name;
+        if (!driverPhone && dRec.phone) driverPhone = dRec.phone;
+        if (!driverUid && dRec.current_location_name) {
+          try {
+            const m = JSON.parse(dRec.current_location_name);
+            if (m.unique_id) driverUid = m.unique_id;
+          } catch {}
+        }
+      }
+
       if (!driverUid && driver.current_location_name) {
         try {
           const m = JSON.parse(driver.current_location_name);
           if (m.unique_id) driverUid = m.unique_id;
         } catch {}
       }
-      if (!driverUid && driver.phone) {
-        const cleanP = driver.phone.replace(/\D/g, "");
-        if (cleanP) driverUid = `SR-${cleanP.slice(-4)}`;
-      }
-      const driverBadge = driverUid || "SR-DRV";
+
+      const finalDriverUid = driverUid || "SR/KAK/0020";
+      const finalTotoNumber = driverToto || "WB-96-T-8421";
+      const finalDriverName = driverName || "সুন্দরবন চালক";
+      const finalDriverPhone = driverPhone || "9547110730";
+
       const meta = getBookingMeta(booking);
       const seedDigits = (booking.booking_number || booking.id || "").replace(/\D/g, "").slice(-4);
       const startOtp = (meta.start_otp || (seedDigits.length === 4 ? seedDigits : "5821")).toString();
@@ -192,11 +223,11 @@ async function notifyRideAccepted(admin: SupabaseClient, booking: any, driver: a
       const bodyText = await getCustomWhatsAppMessage(admin, "passenger_ride_assigned", {
         booking_id: booking.booking_number || booking.id,
         booking_number: booking.booking_number || booking.id,
-        driver_name: driver.name || "সুন্দরবন চালক",
-        driver_phone: driver.phone || "9593177885",
-        driver_id: driverBadge,
-        unique_id: driverBadge,
-        toto_number: driver.toto_number || driver.vehicle_number || driverBadge,
+        driver_name: finalDriverName,
+        driver_phone: finalDriverPhone,
+        driver_id: finalDriverUid,
+        unique_id: finalDriverUid,
+        toto_number: finalTotoNumber,
         pickup_location: booking.pickup_location || "পিকআপ পয়েন্ট",
         drop_location: booking.drop_location || "গন্তব্য পয়েন্ট",
         start_otp: startOtp,
@@ -226,9 +257,28 @@ async function notifyTripStarted(admin: SupabaseClient, booking: any) {
     const { phoneNumberId, accessToken } = cfg;
     const custPhone = formatWhatsAppPhone(booking.customer_phone);
 
+    const meta = getBookingMeta(booking);
+    let driverName = meta.driver_name || "";
+    if (!driverName && booking.driver_id) {
+      try {
+        const { data: dRec } = await admin.from("drivers").select("name").eq("id", booking.driver_id).maybeSingle();
+        if (dRec?.name) driverName = dRec.name;
+      } catch {}
+    }
+    if (!driverName && booking.driver_phone) {
+      try {
+        const cleanP = booking.driver_phone.replace(/\D/g, "").slice(-10);
+        const { data: dRec } = await admin.from("drivers").select("name").ilike("phone", `%${cleanP}%`).maybeSingle();
+        if (dRec?.name) driverName = dRec.name;
+      } catch {}
+    }
+    if (!driverName) driverName = "সুন্দরবন চালক";
+
     const text = await getCustomWhatsAppMessage(admin, "passenger_trip_started", {
-      booking_number: booking.booking_number,
-      driver_name: booking.driver_name || "সুন্দরবন চালক",
+      booking_number: booking.booking_number || booking.id,
+      driver_name: `${driverName} (স্বাধীন চালক)`,
+      helpline: "8348122122",
+      sos_number: "8348122122 / 112",
     });
 
     await sendTextMessage({
@@ -643,6 +693,10 @@ function enrichBookingCoords(booking: any) {
     trip_start_time: meta.trip_start_time || null,
     tripStartTime: meta.trip_start_time || null,
     is_metered: isMeteredTrip,
+    driver_name: meta.driver_name || booking.driver_name || booking.drivers?.name || "সুন্দরবন চালক",
+    driver_phone: meta.driver_phone || booking.driver_phone || booking.drivers?.phone || "",
+    toto_number: meta.toto_number || booking.toto_number || booking.drivers?.toto_number || booking.drivers?.vehicle_number || "WB-96-T-8421",
+    unique_id: meta.driver_unique_id || meta.unique_id || booking.unique_id || booking.drivers?.unique_id || "",
   };
 }
 
@@ -1330,9 +1384,9 @@ export async function PATCH(request: Request) {
     const action = body.action;
     const bookingId = body.bookingId || body.booking_id || body.id;
     const driverId = body.driverId || body.driver_id;
-    const driverName = body.driverName || body.driver_name;
+    let driverName = body.driverName || body.driver_name;
     const driverPhone = body.driverPhone || body.driver_phone || body.phone;
-    const totoNumber = body.totoNumber || body.toto_number;
+    let totoNumber = body.totoNumber || body.toto_number;
     const phone = body.phone || body.customer_phone || body.customerPhone;
 
     const admin = supabaseAdmin();
@@ -1392,21 +1446,32 @@ export async function PATCH(request: Request) {
 
       // Resolve valid UUID for driver_id that exists in drivers table (satisfies bookings_driver_id_fkey)
       let validDriverId: string | null = null;
+      let resolvedUniqueId: string = "";
       if (driverId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(driverId)) {
-        const { data: existing } = await admin.from("drivers").select("id").eq("id", driverId).maybeSingle();
+        const { data: existing } = await admin
+          .from("drivers")
+          .select("id, unique_id, toto_number, vehicle_number, name, phone")
+          .eq("id", driverId)
+          .maybeSingle();
         if (existing?.id) {
           validDriverId = existing.id;
+          if (existing.unique_id) resolvedUniqueId = existing.unique_id;
+          if (!driverName && existing.name) driverName = existing.name;
+          if (!totoNumber && (existing.toto_number || existing.vehicle_number)) totoNumber = existing.toto_number || existing.vehicle_number;
         }
       }
 
       if (!validDriverId && cleanPhone) {
         const { data: foundDrivers } = await admin
           .from("drivers")
-          .select("id")
+          .select("id, unique_id, toto_number, vehicle_number, name, phone")
           .or(`phone.eq.${cleanPhone},phone.eq.91${cleanPhone},phone.eq.+91${cleanPhone},phone.ilike.%${cleanPhone}%`)
           .limit(1);
         if (foundDrivers && foundDrivers.length > 0 && foundDrivers[0]?.id) {
           validDriverId = foundDrivers[0].id;
+          if (foundDrivers[0].unique_id) resolvedUniqueId = foundDrivers[0].unique_id;
+          if (!driverName && foundDrivers[0].name) driverName = foundDrivers[0].name;
+          if (!totoNumber && (foundDrivers[0].toto_number || foundDrivers[0].vehicle_number)) totoNumber = foundDrivers[0].toto_number || foundDrivers[0].vehicle_number;
         } else if (cleanPhone.length === 10) {
           try {
             const { data: newDriver } = await admin
@@ -1516,6 +1581,8 @@ export async function PATCH(request: Request) {
       const updatedFeedback = updateBookingMeta(booking.feedback, {
         start_otp: startOtp,
         driver_id: validDriverId || driverId || "",
+        driver_unique_id: resolvedUniqueId,
+        unique_id: resolvedUniqueId,
         driver_name: driverName || "সুন্দরবন চালক",
         driver_phone: driverPhone || "",
         toto_number: totoNumber || "WB-96-T-8421",
@@ -1621,6 +1688,7 @@ export async function PATCH(request: Request) {
         name: driverName,
         phone: driverPhone,
         toto_number: totoNumber,
+        unique_id: resolvedUniqueId,
         id: validDriverId,
       });
 
@@ -1632,6 +1700,7 @@ export async function PATCH(request: Request) {
           driver_name: driverName || "সুন্দরবন চালক",
           driver_phone: driverPhone || "9593177885",
           toto_number: totoNumber || "WB-96-T-8421",
+          unique_id: resolvedUniqueId,
         },
         message: "রাইড গ্রহণ সফল হয়েছে!",
       });

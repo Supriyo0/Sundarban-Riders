@@ -986,7 +986,7 @@ export async function processTotoMessage(
     driverQuery = Promise.resolve(
       supabase
         .from("drivers")
-        .select("id, name, phone, toto_number, is_active, is_available, agreed_terms, latitude, longitude, current_location_name")
+        .select("id, unique_id, name, phone, toto_number, vehicle_number, is_active, is_available, agreed_terms, latitude, longitude, current_location_name")
         .or(driverOrClause)
         .limit(1)
         .maybeSingle()
@@ -1233,6 +1233,8 @@ export async function processTotoMessage(
       ...bookingMeta,
       start_otp: startOtp,
       driver_id: driver?.id || "",
+      driver_unique_id: driver?.unique_id || "",
+      unique_id: driver?.unique_id || "",
       driver_name: driver?.name || "সুন্দরবন চালক",
       driver_phone: driver?.phone || rawPhone,
       toto_number: driver?.toto_number || driver?.vehicle_number || "WB-96-T-8421",
@@ -1303,7 +1305,8 @@ export async function processTotoMessage(
         if (m.unique_id) driverUid = m.unique_id;
       } catch {}
     }
-    const driverBadge = driverUid || driver?.toto_number || driver?.vehicle_number || "WB-96-T-8421";
+    const driverBadge = driverUid || "SR/KAK/0020";
+    const totoNum = driver?.toto_number || driver?.vehicle_number || "WB-96-T-8421";
     const fareAmount = booking.estimated_fare || bookingMeta.estimated_fare || 30;
 
     const cleanPickup = (booking.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
@@ -1313,22 +1316,21 @@ export async function processTotoMessage(
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons",
-        bodyText: `✅ আপনার রাইড নিশ্চিত হয়েছে!
+        bodyText: `✨ আপনার রাইড নিশ্চিত হয়েছে! ✨
 =======================
-🔐 যাত্রার ওটিপি (OTP): *${startOtp}*
-(চালকের সঙ্গে ওটিপি শেয়ার করে যাত্রা শুরু করুন)
-👨‍✈️ চালক: ${driver?.name || "সুন্দরবন চালক"}
-📞 মোবাইল নং: ${driver?.phone || rawPhone}
-🛺 টোটো নম্বর: ${driverBadge}
-📍 পিক-আপ: ${cleanPickup}
-🏁 গন্তব্য: ${cleanDrop}
+🆔 বুকিং আইডি: #${booking.booking_number || booking.id.slice(0, 8)}
+🛺 চালক: ${driver?.name || "সুন্দরবন চালক"} (স্বাধীন চালক)
+📞 ফোন: ${driver?.phone || rawPhone}
+🆔 চালক আইডি: ${driverBadge}
+🛺 টোটো নম্বর: ${totoNum}
 =======================
-💰 ভাড়া সংক্রান্ত তথ্য:
-সুন্দরবন রাইডার কোনো ভাড়া নির্ধারণ, নিয়ন্ত্রণ বা অনুমোদন করে না। ট্রিপের ভাড়া সম্পূর্ণ চালকের নিজস্ব নির্ধারিত এবং ট্রিপ শেষে চালকের অ্যাপে প্রদর্শিত হিসাব অনুযায়ী চালকের সাথে সরাসরি মিটিয়ে নেবেন।
-⚠️ সুরক্ষা ও ট্রাফিক নিয়ম:
-টোটোতে চালকসহ সর্বোচ্চ ৫ জন (৪ জন যাত্রী + ১ জন চালক) বহন করা এবং সমস্ত ট্রাফিক আইন ও সরকারি বিধি মেনে চলা চালক ও যাত্রী উভয়েরই যৌথ আইনি দায়িত্ব। নিয়ম মেনে নিরাপদ যাত্রা নিশ্চিত করুন।
+🔐 রাইড শুরুর ওটিপি: *${startOtp}*
+(চালক পিকআপে পৌঁছালে যাত্রা শুরু করতে এই ওটিপিটি চালককে দিন)
+=======================
+চালক কিছুক্ষণের মধ্যেই আপনার পিকআপ অবস্থানে পৌঁছাবেন।
 
-সুন্দরবন রাইডার ব্যবহার করার জন্য আপনাকে ধন্যবাদ!`,
+💰 প্রস্তাবিত ভাড়া (Mutual Fare): চালকের মিটার অনুযায়ী সরাসরি চালককে প্রদান করবেন।
+⚠️ সরকারি নিয়মে টোটোতে চালকসহ সর্বোচ্চ ৫ জন অনুমোদিত।`,
         buttons: [
           { id: `cancel_ride_${booking.id || booking.booking_number}`, title: "❌ বুকিং বাতিল" },
         ],

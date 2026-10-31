@@ -393,12 +393,9 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: unknown[]
 }) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
+  console.log(`[STATUS_UPDATE] id=${status.id} to=${status.recipient_id} status=${status.status}`, status.errors ? `errors=${JSON.stringify(status.errors)}` : '')
   const { error: msgErr } = await supabaseAdmin()
     .from('messages')
     .update({ status: status.status })
@@ -616,6 +613,8 @@ async function processMessage(
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 
+  console.log(`[INBOUND] from=${message.from} (${contact.profile?.name}) type=${message.type} text="${message.text?.body || ''}" button="${message.interactive?.button_reply?.title || message.button?.text || ''}" payload="${message.interactive?.button_reply?.id || message.button?.payload || ''}"`)
+
   // ============================================================
   // FAST-PATH: Dispatch Toto WhatsApp Bot reply IMMEDIATELY (<200ms)
   // We send the reply to WhatsApp immediately so the user gets instant response
@@ -638,7 +637,12 @@ async function processMessage(
         location: message.location,
       })
 
-      if (!totoAction) return null
+      if (!totoAction) {
+        console.log(`[TOTO_BOT] No action returned for from=${message.from}`)
+        return null
+      }
+
+      console.log(`[TOTO_BOT:DISPATCH] to=${totoAction.toPhone} type=${totoAction.type} buttons=${totoAction.buttons?.map(b => b.title).join('|') || 'none'}`)
 
       let metaMessageId: string | null = null
       const recipientPhone = totoAction.toPhone.replace(/[^0-9]/g, '')

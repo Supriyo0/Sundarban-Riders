@@ -292,6 +292,23 @@ async function notifyTripStarted(admin: SupabaseClient, booking: any) {
   }
 }
 
+function formatKolkataDateTime(dateInput?: string | Date | null): string {
+  const d = dateInput ? new Date(dateInput) : new Date();
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  };
+  return new Intl.DateTimeFormat("en-GB", options)
+    .format(validDate)
+    .replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
+}
+
 async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
   try {
     if (!booking.customer_phone) return;
@@ -306,16 +323,71 @@ async function notifyTripCompleted(admin: SupabaseClient, booking: any) {
       : (typeof meta.actual_distance_km === "number"
           ? meta.actual_distance_km
           : (parseFloat(booking.actual_distance_km || meta.actual_distance_km || "0") || 0));
-    const actualDist = actualDistNum.toFixed(2);
-    const finalFare = booking.final_fare || meta.final_fare || meta.calculated_fare || booking.estimated_fare || 25;
-    const driverName = booking.driver_name || booking.drivers?.name || meta.driver_name || "সুন্দরবন চালক";
+    const actualDist = actualDistNum.toFixed(1);
+    const finalFare = Math.round(parseFloat(booking.final_fare || meta.final_fare || meta.calculated_fare || booking.estimated_fare || 25));
+
+    let totoNumber = booking.toto_number || "";
+    let driverPhone = booking.driver_phone || "";
+    let driverName = booking.driver_name || booking.drivers?.name || meta.driver_name || "সুন্দরবন চালক";
+
+    if ((!totoNumber || !driverPhone) && booking.driver_id) {
+      try {
+        const { data: dRow } = await admin
+          .from("drivers")
+          .select("name, phone, toto_number, unique_id")
+          .eq("id", booking.driver_id)
+          .maybeSingle();
+        if (dRow) {
+          if (!totoNumber) totoNumber = dRow.toto_number || dRow.unique_id || "";
+          if (!driverPhone) driverPhone = dRow.phone || "";
+          if (driverName === "সুন্দরবন চালক" && dRow.name) driverName = dRow.name;
+        }
+      } catch {}
+    }
+    if (!totoNumber) totoNumber = "WB-S12-2233";
+
+    const cleanCustPhone = (booking.customer_phone || "").replace(/\D/g, "");
+    const displayCustomerPhone = cleanCustPhone.length >= 10 ? cleanCustPhone.slice(-10) : (booking.customer_phone || "");
+    const cleanDrvPhone = (driverPhone || "").replace(/\D/g, "");
+    const displayDriverPhone = cleanDrvPhone || driverPhone || "916295386247";
+
+    const rawBookingNo = (booking.booking_number || booking.id || "").toString().replace(/^#/, "");
+    const formattedBookingNo = rawBookingNo.startsWith("SR-") ? rawBookingNo : `SR-${rawBookingNo}`;
+
+    const cleanPickup = (booking.pickup_location || "পিকআপ পয়েন্ট").replace(/\s*\(GPS:[^)]*\)/i, "").trim();
+    const cleanDrop = (booking.drop_location || "গন্তব্য").replace(/\s*\(GPS:[^)]*\)/i, "").trim();
+
+    const estDistNum = parseFloat(booking.estimated_distance_km || meta.estimated_distance_km || "0") || actualDistNum || 5.1;
+    const estFareNum = Math.round(parseFloat(booking.estimated_fare || meta.estimated_fare || "0") || finalFare);
+
+    let durationMinutes = 6;
+    if (booking.started_at && booking.completed_at) {
+      const diffMs = new Date(booking.completed_at).getTime() - new Date(booking.started_at).getTime();
+      if (diffMs > 0) durationMinutes = Math.max(1, Math.round(diffMs / 60000));
+    } else if (booking.created_at) {
+      const diffMs = Date.now() - new Date(booking.created_at).getTime();
+      if (diffMs > 0) durationMinutes = Math.max(1, Math.min(120, Math.round(diffMs / 60000)));
+    }
+
+    const completedAtStr = formatKolkataDateTime(booking.completed_at || new Date());
 
     const bodyText = await getCustomWhatsAppMessage(admin, "passenger_trip_completed", {
-      booking_number: booking.booking_number || booking.id,
-      distance_km: actualDist,
-      final_fare: finalFare,
-      drop_location: booking.drop_location || "গন্তব্য",
+      booking_number: formattedBookingNo,
+      completed_at: completedAtStr,
+      customer_name: booking.customer_name || "যাত্রী",
+      customer_phone: displayCustomerPhone,
       driver_name: driverName,
+      toto_number: totoNumber,
+      driver_phone: displayDriverPhone,
+      pickup_location: cleanPickup,
+      drop_location: cleanDrop,
+      estimated_distance_km: estDistNum.toFixed(1),
+      estimated_fare: estFareNum,
+      actual_distance_km: actualDist,
+      duration_minutes: durationMinutes,
+      final_fare: finalFare,
+      // Backward compatibility variables
+      distance_km: actualDist,
     });
 
     try {

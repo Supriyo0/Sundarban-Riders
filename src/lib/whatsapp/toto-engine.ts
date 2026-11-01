@@ -1652,18 +1652,60 @@ export async function processTotoMessage(
     const cleanPickup = (booking?.pickup_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "পিকআপ লোকেশন";
     const cleanDrop = (booking?.drop_location || "").replace(/\s*\(GPS:[^)]*\)/i, "").trim() || "গন্তব্য";
 
+    const rawBookingNo = (booking?.booking_number || bookingId.slice(0, 8)).replace(/^#/, "");
+    const formattedBookingNo = rawBookingNo.startsWith("SR-") ? rawBookingNo : `SR-${rawBookingNo}`;
+    const cleanCustPhone = (booking?.customer_phone || "").replace(/\D/g, "");
+    const displayCustomerPhone = cleanCustPhone.length >= 10 ? cleanCustPhone.slice(-10) : (booking?.customer_phone || "");
+    const cleanDrvPhone = (driver?.phone || rawPhone || "").replace(/\D/g, "");
+    const displayDriverPhone = cleanDrvPhone.length >= 10 ? cleanDrvPhone.slice(-10) : (driver?.phone || rawPhone || "");
+    const totoNumber = driver?.toto_number || booking?.toto_number || "WB-S12-2233";
+    const driverName = driver?.name || booking?.driver_name || "সুন্দরবন চালক";
+
+    const completedAtStr = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    }).format(new Date()).replace(/\b(AM|PM)\b/i, (m) => m.toLowerCase());
+
+    const estDist = (parseFloat(booking?.estimated_distance_km || meta?.estimated_distance_km || distKm) || 5.1).toFixed(1);
+    const estFare = Math.round(parseFloat(booking?.estimated_fare || meta?.estimated_fare || finalFare) || finalFare);
+
+    let durationMinutes = 6;
+    if (booking?.started_at) {
+      const diffMs = Date.now() - new Date(booking.started_at).getTime();
+      if (diffMs > 0) durationMinutes = Math.max(1, Math.min(120, Math.round(diffMs / 60000)));
+    }
+
+    const passengerReceiptText = `🧾 *সুন্দরবন রাইডার্স — ডিজিটাল রসিদ ও ট্রিপ সারাংশ*
+==============================
+🆔 রাইড নং: #${formattedBookingNo}
+📅 তারিখ ও সময়: ${completedAtStr}
+👤 যাত্রী: ${booking?.customer_name || "যাত্রী"}
+📞 ফোন: ${displayCustomerPhone}
+🛺 চালক: ${driverName}
+🛺 (${totoNumber})
+📞 ফোন: ${displayDriverPhone}
+
+📍 *পিকআপ:* ${cleanPickup}
+🏁 *গন্তব্য:* ${cleanDrop}
+📌 *প্রাথমিক বুকিং অনুমান:* ${estDist} কিমি (আনুমানিক ₹${estFare}.০০)
+📏 *প্রকৃত ভ্রমণ দূরত্ব (ওডোমিটার):* ${distKm} কিমি
+⏱️ *মোট ভ্রমণের সময়:* ~${durationMinutes} মিনিট
+
+💵 *ভাড়ার বিবরণ:*
+- প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹${finalFare}.০০ (ড্রাইভার সংগৃহীত)
+==============================
+সুন্দরবন রাইডার্সের সাথে ভ্রমণ করার জন্য ধন্যবাদ!`;
+
     const extraNotifications = booking?.customer_phone ? [
       {
         toPhone: booking.customer_phone,
         type: "interactive_buttons" as const,
-        bodyText: `🎉 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে!
-=======================
-🏁 গন্তব্য: ${cleanDrop}
-💰 মোট প্রদেয় ভাড়া: ₹${finalFare}.০০
-=======================
-ℹ️ ভাড়ার এই হিসাবটি চালকের নিজস্ব এবং তাঁর অ্যাপ থেকে সরাসরি প্রদর্শিত। "সুন্দরবন রাইডার" কেবল ডিজিটাল প্রযুক্তি মধ্যস্থতাকারী (IT  Enabler); তাই নগদ বা UPI-এর মাধ্যমে ভাড়া সরাসরি চালককেই প্রদান করুন।
-
-আপনার মূল্যবান অভিজ্ঞতা ও সেবার মান উন্নত রাখতে নিচের অপশন বেছে নিন:`,
+        bodyText: passengerReceiptText,
         buttons: [
           { id: `give_review_${booking.id}`, title: "⭐ চালককে রেটিং দিন" },
           { id: "customer_complaint", title: "📝 অভিযোগ বা মতামত" },
@@ -1771,7 +1813,15 @@ export async function processTotoMessage(
         updatedAt: Date.now(),
       });
 
+      let prevMeta: Record<string, unknown> = {};
+      if (driver?.current_location_name) {
+        try {
+          prevMeta = JSON.parse(driver.current_location_name);
+        } catch {}
+      }
+
       const metaObj = {
+        ...prevMeta,
         name: locName,
         lat,
         lng,

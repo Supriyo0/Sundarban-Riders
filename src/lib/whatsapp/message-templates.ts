@@ -177,18 +177,45 @@ export const ALL_WHATSAPP_TEMPLATES: WhatsAppTemplateDefinition[] = [
   },
   {
     key: "passenger_trip_completed",
-    nameBengali: "ডিজিটাল রসিদ ও ট্রিপ সমাপ্তি",
+    nameBengali: "ডিজিটাল রসিদ ও ট্রিপ সারাংশ",
     category: "customer_ride",
-    description: "গন্তব্যে পৌঁছালে দূরত্ব ও চূড়ান্ত সংগৃহীত ভাড়া সহ রসিদ।",
-    variables: ["{{booking_number}}", "{{drop_location}}", "{{final_fare}}"],
-    defaultText: `🎉 আপনার যাত্রা সফলভাবে সম্পন্ন হয়েছে!
-=======================
-🏁 গন্তব্য: {{drop_location}}
-💰 মোট প্রদেয় ভাড়া: ₹{{final_fare}}
-=======================
-ℹ️ ভাড়ার এই হিসাবটি চালকের নিজস্ব এবং তাঁর অ্যাপ থেকে সরাসরি প্রদর্শিত। "সুন্দরবন রাইডার" কেবল ডিজিটাল প্রযুক্তি মধ্যস্থতাকারী (IT  Enabler); তাই নগদ বা UPI-এর মাধ্যমে ভাড়া সরাসরি চালককেই প্রদান করুন।
+    description: "গন্তব্যে পৌঁছালে দূরত্ব ও চূড়ান্ত সংগৃহীত ভাড়া সহ ডিজিটাল রসিদ ও ট্রিপ সারাংশ।",
+    variables: [
+      "{{booking_number}}",
+      "{{completed_at}}",
+      "{{customer_name}}",
+      "{{customer_phone}}",
+      "{{driver_name}}",
+      "{{toto_number}}",
+      "{{driver_phone}}",
+      "{{pickup_location}}",
+      "{{drop_location}}",
+      "{{estimated_distance_km}}",
+      "{{estimated_fare}}",
+      "{{actual_distance_km}}",
+      "{{duration_minutes}}",
+      "{{final_fare}}"
+    ],
+    defaultText: `🧾 *সুন্দরবন রাইডার্স — ডিজিটাল রসিদ ও ট্রিপ সারাংশ*
+==============================
+🆔 রাইড নং: #{{booking_number}}
+📅 তারিখ ও সময়: {{completed_at}}
+👤 যাত্রী: {{customer_name}}
+📞 ফোন: {{customer_phone}}
+🛺 চালক: {{driver_name}}
+🛺 ({{toto_number}})
+📞 ফোন: {{driver_phone}}
 
-আপনার মূল্যবান অভিজ্ঞতা ও সেবার মান উন্নত রাখতে নিচের অপশন বেছে নিন:`,
+📍 *পিকআপ:* {{pickup_location}}
+🏁 *গন্তব্য:* {{drop_location}}
+📌 *প্রাথমিক বুকিং অনুমান:* {{estimated_distance_km}} কিমি (আনুমানিক ₹{{estimated_fare}}.০০)
+📏 *প্রকৃত ভ্রমণ দূরত্ব (ওডোমিটার):* {{actual_distance_km}} কিমি
+⏱️ *মোট ভ্রমণের সময়:* ~{{duration_minutes}} মিনিট
+
+💵 *ভাড়ার বিবরণ:*
+- প্রদেয় চূড়ান্ত নগদ ভাড়া: ₹{{final_fare}}.০০ (ড্রাইভার সংগৃহীত)
+==============================
+সুন্দরবন রাইডার্সের সাথে ভ্রমণ করার জন্য ধন্যবাদ!`,
   },
   {
     key: "ride_cancelled_to_passenger",

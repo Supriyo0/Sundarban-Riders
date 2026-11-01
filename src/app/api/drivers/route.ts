@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { driverLocationStates } from "@/lib/whatsapp/toto-engine";
 
+export const dynamic = "force-dynamic";
+
 let activeDriversCache: { data: any; timestamp: number } | null = null;
 const ACTIVE_DRIVERS_CACHE_TTL = 4000;
 
@@ -63,12 +65,35 @@ export async function GET(request: Request) {
           const meta = JSON.parse(d.current_location_name);
           district = district || meta.district || "";
           block = block || meta.block || "";
-          aadhar_no = aadhar_no || meta.aadhar_no || "";
-          license_no = meta.license_no || "";
+          aadhar_no = aadhar_no || meta.aadhar_no || meta.aadhar_number || meta.aadharNo || "";
+          license_no = meta.license_no || meta.license_number || meta.licenseNo || "";
           email = email || meta.email || "";
-          aadhar_card_url = meta.aadhar_card_url || "";
-          license_doc_url = meta.license_doc_url || "";
-          secondary_doc_url = meta.secondary_doc_url || meta.toto_receipt_doc_url || "";
+          aadhar_card_url =
+            meta.aadhar_card_url ||
+            meta.aadhar_url ||
+            meta.aadhar_doc ||
+            meta.aadharDoc ||
+            meta.aadhaar_card_url ||
+            meta.aadhaar_url ||
+            meta.aadhaar_doc ||
+            meta.aadharImage ||
+            "";
+          license_doc_url =
+            meta.license_doc_url ||
+            meta.license_url ||
+            meta.license_doc ||
+            meta.licenseDoc ||
+            meta.licenseImage ||
+            "";
+          secondary_doc_url =
+            meta.toto_receipt_doc_url ||
+            meta.secondary_doc_url ||
+            meta.receipt_url ||
+            meta.receipt_doc ||
+            meta.receiptDoc ||
+            meta.toto_receipt_doc ||
+            meta.receiptImage ||
+            "";
           secondary_doc_type = meta.secondary_doc_type || "toto_receipt";
           unique_id = unique_id || meta.unique_id || "";
           if ((latitude === null || isNaN(latitude)) && meta.lat) latitude = parseFloat(meta.lat);
@@ -313,7 +338,26 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Driver ID or Phone is required" }, { status: 400 });
     }
 
-    const { id, phone, is_active, is_available, latitude, longitude, current_location_name, unique_id, name, toto_number } = body;
+    const {
+      id,
+      phone,
+      is_active,
+      is_available,
+      latitude,
+      longitude,
+      current_location_name,
+      unique_id,
+      name,
+      toto_number,
+      district,
+      block,
+      aadhar_no,
+      license_no,
+      email,
+      aadhar_card_url,
+      toto_receipt_doc_url,
+      license_doc_url,
+    } = body;
     const admin = supabaseAdmin();
 
     const updates: Record<string, unknown> = {
@@ -329,32 +373,84 @@ export async function PATCH(request: Request) {
     if (typeof longitude === "number" || (typeof longitude === "string" && !isNaN(Number(longitude)))) {
       updates.longitude = Number(longitude);
     }
+
+    // Fetch existing driver to merge metadata and ensure KYC documents are NEVER lost
+    let existingMeta: Record<string, unknown> = {};
+    if (id || phone) {
+      try {
+        let findQ = admin.from("drivers").select("current_location_name, unique_id, phone, name, toto_number");
+        if (id) {
+          findQ = findQ.eq("id", id);
+        } else if (phone) {
+          const clean = phone.replace(/\D/g, "");
+          const last10 = clean.slice(-10);
+          findQ = findQ.or(`phone.eq.${phone},phone.eq.${clean},phone.eq.+${clean},phone.eq.${last10},phone.ilike.%${last10}`);
+        }
+        const { data: ex } = await findQ.maybeSingle();
+        if (ex?.current_location_name) {
+          try {
+            existingMeta = JSON.parse(ex.current_location_name);
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // Parse any incoming current_location_name
+    let incomingLocationObj: Record<string, unknown> = {};
     if (current_location_name) {
-      updates.current_location_name = current_location_name;
+      try {
+        incomingLocationObj = typeof current_location_name === "string" ? JSON.parse(current_location_name) : current_location_name;
+      } catch {
+        incomingLocationObj = { name: current_location_name };
+      }
+    }
+
+    // Collect KYC / document updates
+    const kycUpdates: Record<string, unknown> = {};
+    if (aadhar_card_url !== undefined) {
+      kycUpdates.aadhar_card_url = aadhar_card_url;
+      kycUpdates.aadhar_url = aadhar_card_url;
+    }
+    if (toto_receipt_doc_url !== undefined) {
+      kycUpdates.toto_receipt_doc_url = toto_receipt_doc_url;
+      kycUpdates.secondary_doc_url = toto_receipt_doc_url;
+      kycUpdates.secondary_doc_type = "toto_receipt";
+    }
+    if (license_doc_url !== undefined) {
+      kycUpdates.license_doc_url = license_doc_url;
+    }
+    if (aadhar_no !== undefined) {
+      kycUpdates.aadhar_no = aadhar_no;
+      updates.license_number = aadhar_no;
+    }
+    if (license_no !== undefined) {
+      kycUpdates.license_no = license_no;
+    }
+    if (district !== undefined) {
+      kycUpdates.district = district;
+    }
+    if (block !== undefined) {
+      kycUpdates.block = block;
+    }
+    if (email !== undefined) {
+      kycUpdates.email = email;
     }
 
     // Handle unique_id update
     if (unique_id && typeof unique_id === "string") {
       const cleanUid = unique_id.trim().toUpperCase();
       updates.unique_id = cleanUid;
+      kycUpdates.unique_id = cleanUid;
+    }
 
-      // Also ensure meta has unique_id
-      try {
-        let meta: Record<string, unknown> = {};
-        if (current_location_name) {
-          meta = JSON.parse(current_location_name);
-        } else {
-          // Fetch existing to preserve meta
-          let findQ = admin.from("drivers").select("current_location_name");
-          if (id) findQ = findQ.eq("id", id);
-          const { data: ex } = await findQ.maybeSingle();
-          if (ex?.current_location_name) {
-            meta = JSON.parse(ex.current_location_name);
-          }
-        }
-        meta.unique_id = cleanUid;
-        updates.current_location_name = JSON.stringify(meta);
-      } catch {}
+    // Merge everything so existing documents/KYC data are safely preserved
+    if (current_location_name || Object.keys(kycUpdates).length > 0) {
+      const mergedMeta = {
+        ...existingMeta,
+        ...incomingLocationObj,
+        ...kycUpdates,
+      };
+      updates.current_location_name = JSON.stringify(mergedMeta);
     }
 
     let updateQuery = admin.from("drivers").update(updates);

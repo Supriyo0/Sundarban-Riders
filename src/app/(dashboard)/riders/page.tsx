@@ -21,6 +21,8 @@ import {
   Upload,
   Trash2,
   Pencil,
+  Eye,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +113,86 @@ export default function RidersPage() {
   const [editTotoNumber, setEditTotoNumber] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Document Viewer & Manager Dialog State (Always accessible for all drivers)
+  const [isDocViewerOpen, setIsDocViewerOpen] = useState(false);
+  const [docDriver, setDocDriver] = useState<Driver | null>(null);
+  const [docAadharUrl, setDocAadharUrl] = useState("");
+  const [docReceiptUrl, setDocReceiptUrl] = useState("");
+  const [docLicenseUrl, setDocLicenseUrl] = useState("");
+  const [docAadharNo, setDocAadharNo] = useState("");
+  const [docLicenseNo, setDocLicenseNo] = useState("");
+  const [uploadingDocType, setUploadingDocType] = useState<"aadhar" | "receipt" | "license" | null>(null);
+  const [savingDocs, setSavingDocs] = useState(false);
+  const docViewerAadharInputRef = useRef<HTMLInputElement>(null);
+  const docViewerReceiptInputRef = useRef<HTMLInputElement>(null);
+  const docViewerLicenseInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOpenDocViewer = (driver: Driver) => {
+    setDocDriver(driver);
+    setDocAadharUrl(driver.aadhar_card_url || "");
+    setDocReceiptUrl(driver.toto_receipt_doc_url || driver.secondary_doc_url || "");
+    setDocLicenseUrl(driver.license_doc_url || "");
+    setDocAadharNo(driver.aadhar_no || "");
+    setDocLicenseNo(driver.license_no || "");
+    setIsDocViewerOpen(true);
+  };
+
+  const handleDocViewerUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "aadhar" | "receipt" | "license"
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingDocType(type);
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("name", `admin_doc_${type}_${file.name}`);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const json = await res.json();
+      if (json.success && json.url) {
+        if (type === "aadhar") setDocAadharUrl(json.url);
+        if (type === "receipt") setDocReceiptUrl(json.url);
+        if (type === "license") setDocLicenseUrl(json.url);
+        toast.success("ডকুমেন্ট সফলভাবে আপলোড হয়েছে");
+      } else {
+        toast.error(json.message || "ডকুমেন্ট আপলোড ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("আপলোড ত্রুটি");
+    } finally {
+      setUploadingDocType(null);
+    }
+  };
+
+  const handleSaveDocs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docDriver) return;
+    try {
+      setSavingDocs(true);
+      const res = await fetch("/api/drivers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: docDriver.id,
+          aadhar_card_url: docAadharUrl,
+          toto_receipt_doc_url: docReceiptUrl,
+          license_doc_url: docLicenseUrl,
+          aadhar_no: docAadharNo.trim(),
+          license_no: docLicenseNo.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("সংরক্ষণ ব্যর্থ হয়েছে");
+      toast.success("চালকের ডকুমেন্টস সফলভাবে সংরক্ষিত হয়েছে!");
+      setIsDocViewerOpen(false);
+      loadDrivers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "সংরক্ষণ করা যায়নি");
+    } finally {
+      setSavingDocs(false);
+    }
+  };
+
   const handleAadharDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -191,7 +273,7 @@ export default function RidersPage() {
   const loadDrivers = async (isSilent = false) => {
     try {
       if (!isSilent && drivers.length === 0) setLoading(true);
-      const res = await fetch("/api/drivers?all=true");
+      const res = await fetch("/api/drivers?all=true", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         setDrivers(json.drivers || []);
@@ -203,21 +285,62 @@ export default function RidersPage() {
 
         if (error) throw error;
 
-        // Parse fallback metadata
+        // Parse fallback metadata thoroughly
         const parsed = ((data as Driver[]) || []).map((d) => {
           let district = d.district || "";
           let block = d.block || "";
           let aadhar_no = d.aadhar_no || d.license_number || "";
+          let license_no = d.license_no || "";
+          let aadhar_card_url = d.aadhar_card_url || "";
+          let toto_receipt_doc_url = d.toto_receipt_doc_url || d.secondary_doc_url || "";
+          let license_doc_url = d.license_doc_url || "";
+          let unique_id = d.unique_id || "";
+          let isApproved = Boolean(d.is_active);
 
-          if ((!district || !block || !aadhar_no) && d.current_location_name) {
+          if (d.current_location_name) {
             try {
               const meta = JSON.parse(d.current_location_name);
               district = district || meta.district || "";
               block = block || meta.block || "";
-              aadhar_no = aadhar_no || meta.aadhar_no || "";
+              aadhar_no = aadhar_no || meta.aadhar_no || meta.aadhar_number || "";
+              license_no = license_no || meta.license_no || meta.license_number || "";
+              aadhar_card_url =
+                aadhar_card_url ||
+                meta.aadhar_card_url ||
+                meta.aadhar_url ||
+                meta.aadhar_doc ||
+                meta.aadhaar_card_url ||
+                "";
+              toto_receipt_doc_url =
+                toto_receipt_doc_url ||
+                meta.toto_receipt_doc_url ||
+                meta.secondary_doc_url ||
+                meta.receipt_url ||
+                "";
+              license_doc_url =
+                license_doc_url ||
+                meta.license_doc_url ||
+                meta.license_url ||
+                meta.license_doc ||
+                "";
+              unique_id = unique_id || meta.unique_id || "";
+              if (meta.status === "pending_approval") isApproved = false;
+              else if (meta.status === "approved") isApproved = true;
             } catch {}
           }
-          return { ...d, district, block, aadhar_no };
+          return {
+            ...d,
+            district,
+            block,
+            aadhar_no,
+            license_no,
+            aadhar_card_url,
+            toto_receipt_doc_url,
+            secondary_doc_url: toto_receipt_doc_url,
+            license_doc_url,
+            unique_id,
+            is_approved: isApproved,
+          };
         });
 
         setDrivers(parsed);
@@ -728,11 +851,14 @@ export default function RidersPage() {
                       </div>
                     </div>
 
-                    {/* KYC Documents Links if submitted */}
-                    {(driver.aadhar_card_url || driver.toto_receipt_doc_url || driver.secondary_doc_url || driver.license_doc_url) && (
-                      <div className="mt-3 pt-3 border-t border-border/60 flex items-center gap-2 text-xs flex-wrap">
-                        <span className="text-muted-foreground font-medium">ডকুমেন্টস:</span>
-                        {driver.aadhar_card_url && (
+                    {/* KYC Documents Section - Always visible & accessible for every driver */}
+                    <div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between text-xs flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-muted-foreground font-medium flex items-center gap-1">
+                          <FileText className="h-3 w-3 text-emerald-500" />
+                          ডকুমেন্টস:
+                        </span>
+                        {driver.aadhar_card_url ? (
                           <a
                             href={driver.aadhar_card_url}
                             target="_blank"
@@ -743,8 +869,12 @@ export default function RidersPage() {
                             আধার কার্ড
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
+                            আধার নেই
+                          </span>
                         )}
-                        {(driver.toto_receipt_doc_url || driver.secondary_doc_url) && (
+                        {(driver.toto_receipt_doc_url || driver.secondary_doc_url) ? (
                           <a
                             href={driver.toto_receipt_doc_url || driver.secondary_doc_url}
                             target="_blank"
@@ -755,6 +885,10 @@ export default function RidersPage() {
                             টোটো রসিদ
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
+                            রসিদ নেই
+                          </span>
                         )}
                         {driver.license_doc_url && (
                           <a
@@ -764,12 +898,22 @@ export default function RidersPage() {
                             className="inline-flex items-center gap-1 text-blue-600 hover:underline font-semibold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20"
                           >
                             <FileText className="h-3 w-3" />
-                            ড্রাইভিং লাইসেন্স (ঐচ্ছিক)
+                            লাইসেন্স
                             <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}
                       </div>
-                    )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenDocViewer(driver)}
+                        className="h-6 px-2 text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline hover:bg-emerald-500/10 gap-1 ml-auto font-medium"
+                      >
+                        <Eye className="h-3 w-3" />
+                        ডকুমেন্টস ভিউয়ার
+                      </Button>
+                    </div>
 
                     <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
                       <div className="flex items-center gap-1.5 text-xs font-medium">
@@ -812,6 +956,15 @@ export default function RidersPage() {
                       )}
 
                       <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="চালকের ডকুমেন্টস দেখুন ও যাচাই করুন"
+                          onClick={() => handleOpenDocViewer(driver)}
+                          className="text-xs h-8 px-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1164,6 +1317,65 @@ export default function RidersPage() {
                 </div>
               </div>
 
+              {/* Document Review Section in Approve Dialog */}
+              <div className="rounded-lg bg-muted/40 p-3 space-y-2 text-xs border border-border/60">
+                <div className="flex items-center justify-between font-semibold text-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5 text-emerald-500" />
+                    চালকের আপলোডকৃত ডকুমেন্টস:
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setIsApproveOpen(false);
+                      handleOpenDocViewer(approvingDriver);
+                    }}
+                    className="h-6 px-1.5 text-[11px] text-emerald-600 hover:underline gap-1"
+                  >
+                    <Eye className="h-3 w-3" />
+                    ভিউয়ারে দেখুন
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  {approvingDriver.aadhar_card_url ? (
+                    <a
+                      href={approvingDriver.aadhar_card_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-emerald-600 hover:underline font-medium bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20"
+                    >
+                      <CheckCircle className="h-3 w-3" /> আধার কার্ড <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground/60 bg-muted px-2 py-1 rounded">আধার কার্ড জমা নেই</span>
+                  )}
+                  {(approvingDriver.toto_receipt_doc_url || approvingDriver.secondary_doc_url) ? (
+                    <a
+                      href={approvingDriver.toto_receipt_doc_url || approvingDriver.secondary_doc_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-purple-600 hover:underline font-medium bg-purple-500/10 px-2 py-1 rounded border border-purple-500/20"
+                    >
+                      <CheckCircle className="h-3 w-3" /> টোটো রসিদ <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground/60 bg-muted px-2 py-1 rounded">টোটো রসিদ জমা নেই</span>
+                  )}
+                  {approvingDriver.license_doc_url && (
+                    <a
+                      href={approvingDriver.license_doc_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-600 hover:underline font-medium bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20"
+                    >
+                      <CheckCircle className="h-3 w-3" /> লাইসেন্স <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="approveUniqueId" className="text-foreground font-semibold">
                   ইউনিক চালক আইডি (Unique Driver ID) *
@@ -1255,6 +1467,22 @@ export default function RidersPage() {
                 />
               </div>
 
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsEditOpen(false);
+                    handleOpenDocViewer(editingDriver);
+                  }}
+                  className="w-full text-xs gap-1.5 border-dashed border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  চালকের ডকুমেন্টস দেখুন ও সম্পাদনা করুন
+                </Button>
+              </div>
+
               <DialogFooter className="pt-3">
                 <Button
                   type="button"
@@ -1270,6 +1498,298 @@ export default function RidersPage() {
                   className="bg-emerald-600 text-white hover:bg-emerald-700"
                 >
                   {savingEdit ? "সংরক্ষণ হচ্ছে..." : "সংরক্ষণ করুন"}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Viewer & Manager Dialog */}
+      <Dialog open={isDocViewerOpen} onOpenChange={setIsDocViewerOpen}>
+        <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto border-border bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground flex items-center gap-2">
+              <FileText className="h-5 w-5 text-emerald-500" />
+              চালকের ভেরিফিকেশন ডকুমেন্টস
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {docDriver ? `${docDriver.name} (${docDriver.phone}) - টোটো: ${docDriver.toto_number}` : "ডকুমেন্টস প্রিভিউ"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {docDriver && (
+            <form onSubmit={handleSaveDocs} className="space-y-4 py-2">
+              <div className="flex items-center justify-between p-2.5 rounded-lg bg-muted/60 border border-border/50 text-xs">
+                <div>
+                  <span className="text-muted-foreground">ইউনিক আইডি: </span>
+                  <span className="font-mono font-bold text-foreground">{docDriver.unique_id || "বরাদ্দ হয়নি"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">স্ট্যাটাস: </span>
+                  <span className={docDriver.is_approved === false ? "text-amber-500 font-semibold" : "text-emerald-500 font-semibold"}>
+                    {docDriver.is_approved === false ? "অনুমোদনের অপেক্ষায়" : "অনুমোদিত চালক"}
+                  </span>
+                </div>
+              </div>
+
+              {/* 1. আধার কার্ড */}
+              <div className="p-3.5 rounded-xl bg-muted/30 border border-border space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-amber-500" />
+                    <Label className="font-bold text-foreground text-sm">১. আধার কার্ড (Aadhaar Card)</Label>
+                  </div>
+                  {docAadharUrl ? (
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      আপলোড সম্পন্ন ✓
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      আপলোড করা হয়নি
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="১২ সংখ্যার আধার নম্বর"
+                    value={docAadharNo}
+                    onChange={(e) => setDocAadharNo(e.target.value)}
+                    className="bg-background border-border text-foreground text-xs h-8 font-mono"
+                  />
+                  <input
+                    ref={docViewerAadharInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => handleDocViewerUpload(e, "aadhar")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingDocType === "aadhar"}
+                    onClick={() => docViewerAadharInputRef.current?.click()}
+                    className="h-8 text-xs shrink-0 gap-1.5"
+                  >
+                    {uploadingDocType === "aadhar" ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {docAadharUrl ? "পরিবর্তন" : "আপলোড"}
+                  </Button>
+                </div>
+
+                {docAadharUrl && (
+                  <div className="relative rounded-lg overflow-hidden border border-border/80 bg-background/50 p-2 flex flex-col items-center">
+                    <img
+                      src={docAadharUrl}
+                      alt="Aadhaar Preview"
+                      className="max-h-48 w-auto object-contain rounded shadow-sm"
+                    />
+                    <div className="flex items-center gap-2 mt-2">
+                      <a
+                        href={docAadharUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold bg-primary/10 px-2.5 py-1 rounded"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        পূর্ণাঙ্গ স্ক্রিনে খুলুন
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDocAadharUrl("")}
+                        className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        মুছুন
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. টোটো রসিদ */}
+              <div className="p-3.5 rounded-xl bg-muted/30 border border-border space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-purple-500" />
+                    <Label className="font-bold text-foreground text-sm">২. টোটো ক্রয় / পেমেন্ট রসিদ</Label>
+                  </div>
+                  {docReceiptUrl ? (
+                    <span className="text-[10px] font-bold text-purple-600 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                      আপলোড সম্পন্ন ✓
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      আপলোড করা হয়নি
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={docViewerReceiptInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => handleDocViewerUpload(e, "receipt")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingDocType === "receipt"}
+                    onClick={() => docViewerReceiptInputRef.current?.click()}
+                    className="h-8 text-xs shrink-0 gap-1.5"
+                  >
+                    {uploadingDocType === "receipt" ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {docReceiptUrl ? "ছবি পরিবর্তন করুন" : "রসিদের ছবি আপলোড করুন"}
+                  </Button>
+                </div>
+
+                {docReceiptUrl && (
+                  <div className="relative rounded-lg overflow-hidden border border-border/80 bg-background/50 p-2 flex flex-col items-center">
+                    <img
+                      src={docReceiptUrl}
+                      alt="Toto Receipt Preview"
+                      className="max-h-48 w-auto object-contain rounded shadow-sm"
+                    />
+                    <div className="flex items-center gap-2 mt-2">
+                      <a
+                        href={docReceiptUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-purple-600 hover:underline font-semibold bg-purple-500/10 px-2.5 py-1 rounded"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        পূর্ণাঙ্গ স্ক্রিনে খুলুন
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDocReceiptUrl("")}
+                        className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        মুছুন
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. ড্রাইভিং লাইসেন্স (ঐচ্ছিক) */}
+              <div className="p-3.5 rounded-xl bg-muted/30 border border-border space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-blue-500" />
+                    <Label className="font-bold text-foreground text-sm">৩. ড্রাইভিং লাইসেন্স (ঐচ্ছিক)</Label>
+                  </div>
+                  {docLicenseUrl ? (
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                      সংযুক্ত ✓
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                      প্রযোজ্য নয়
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="লাইসেন্স নম্বর"
+                    value={docLicenseNo}
+                    onChange={(e) => setDocLicenseNo(e.target.value)}
+                    className="bg-background border-border text-foreground text-xs h-8 font-mono"
+                  />
+                  <input
+                    ref={docViewerLicenseInputRef}
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(e) => handleDocViewerUpload(e, "license")}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingDocType === "license"}
+                    onClick={() => docViewerLicenseInputRef.current?.click()}
+                    className="h-8 text-xs shrink-0 gap-1.5"
+                  >
+                    {uploadingDocType === "license" ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {docLicenseUrl ? "পরিবর্তন" : "আপলোড"}
+                  </Button>
+                </div>
+
+                {docLicenseUrl && (
+                  <div className="relative rounded-lg overflow-hidden border border-border/80 bg-background/50 p-2 flex flex-col items-center">
+                    <img
+                      src={docLicenseUrl}
+                      alt="License Preview"
+                      className="max-h-48 w-auto object-contain rounded shadow-sm"
+                    />
+                    <div className="flex items-center gap-2 mt-2">
+                      <a
+                        href={docLicenseUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline font-semibold bg-blue-500/10 px-2.5 py-1 rounded"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        পূর্ণাঙ্গ স্ক্রিনে খুলুন
+                      </a>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDocLicenseUrl("")}
+                        className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        মুছুন
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDocViewerOpen(false)}
+                  className="border-border text-foreground"
+                >
+                  বন্ধ করুন
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={savingDocs}
+                  className="bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+                >
+                  {savingDocs ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  {savingDocs ? "সংরক্ষণ হচ্ছে..." : "ডকুমেন্টস সংরক্ষণ করুন"}
                 </Button>
               </DialogFooter>
             </form>

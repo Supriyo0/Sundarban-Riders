@@ -95,6 +95,7 @@ const NearbyRidersRadarMap = dynamic(
 import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
 
 import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
+import { bringAppToForeground, checkOverlayPermission, requestOverlayPermission } from "@/lib/mobile/overlay-launcher";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";
@@ -1826,6 +1827,9 @@ function MobileAppPageContent() {
       } catch {}
     }
 
+    // Immediately wake up app and bring over any other apps
+    bringAppToForeground();
+
     showLocalRideAlertNotification(
       "🔔 নতুন রাইড অনুরোধ এসেছে!",
       `পিকআপ: ${b.pickup_location || "পিকআপ"} • ভাড়া: ₹${displayFare}`,
@@ -2798,7 +2802,7 @@ function MobileAppPageContent() {
                   <span>সুস্পষ্ট নোটিশ ও ডেটা সুরক্ষা (Prominent Disclosure)</span>
                 </div>
                 <p className="text-[11px] sm:text-xs text-slate-700 leading-relaxed">
-                  <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী ৫ কিমির মধ্যে উপলব্ধ স্বাধীন টোটো চালকদের খুঁজে পাওয়া যায়, (২) রুট ম্যাপ প্রদর্শন করা যায়, এবং (৩) আনুমানিক দূরত্ব ভিত্তিক প্রস্তাবিত ভাড়া নির্ধারণে সহায়তা করা যায়। আপনার অবস্থান সংক্রান্ত তথ্য কেবল এই প্রযুক্তি সংযোগ সফল করতে ব্যবহৃত হয় এবং কোনো তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
+                  <strong>সুন্দরবন রাইডার্স (Sundarban Riders)</strong> আপনার ডিভাইসের লাইভ জিপিএস লোকেশন সংগ্রহ করে যাতে: (১) আপনার নিকটবর্তী ৫ কিমির মধ্যে উপলব্ধ স্বাধীন টোটো চালকদের খুঁজে পাওয়া যায়, (২) রুট ম্যাপ প্রদর্শন করা যায়, এবং (৩) আনুমানিক দূরত্বের ভিত্তিতে স্থানীয় প্রচলিত সম্ভাব্য ভাড়ার হিসাব প্রদর্শনে সহায়তা করা যায়। আপনার অবস্থান সংক্রান্ত তথ্য কেবল এই প্রযুক্তি সংযোগ সফল করতে ব্যবহৃত হয় এবং রাইড সংযোগের জন্য সংশ্লিষ্ট স্বাধীন পাইলট ব্যতীত অন্য কোনো বাণিজ্যিক তৃতীয় পক্ষ বা বিজ্ঞাপনদাতার কাছে হস্তান্তর করা হয় না।
                 </p>
               </div>
 
@@ -2985,7 +2989,9 @@ function MobileAppPageContent() {
               </h2>
               <p className="text-slate-600 text-xs mt-1.5 font-medium leading-relaxed">
                 {role === "passenger"
-                  ? "🛺 টোটো বুক করার পর চালক দাদা যাতে সরাসরি আপনার সাথে ফোন অথবা হোয়াটসঅ্যাপে যোগাযোগ করে পিকআপ করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি দিন।"
+                  ? otpSent
+                    ? "🛺 রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি যাচাই করুন।"
+                    : "🛺 রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি দিন।"
                   : "আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।"}
               </p>
             </div>
@@ -3097,6 +3103,9 @@ function MobileAppPageContent() {
                 )}
               </Button>
             )}
+            <p className="text-[11px] text-center text-slate-500 font-medium pt-2 leading-relaxed">
+              ( প্রবেশ করার মাধ্যমে আপনি সুন্দরবন রাইডার্স-এর শর্তাবলি, নিয়ম, এবং গোপনীয়তা নীতি - তে সম্মতি জানাচ্ছেন )
+            </p>
           </div>
         </div>
       </MobileAppShell>
@@ -3814,7 +3823,7 @@ function MobileAppPageContent() {
                   localStorage.setItem("sr_active_ride", JSON.stringify(optimisticRide));
                 }
                 playSuccessSound();
-                toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
+                toast.success("অনুরোধ গ্রহণ করা হয়েছে! যাত্রীর নির্দিষ্ট স্থানে যান।");
 
                 try {
                   const effectivePhone = session?.phone || session?.driverPhone || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").phone : "") || "";
@@ -4072,7 +4081,7 @@ function MobileAppPageContent() {
                   </span>
                   <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-0.5 flex items-center flex-wrap gap-1.5">
                     <span>₹{incomingRide.fare}.00</span>
-                    <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">নগদ ভাড়া</span>
+                    <span className="text-xs text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">প্রস্তাবিত সরাসরি ভাড়া</span>
                   </div>
                 </div>
 
@@ -4163,7 +4172,7 @@ function MobileAppPageContent() {
                       localStorage.setItem("sr_active_ride", JSON.stringify(optimisticRide));
                     }
                     playSuccessSound();
-                    toast.success("রাইড গ্রহণ করা হয়েছে! যাত্রীর পিকআপ অবস্থানে যান।");
+                    toast.success("অনুরোধ গ্রহণ করা হয়েছে! যাত্রীর নির্দিষ্ট স্থানে যান।");
 
                     // 2. Sync to server in the background
                     try {
@@ -4351,7 +4360,7 @@ function MobileAppPageContent() {
                     <KeyRound className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base text-slate-900">রাইড শুরুর ওটিপি (OTP)</h3>
+                    <h3 className="font-extrabold text-base text-slate-900">"যাত্রা শুরুর কোড" (OTP)</h3>
                     <p className="text-[11px] text-slate-500 font-medium">যাত্রীর থেকে ৪ সংখ্যার কোডটি নিন</p>
                   </div>
                 </div>
@@ -4367,16 +4376,16 @@ function MobileAppPageContent() {
               <div className="space-y-3">
                 <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1">
                   <p className="font-bold flex items-center gap-1.5">
-                    <span>🔒 ওটিপি ছাড়া যাত্রা শুরু করা অসম্ভব</span>
+                    <span>🔒 OTP ছাড়া যাত্রা শুরু অসম্ভব</span>
                   </p>
                   <p className="text-[11px] text-amber-800 font-normal">
-                    যাত্রী টোটোতে ওঠার পর তাঁর মোবাইল অ্যাপ বা হোয়াটসঅ্যাপে দেখানো ৪ সংখ্যার ওটিপিটি এখানে লিখুন।
+                    যাত্রীর মোবাইলে আসা ৪ সংখ্যার OTP এখানে লিখুন।
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 block">
-                    ৪ ডিজিটের ওটিপি লিখুন:
+                    ৪ ডিজিটের OTP লিখুন:
                   </label>
                   <input
                     type="tel"
@@ -4410,7 +4419,7 @@ function MobileAppPageContent() {
                   ) : (
                     <CheckCircle2 className="w-4 h-4" />
                   )}
-                  <span>যাচাই ও শুরু করুন</span>
+                  <span>OTP লিখুন নিশ্চিত করুন</span>
                 </Button>
               </div>
             </div>
@@ -4978,7 +4987,7 @@ function MobileAppPageContent() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-extrabold text-base text-slate-900 leading-tight">
-                        কাছাকাছি ৫ কিমির মধ্যে চালক খোঁজা হচ্ছে...
+                        কাছাকাছি ৫ কিমির মধ্যে স্বাধীন চালকের সন্ধান চলছে...
                       </h4>
                       <p className="text-xs text-slate-600 mt-1 font-medium leading-snug">
                         উপলব্ধ স্বাধীন চালকদের তথ্য পাঠানো হচ্ছে। চালক সম্মতি জানালে ওটিপি, চালকের নাম, যোগাযোগ নম্বর ও টোটোর বিবরণ প্রদর্শিত হবে।

@@ -229,7 +229,7 @@ export function TripCompletionReceipt({
           <p className="text-xs text-slate-500 font-medium mt-0.5">
             {role === "rider"
               ? "যাত্রীর থেকে নগদ ভাড়া সংগ্রহ করুন এবং পরবর্তী রাইডের জন্য প্রস্তুত হন।"
-              : "সুন্দরবন রাইডার ব্যবহার করার জন্য ধন্যবাদ।"}
+              : "সুন্দরবন রাইডার্স ব্যবহার করার জন্য ধন্যবাদ।"}
           </p>
         </div>
 
@@ -243,7 +243,7 @@ export function TripCompletionReceipt({
             }`}
           >
             <Receipt className="w-3.5 h-3.5" />
-            <span>ডিজিটাল রসিদ</span>
+            <span>ট্রিপ সামারি</span>
           </button>
 
           <button
@@ -366,7 +366,7 @@ export function TripCompletionReceipt({
                 <div className="flex items-center justify-between font-black text-amber-950 pt-1.5 border-t border-amber-200">
                   <span className="flex items-center gap-1.5">
                     <span>🏁</span>
-                    <span>প্রকৃত ভ্রমণ (ওডোমিটার):</span>
+                    <span>প্রকৃত ভ্রমণ (GPS দূরত্ব):</span>
                   </span>
                   <span className="text-emerald-700 font-mono text-sm">{safeActualDist.toFixed(2)} কিমি • ~{safeDuration} মিনিট</span>
                 </div>
@@ -375,7 +375,7 @@ export function TripCompletionReceipt({
               {/* Fare Breakdown */}
               <div className="space-y-1.5 pt-1 text-xs">
                 <div className="flex justify-between text-slate-600 font-medium">
-                  <span>প্রকৃত ভ্রমণ দূরত্ব (Travel Distance):</span>
+                  <span>প্রকৃত ভ্রমণ (GPS দূরত্ব):</span>
                   <span className="font-bold text-slate-900">{safeActualDist.toFixed(2)} কিমি</span>
                 </div>
                 <div className="flex justify-between text-slate-600 font-medium">
@@ -383,7 +383,7 @@ export function TripCompletionReceipt({
                   <span className="font-bold text-slate-900">~{safeDuration} মিনিট</span>
                 </div>
                 <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-200">
-                  <span>চূড়ান্ত প্রদেয় নগদ ভাড়া (Final Cash Fare):</span>
+                  <span>চালকে সরাসরি প্রদেয়:</span>
                   <span className="text-emerald-600 text-lg">₹{safeFinalFare}.০০</span>
                 </div>
               </div>
@@ -396,7 +396,7 @@ export function TripCompletionReceipt({
               onClick={handleShareReceiptOnWhatsApp}
             >
               <Share2 className="w-4 h-4" />
-              <span>📲 হোয়াটসঅ্যাপে রসিদ পাঠান / শেয়ার করুন</span>
+              <span>📲 হোয়াটসঅ্যাপে ট্রিপ সামারি শেয়ার করুন</span>
             </Button>
 
             {role === "rider" ? (
@@ -682,7 +682,7 @@ export function TripCompletionReceipt({
           <span>
             {role === "rider"
               ? "✅ পরবর্তী রাইডের জন্য প্রস্তুত (ডিউটিতে ফিরুন)"
-              : "🛺 নতুন আরেকটি রাইড বুক করুন"}
+              : "🛺 নতুন রাইডের অনুরোধ পাঠান"}
           </span>
           <ChevronRight className="w-4 h-4 ml-1" />
         </Button>

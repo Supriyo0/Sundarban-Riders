@@ -34,6 +34,7 @@ import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
 import { showLocalRideAlertNotification } from "@/lib/mobile/push-notifications";
+import { checkOverlayPermission, requestOverlayPermission } from "@/lib/mobile/overlay-launcher";
 
 function playRideChime() {
   try {
@@ -1320,7 +1321,7 @@ export function DriverRadarPanel({
                   <span className="text-2xl font-black font-mono text-emerald-700">
                     ₹{selectedCustomer.estimated_fare || 40}.০০
                   </span>
-                  <span className="text-[10px] text-slate-400 font-bold block">নগদ ভাড়া</span>
+                  <span className="text-[10px] text-emerald-700 font-bold block">প্রস্তাবিত সরাসরি ভাড়া</span>
                 </div>
               </div>
 
@@ -1375,7 +1376,7 @@ export function DriverRadarPanel({
                     {isOnline
                       ? pendingBookings.length > 0
                         ? `ম্যাপে ${pendingBookings.length}টি রাইড অনুরোধ দৃশ্যমান`
-                        : "রাইড অনুরোধের অপেক্ষায়... নতুন রাইড আসলে অ্যালার্ট বাজবে"
+                        : "নতুন রাইড অনুরোধের অপেক্ষায়... নিকটবর্তী যাত্রীর অনুরোধ এলে অ্যালার্ট বাজবে"
                       : "রাইড গ্রহণ করতে ওপরে অনলাইন বাটনে ট্যাপ করুন"}
                   </span>
                 </div>

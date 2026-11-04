@@ -3087,10 +3087,10 @@ export function InteractiveBookingMap({
                     }}
                     className="w-full h-12 rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white cursor-pointer active:scale-[0.98] transition-all"
                   >
-                    <span>🛺 Book Metered Toto Ride (প্রারম্ভিক বেস: ₹{calculateTotoFare(0, 4, pricingConfig).totalFare})</span>
+                    <span>🛺 অনুরোধ পাঠান (রাইড প্রতি আনুমানিক বেস: ₹{calculateTotoFare(0, 4, pricingConfig).totalFare})</span>
                   </Button>
                   <p className="text-[10.5px] text-center text-slate-500 font-semibold">
-                    No fixed drop needed • Live GPS road meter calculates fare on ride finish
+                    দূরত্ব ভিত্তিক আনুমানিক ভাড়া যাতায়াত শেষে সরাসরি পাইলটকে প্রদেয়
                   </p>
                 </div>
 

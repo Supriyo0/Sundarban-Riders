@@ -738,7 +738,7 @@ export function DriverActiveTripMap({
                 className="text-[9.5px] font-black uppercase tracking-wider block"
                 style={{ color: status === "heading_pickup" ? "#93c5fd" : "#6ee7b7" }}
               >
-                {status === "heading_pickup" ? "পিকআপে যাচ্ছেন" : "গন্তব্যে যাত্রা চলছে (On Trip)"}
+                {status === "heading_pickup" ? "যাত্রীর অবস্থানের দিকে অগ্রগামী (Heading towards Passenger Location)" : "গন্তব্যের দিকে যাওয়া হচ্ছে (Moving towards destination)"}
               </span>
               <p className="text-xs sm:text-sm font-extrabold text-white truncate mt-0.5">
                 {status === "heading_pickup" ? pickup : drop}
@@ -777,10 +777,10 @@ export function DriverActiveTripMap({
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-emerald-400 font-black uppercase tracking-widest flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  লাইভ মিটার সক্রিয় (GPS Odometer)
+                  লাইভ রুট ট্র্যাকার
                 </span>
                 <span className="text-[9.5px] font-mono text-slate-300 bg-slate-800 px-2 py-0.5 rounded-full border border-white/10">
-                  নিখুঁত রেট হিসাব
+                  আনুমানিক হিসাব
                 </span>
               </div>
 
@@ -817,7 +817,7 @@ export function DriverActiveTripMap({
 
                 {/* 4. Live Cash Fare */}
                 <div className="bg-slate-800/80 rounded-2xl p-1.5 sm:p-2 text-center border border-amber-500/25 min-w-0">
-                  <span className="text-[8px] sm:text-[8.5px] text-amber-400 font-black uppercase tracking-tight block truncate">ভাড়া</span>
+                  <span className="text-[8px] sm:text-[8.5px] text-amber-400 font-black uppercase tracking-tight block truncate">আনুমানিক</span>
                   <p className="text-xs sm:text-base font-black text-amber-400 font-mono tabular-nums leading-tight mt-0.5 truncate">
                     ₹{displayedFare}
                   </p>
@@ -869,7 +869,7 @@ export function DriverActiveTripMap({
             <div className="p-2.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${status === "heading_pickup" ? "bg-emerald-500" : "bg-red-500"}`} />
               <p className="text-xs font-semibold text-slate-800 truncate">
-                {status === "heading_pickup" ? `পিকআপ: ${pickup}` : `গন্তব্য: ${drop}`}
+                {status === "heading_pickup" ? `📍 যাত্রীর অবস্থান: ${pickup}` : `গন্তব্য: ${drop}`}
               </p>
             </div>
 
@@ -887,7 +887,7 @@ export function DriverActiveTripMap({
                     className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-sm shadow-md active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    📍 পিকআপে পৌঁছেছি • যাত্রী ওটিপি নিশ্চিত করুন
+                    📍 গন্তব্যস্থলে পৌঁছেছি • যাত্রী কোড যাচাই করুন
                   </button>
                 ) : (
                   <button
@@ -908,7 +908,7 @@ export function DriverActiveTripMap({
                     className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-red-50 text-slate-500 hover:text-red-600 text-xs font-bold border border-slate-200 hover:border-red-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
                   >
                     <X className="w-3.5 h-3.5 text-slate-400" />
-                    <span>রাইড বাতিল করুন (Cancel Ride)</span>
+                    <span>অনুরোধ বাতিল করুন (Cancel Request)</span>
                   </button>
                 )}
               </div>
@@ -916,7 +916,7 @@ export function DriverActiveTripMap({
               /* ON TRIP: Swipe to complete */
               <div className="pt-1">
                 <SwipeToConfirm
-                  label="যাত্রার শেষ প্রান্তে সোয়াইপ করুন 🏁"
+                  label="গন্তব্যে পৌঁছে সোয়াইপ করুন"
                   confirmedLabel="ট্রিপ সম্পন্ন হচ্ছে..."
                   onConfirm={async () => {
                     await onCompleteTrip?.(typeof meterReading.totalKm === "number" ? meterReading.totalKm : 0);

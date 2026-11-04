@@ -585,7 +585,7 @@ export function LiveRideTrackingMap({
   const totoNum = bAny?.toto_number || bAny?.totoNumber || bAny?.feedback?.toto_number || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
   const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : tripFare;
-  const displayKm = effectiveRideStep === "in_trip" && liveMeterKm > 0 ? liveMeterKm.toFixed(2) : tripDistance.toFixed(1);
+  const displayKm = effectiveRideStep === "in_trip" ? (liveMeterKm > 0 ? liveMeterKm.toFixed(1) : "0.0") : tripDistance.toFixed(1);
 
   // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement
   if (rideStep === "arrived") {
@@ -885,7 +885,7 @@ export function LiveRideTrackingMap({
                   </div>
                   <p className="text-[10.5px] font-bold text-emerald-600 truncate mt-0.5">
                     {rideStep === "in_trip"
-                      ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • লাইভ মিটার`
+                      ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • লাইভ ট্র্যাকার`
                       : `রাইড OTP: ${otp || "5821"}`}
                   </p>
                 </div>
@@ -919,7 +919,7 @@ export function LiveRideTrackingMap({
                         <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                       </span>
                       <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400">
-                        লাইভ ট্রিপ মিটার (Live Meter)
+                        লাইভ ট্রিপ ট্র্যাকার (LIVE TRACKER)
                       </span>
                     </div>
                     <span className="text-[9.5px] font-mono font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
@@ -1046,30 +1046,55 @@ export function LiveRideTrackingMap({
                   </div>
                 </div>
 
-                {/* Ride OTP + Fare row */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-2xl flex flex-col justify-between shadow-2xs">
-                    <div className="flex items-center gap-2">
-                      <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                {/* Ride OTP + Fare row (OTP shown while waiting for pickup; cleanly hidden during in_trip) */}
+                {effectiveRideStep !== "in_trip" ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-amber-50 border-2 border-amber-300 p-2.5 rounded-2xl flex flex-col justify-between shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+                        <div>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
+                          <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                        </div>
+                      </div>
+                      <span className="text-[8.5px] font-bold text-amber-900/90 leading-tight mt-1.5 block">
+                        ⚠️ টোটো চালক পৌঁছানোর পর ওটিপি দিন
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between">
                       <div>
-                        <span className="text-[9px] font-black uppercase tracking-wider text-amber-800 block">রাইড OTP</span>
-                        <span className="text-xl font-black font-mono tracking-widest text-amber-950 leading-none">{otp || "5821"}</span>
+                        <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
+                          প্রস্তাবিত ভাড়া (Mutual Fare)
+                        </span>
+                        <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-500">{tripDistance.toFixed(1)} কিমি</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50/70 border border-emerald-200/90 p-3 rounded-2xl flex items-center justify-between shadow-2xs">
+                    <div>
+                      <span className="text-[9.5px] font-black uppercase tracking-wider text-emerald-800 block">
+                        আনুমানিক প্রস্তাবিত ভাড়া
+                      </span>
+                      <div className="flex items-baseline gap-2 mt-0.5">
+                        <span className="text-2xl font-black text-slate-900">₹{displayFare}</span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                          নগদ / UPI প্রদেয়
+                        </span>
                       </div>
                     </div>
-                    <span className="text-[8.5px] font-bold text-amber-900/90 leading-tight mt-1.5 block">
-                      ⚠️ টোটো চালক পৌঁছানোর পর ওটিপি দিন
-                    </span>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">
-                        {rideStep === "in_trip" ? "লাইভ মিটার ভাড়া" : "প্রস্তাবিত ভাড়া (Mutual Fare)"}
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight block">অতিক্রান্ত দূরত্ব</span>
+                      <p className="text-base font-black font-mono text-emerald-700">
+                        {displayKm} <span className="text-xs font-semibold text-slate-600">কিমি</span>
+                      </p>
+                      <span className="text-[9.5px] font-medium text-slate-500 block">
+                        মোট পথ: ~{tripDistance.toFixed(1)} কিমি
                       </span>
-                      <span className="text-xl font-black text-slate-900 leading-none">₹{displayFare}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-500">{displayKm} কিমি</span>
                   </div>
-                </div>
+                )}
 
                 {/* Pickup / Drop Route preview */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
@@ -1102,7 +1127,7 @@ export function LiveRideTrackingMap({
                     className="w-full py-2.5 rounded-2xl border-2 border-red-200 text-red-600 text-xs font-bold hover:bg-red-50 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <X className="w-4 h-4" />
-                    ✕ রাইড রিকোয়েস্ট বাতিল করুন
+                    <span>রাইড রিকোয়েস্ট বাতিল করুন</span>
                   </button>
                 )}
               </div>

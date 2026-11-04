@@ -63,7 +63,10 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
 
         {/* Dedicated Floating Top Header (Floating Liquid Glass over Map) */}
         {topHeader && (
-          <div className="absolute top-0 sm:top-7 left-0 right-0 z-40 w-full shrink-0">
+          <div
+            className="absolute top-0 sm:top-7 left-0 right-0 z-40 w-full shrink-0"
+            style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+          >
             {topHeader}
           </div>
         )}

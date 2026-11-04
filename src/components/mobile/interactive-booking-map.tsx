@@ -1163,12 +1163,7 @@ export function InteractiveBookingMap({
             className: "toto-real-driver-icon",
             html: `
               <div style="position: relative; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); cursor: pointer;">
-                <div style="background: white; border: 1.5px solid #10b981; color: #065f46; font-weight: 800; font-size: 9.5px; padding: 2px 6px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap; margin-bottom: 2px;">
-                  🛺 ${driver.name || "টোটো চালক"} (${driver.distanceKm.toFixed(1)} কিমি)
-                </div>
-                <div style="width: 32px; height: 32px; background: #ecfdf5; border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 10px rgba(16,185,129,0.3); display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                  🛺
-                </div>
+                <div style="width: 36px; height: 36px; background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 2.5px solid #10b981; border-radius: 50%; box-shadow: 0 4px 12px rgba(16,185,129,0.4); display: flex; align-items: center; justify-content: center; font-size: 20px;">🛺</div>
               </div>
             `,
             iconSize: [0, 0],
@@ -1177,9 +1172,9 @@ export function InteractiveBookingMap({
           try {
             const dm = L.marker([lat, lng], { icon: totoIcon }).addTo(mapInstanceRef.current);
             dm.bindPopup(`
-              <div style="font-family: sans-serif; padding: 4px; min-width: 140px;">
-                <strong style="color: #065f46; font-size: 12px; display: block;">🛺 ${driver.name || "টোটো চালক"}</strong>
-                <p style="margin: 2px 0 0; font-size: 10.5px; color: #475569;">${driver.toto_number || "টোটো নং নাই"} • ~${driver.distanceKm.toFixed(1)} কিমি দূর</p>
+              <div style="font-family: sans-serif; padding: 4px; min-width: 120px;">
+                <strong style="color: #065f46; font-size: 12px; display: block;">🛺 টোটো চালক</strong>
+                <p style="margin: 2px 0 0; font-size: 10.5px; color: #475569;">📍 ~${driver.distanceKm.toFixed(1)} কিমি দূরে</p>
                 <span style="display: inline-block; margin-top: 4px; font-size: 9.5px; font-weight: bold; color: #047857; background: #d1fae5; padding: 2px 6px; border-radius: 4px;">🟢 রাইডের জন্য প্রস্তুত</span>
               </div>
             `);

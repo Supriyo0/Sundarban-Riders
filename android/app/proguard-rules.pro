@@ -1,21 +1,24 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Add project specific ProGuard / R8 rules here.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Capacitor core and plugins
+-keep public class com.getcapacitor.** { *; }
+-keep public class * extends com.getcapacitor.Plugin { *; }
+-keep public class * extends com.getcapacitor.BridgeActivity { *; }
+-keep public class com.sundarbanriders.app.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Keep JavaScript Interfaces used by WebView bridge
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve Cordova plugins if any
+-keep public class org.apache.cordova.** { *; }
+-keep public class * extends org.apache.cordova.CordovaPlugin { *; }
+
+# Keep annotations, interfaces, line numbers for debugging
+-keepattributes JavascriptInterface
+-keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
+-keepattributes Signature
+-keepattributes SourceFile,LineNumberTable

@@ -3,11 +3,13 @@ package com.sundarbanriders.app;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
+import androidx.activity.EdgeToEdge;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        EdgeToEdge.enable(this);
         registerPlugin(OverlayLauncherPlugin.class);
         super.onCreate(savedInstanceState);
 

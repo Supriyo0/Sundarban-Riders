@@ -333,10 +333,11 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
   // Initial check in case screen is very tall and already shows all items
   useEffect(() => {
     const el = scrollContainerRef.current;
-    if (el) {
-      if (el.scrollHeight <= el.clientHeight + 40) {
+    if (el && el.scrollHeight <= el.clientHeight + 40) {
+      const timer = setTimeout(() => {
         setHasScrolledToBottom(true);
-      }
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [items]);
 
@@ -500,7 +501,7 @@ export function DisclaimerScreen({ role, phone, onAccept, onBack }: DisclaimerSc
 
         {/* Disclaimer Items List */}
         <div className="space-y-3">
-          {items.map((item, idx) => {
+          {items.map((item) => {
             const Icon = item.icon;
             return (
               <div
@@ -688,7 +689,12 @@ export function DisclaimerViewerModal({
   const [activeTab, setActiveTab] = useState<"passenger" | "rider">(defaultRole);
 
   useEffect(() => {
-    setActiveTab(defaultRole);
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        setActiveTab(defaultRole);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
   }, [defaultRole, isOpen]);
 
   if (!isOpen) return null;
@@ -783,7 +789,7 @@ export function DisclaimerViewerModal({
             </p>
           </div>
 
-          {items.map((item, idx) => {
+          {items.map((item) => {
             const Icon = item.icon;
             return (
               <div

@@ -4,6 +4,8 @@ export interface OverlayLauncherPlugin {
   canDrawOverlays(): Promise<{ granted: boolean }>;
   requestOverlayPermission(): Promise<void>;
   bringToForeground(): Promise<void>;
+  startBookingService(options?: { driverPhone?: string; apiBaseUrl?: string }): Promise<{ success: boolean }>;
+  stopBookingService(): Promise<{ success: boolean }>;
 }
 
 export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLauncher", {
@@ -11,6 +13,8 @@ export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLau
     canDrawOverlays: async () => ({ granted: true }),
     requestOverlayPermission: async () => {},
     bringToForeground: async () => {},
+    startBookingService: async () => ({ success: true }),
+    stopBookingService: async () => ({ success: true }),
   },
 });
 
@@ -52,3 +56,40 @@ export async function bringAppToForeground(): Promise<void> {
   }
 }
 
+/**
+ * Starts the native Android Foreground Service for polling incoming ride requests
+ * when the app is minimized or the screen is turned off.
+ */
+export async function startNativeBookingService(driverPhone?: string): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    let apiBaseUrl = "https://109.122.56.24.sslip.io";
+    if (typeof window !== "undefined") {
+      const origin = window.location.origin;
+      if (
+        origin &&
+        !origin.includes("localhost") &&
+        !origin.includes("127.0.0.1") &&
+        !origin.startsWith("capacitor://") &&
+        !origin.startsWith("file://")
+      ) {
+        apiBaseUrl = origin;
+      }
+    }
+    await OverlayLauncher.startBookingService({ driverPhone, apiBaseUrl });
+  } catch (err) {
+    console.warn("[OverlayLauncher] startBookingService error:", err);
+  }
+}
+
+/**
+ * Stops the native Android Foreground Service when the driver goes offline.
+ */
+export async function stopNativeBookingService(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await OverlayLauncher.stopBookingService();
+  } catch (err) {
+    console.warn("[OverlayLauncher] stopBookingService error:", err);
+  }
+}

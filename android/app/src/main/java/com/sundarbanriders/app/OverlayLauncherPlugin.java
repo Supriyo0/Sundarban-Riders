@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -13,6 +15,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "OverlayLauncher")
 public class OverlayLauncherPlugin extends Plugin {
+
+    private static final String TAG = "OverlayLauncher";
 
     @PluginMethod
     public void canDrawOverlays(PluginCall call) {
@@ -54,6 +58,7 @@ public class OverlayLauncherPlugin extends Plugin {
             intent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK |
                 Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                Intent.FLAG_ACTIVITY_CLEAR_TOP |
                 Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             );
             ctx.startActivity(intent);
@@ -62,5 +67,54 @@ public class OverlayLauncherPlugin extends Plugin {
             call.reject("Failed to bring app to foreground: " + e.getMessage());
         }
     }
-}
 
+    @PluginMethod
+    public void startBookingService(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            String driverPhone = call.getString("driverPhone", "");
+            String apiBaseUrl = call.getString("apiBaseUrl", "");
+
+            Log.i(TAG, "Starting BookingPollService for phone: " + driverPhone + ", url: " + apiBaseUrl);
+
+            Intent serviceIntent = new Intent(ctx, BookingPollService.class);
+            if (driverPhone != null && !driverPhone.isEmpty()) {
+                serviceIntent.putExtra("driver_phone", driverPhone);
+            }
+            if (apiBaseUrl != null && !apiBaseUrl.isEmpty()) {
+                serviceIntent.putExtra("api_base_url", apiBaseUrl);
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(serviceIntent);
+            } else {
+                ctx.startService(serviceIntent);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start booking service: " + e.getMessage());
+            call.reject("Failed to start booking service: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void stopBookingService(PluginCall call) {
+        try {
+            Context ctx = getContext();
+            Log.i(TAG, "Stopping BookingPollService");
+            Intent serviceIntent = new Intent(ctx, BookingPollService.class);
+            serviceIntent.setAction(BookingPollService.ACTION_STOP);
+            ctx.stopService(serviceIntent);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to stop booking service: " + e.getMessage());
+            call.reject("Failed to stop booking service: " + e.getMessage());
+        }
+    }
+}

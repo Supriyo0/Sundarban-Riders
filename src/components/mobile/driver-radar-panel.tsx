@@ -720,7 +720,6 @@ export function DriverRadarPanel({
 
     fetchRadarEntities();
     pollTimer = setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
       fetchRadarEntities();
     }, 4500);
 

@@ -95,7 +95,13 @@ const NearbyRidersRadarMap = dynamic(
 import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map";
 
 import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
-import { bringAppToForeground, checkOverlayPermission, requestOverlayPermission } from "@/lib/mobile/overlay-launcher";
+import {
+  bringAppToForeground,
+  checkOverlayPermission,
+  requestOverlayPermission,
+  startNativeBookingService,
+  stopNativeBookingService,
+} from "@/lib/mobile/overlay-launcher";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
 import { MobileAppHeader } from "@/components/layout/mobile-app-header";
@@ -1704,6 +1710,9 @@ function MobileAppPageContent() {
   // Proactively watch and broadcast driver live GPS with Screen Wake Lock & Background Tracking
   useEffect(() => {
     if (role === "rider" && (isOnline || Boolean(activeRide))) {
+      // Start native Android foreground background service for booking popups
+      startNativeBookingService(session?.phone || "").catch(() => {});
+
       // Auto-register push notifications so sound & vibration fire when screen is locked
       subscribeDriverToPushNotifications({
         phone: session?.phone || "",
@@ -1735,6 +1744,7 @@ function MobileAppPageContent() {
       };
     } else {
       stopDriverBackgroundLocationTracking();
+      stopNativeBookingService().catch(() => {});
     }
   }, [role, isOnline, activeRide?.id, session?.driverId, session?.phone]);
 
@@ -1965,7 +1975,6 @@ function MobileAppPageContent() {
       // Check immediately and then every 3500ms when visible
       checkPendingBookings();
       pollInterval = setInterval(() => {
-        if (typeof document !== "undefined" && document.hidden) return;
         checkPendingBookings();
       }, 3500);
 
@@ -3711,10 +3720,24 @@ function MobileAppPageContent() {
       toast.success(nextOnline ? "আপনি এখন অনলাইন আছেন 🟢" : "আপনি এখন অফলাইন আছেন 🔴");
 
       if (nextOnline) {
+        startNativeBookingService(session?.phone || "").catch(() => {});
         subscribeDriverToPushNotifications({
           phone: session?.phone || "",
           driverId: session?.driverId,
         }).catch(() => {});
+        checkOverlayPermission().then((granted) => {
+          if (!granted) {
+            toast.info("অন্যান্য অ্যাপের উপরে রাইড অ্যালার্ট পেতে অনুমতি দিন", {
+              action: {
+                label: "অনুমতি দিন",
+                onClick: () => requestOverlayPermission(),
+              },
+              duration: 7000,
+            });
+          }
+        }).catch(() => {});
+      } else {
+        stopNativeBookingService().catch(() => {});
       }
 
       const driverId = session?.driverId;
@@ -4360,7 +4383,7 @@ function MobileAppPageContent() {
                     <KeyRound className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base text-slate-900">"যাত্রা শুরুর কোড" (OTP)</h3>
+                    <h3 className="font-extrabold text-base text-slate-900">&ldquo;যাত্রা শুরুর কোড&rdquo; (OTP)</h3>
                     <p className="text-[11px] text-slate-500 font-medium">যাত্রীর থেকে ৪ সংখ্যার কোডটি নিন</p>
                   </div>
                 </div>

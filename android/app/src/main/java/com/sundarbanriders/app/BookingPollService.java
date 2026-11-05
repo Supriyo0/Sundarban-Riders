@@ -77,7 +77,7 @@ public class BookingPollService extends Service {
     private PowerManager.WakeLock wakeLock;
     private String driverPhone = "";
     private String apiBaseUrl  = "";
-    private String lastSeenBookingId = "";
+    private final java.util.Map<String, Long> alertedBookingTimes = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile boolean isRunning = false;
     private View currentFloatingView = null;
     private final java.util.concurrent.atomic.AtomicBoolean isChecking = new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -249,8 +249,13 @@ public class BookingPollService extends Service {
             if (!status.equalsIgnoreCase("pending") && !status.equalsIgnoreCase("requested")) continue;
             if (!assignedDriver.isEmpty() && !assignedDriver.equalsIgnoreCase("null")) continue;
 
-            if (id.equals(lastSeenBookingId)) continue;
-            lastSeenBookingId = id;
+            long now = System.currentTimeMillis();
+            Long lastAlerted = alertedBookingTimes.get(id);
+            // If alerted within the last 150 seconds, skip. After 2.5 minutes or if new, alert driver!
+            if (lastAlerted != null && (now - lastAlerted < 150000L)) {
+                continue;
+            }
+            alertedBookingTimes.put(id, now);
 
             String passName = b.optString("customer_name", b.optString("passenger_name", "যাত্রী"));
             String pickup   = b.optString("pickup_location", "পিকআপ পয়েন্ট");

@@ -2294,32 +2294,60 @@ ${
       };
     }
 
-    // Reset status to pending and refresh timestamp
+    // Mark previous timed-out booking as cancelled/expired so a fresh search is initiated
     await supabase
       .from("bookings")
       .update({
-        status: "pending",
-        created_at: new Date().toISOString(),
+        status: "cancelled",
+        cancellation_reason: "3-minute search retry by customer",
         updated_at: new Date().toISOString(),
       })
       .eq("id", bookingToRetry.id);
 
-    // Schedule 3-minute timeout again
+    let bMeta: any = {};
+    try { bMeta = JSON.parse(bookingToRetry.feedback || "{}"); } catch {}
+
+    // Generate fresh booking number and OTP
+    const newBookingNumber = `SR-${Math.floor(1000 + Math.random() * 9000)}`;
+    const seedDigits = newBookingNumber.replace(/\D/g, "").slice(-4);
+    const startOtp = seedDigits.length === 4 ? seedDigits : Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Insert as brand-new pending booking so all driver apps & background services immediately detect it
+    const { data: createdBooking } = await supabase
+      .from("bookings")
+      .insert({
+        booking_number: newBookingNumber,
+        customer_phone: cleanPhone,
+        customer_name: bookingToRetry.customer_name || ctx.senderName || "গ্রাহক",
+        pickup_location: bookingToRetry.pickup_location,
+        drop_location: bookingToRetry.drop_location,
+        estimated_fare: bookingToRetry.estimated_fare,
+        feedback: JSON.stringify({
+          ...bMeta,
+          start_otp: startOtp,
+          retry_of: bookingToRetry.id,
+        }),
+        status: "pending",
+      })
+      .select()
+      .maybeSingle();
+
+    const activeBooking = createdBooking || bookingToRetry;
+
+    // Schedule 3-minute timeout for the new booking
     scheduleWhatsAppBookingTimeout(
-      bookingToRetry.id,
+      activeBooking.id,
       rawPhone,
-      bookingToRetry.booking_number
+      activeBooking.booking_number
     );
 
     let pLat = 0;
     let pLng = 0;
-    let bMeta: any = {};
-    try { bMeta = JSON.parse(bookingToRetry.feedback || "{}"); } catch {}
     if (bMeta.start_coords && Array.isArray(bMeta.start_coords)) {
       pLat = bMeta.start_coords[0];
       pLng = bMeta.start_coords[1];
     } else {
-      const pGeo = await geocodeLocation(bookingToRetry.pickup_location || "");
+      const pGeo = await geocodeLocation(activeBooking.pickup_location || "");
       pLat = pGeo.lat;
       pLng = pGeo.lng;
     }
@@ -2348,7 +2376,7 @@ ${
       return distKm <= 5.0;
     });
 
-    const bNum = bookingToRetry.booking_number || bookingToRetry.id.slice(0, 8);
+    const bNum = activeBooking.booking_number || activeBooking.id.slice(0, 8);
     const extraNotifications = nearbyDrivers.map((d) => {
       let recipientPhone = (d.phone || "").replace(/[^0-9]/g, "");
       if (recipientPhone.length === 10) {
@@ -2360,10 +2388,10 @@ ${
       return {
         toPhone: recipientPhone,
         type: "interactive_buttons" as const,
-        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bNum}\n👤 যাত্রী: ${bookingToRetry.customer_name || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৪ জন (সর্বোচ্চ সীমা)\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${bookingToRetry.pickup_location}\n🏁 গন্তব্য: ${bookingToRetry.drop_location}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
+        bodyText: `🛺 নতুন টোটো বুকিং অনুরোধ! 🛺\n=======================\n🆔 বুকিং নং: #${bNum}\n👤 যাত্রী: ${activeBooking.customer_name || "গ্রাহক"}\n👥 যাত্রী সংখ্যা: ৪ জন (সর্বোচ্চ সীমা)\n📞 ফোন: ${cleanPhone}\n📍 পিকআপ: ${activeBooking.pickup_location}\n🏁 গন্তব্য: ${activeBooking.drop_location}\n=======================\nআপনি কি এই রাইডটি গ্রহণ করতে চান?`,
         buttons: [
-          { id: `driver_accept_${bookingToRetry.id}`, title: "✅ রাইড গ্রহণ" },
-          { id: `driver_decline_${bookingToRetry.id}`, title: "❌ বাতিল" },
+          { id: `driver_accept_${activeBooking.id}`, title: "✅ রাইড গ্রহণ" },
+          { id: `driver_decline_${activeBooking.id}`, title: "❌ বাতিল" },
         ],
       };
     });
@@ -2379,14 +2407,14 @@ ${
       bodyText: `✨ নিকটবর্তী চালকের সন্ধান চলছে... ✨
 =======================
 🆔 বুকিং আইডি: #SR${bIdDisplay}
-📍 পিক-আপ: ${bookingToRetry.pickup_location}
-🏁 গন্তব্য: ${bookingToRetry.drop_location}
+📍 পিক-আপ: ${activeBooking.pickup_location}
+🏁 গন্তব্য: ${activeBooking.drop_location}
 =======================
 🔍 আপনার নিকটস্থ ৫ কিমির মধ্যে সক্রিয় অনুমোদিত স্বাধীন চালকদের কাছে অনুরোধ পাঠানো হয়েছে।
 ⏳ চালক রাইড গ্রহণ করামাত্রই আপনাকে ওটিপি (OTP), চালকের নাম, ফোন নম্বর ও টোটো নম্বর জানিয়ে দেওয়া হবে।
 (অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...)`,
       buttons: [
-        { id: `cancel_ride_${bookingToRetry.id || bNum}`, title: "❌ বুকিং বাতিল" },
+        { id: `cancel_ride_${activeBooking.id || bNum}`, title: "❌ বুকিং বাতিল" },
       ],
       extraNotifications,
     };

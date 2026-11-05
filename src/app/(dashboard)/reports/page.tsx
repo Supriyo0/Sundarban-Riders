@@ -133,7 +133,7 @@ export default function ReportsAuditPage() {
       `"${(b.pickup_location || "").replace(/"/g, '""')}"`,
       `"${(b.drop_location || "").replace(/"/g, '""')}"`,
       b.distance_km || 0,
-      b.fare || 0,
+      b.status === "cancelled" ? 0 : (b.fare || 0),
       b.status,
     ]);
 
@@ -351,8 +351,17 @@ export default function ReportsAuditPage() {
                       </td>
 
                       <td className="px-4 py-3 text-right font-mono">
-                        <span className="font-bold text-emerald-500">₹{b.fare || 0}.00</span>
-                        <p className="text-xs text-muted-foreground">{b.distance_km || 0} কিমি</p>
+                        {b.status === "cancelled" ? (
+                          <>
+                            <span className="font-semibold text-muted-foreground line-through">₹{b.fare || 0}.00</span>
+                            <span className="block text-[11px] text-red-500 font-bold">বাতিল (₹0)</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-emerald-500">₹{b.fare || 0}.00</span>
+                            <p className="text-xs text-muted-foreground">{b.distance_km || 0} কিমি</p>
+                          </>
+                        )}
                       </td>
 
                       <td className="px-4 py-3 text-center">

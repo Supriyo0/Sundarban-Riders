@@ -568,8 +568,8 @@ export function DriverRadarPanel({
 
       setDriverTrips(serverTrips);
 
-      // ACCURATELY CALCULATE STATS FROM ALL MERGED COMPLETED TRIPS:
-      const completedList = serverTrips.filter((t: any) => t.status === "completed" || t.fare || t.final_fare);
+      // ACCURATELY CALCULATE STATS FROM ALL MERGED COMPLETED TRIPS (Strictly excluding cancelled):
+      const completedList = serverTrips.filter((t: any) => t.status === "completed" && t.status !== "cancelled");
       const totalEarned = completedList.reduce((sum: number, t: any) => {
         const f = Number(t.final_fare) || Number(t.fare) || Number(t.estimated_fare) || 0;
         return sum + f;
@@ -600,7 +600,7 @@ export function DriverRadarPanel({
           const localHist = JSON.parse(localStorage.getItem("sr_driver_trip_history") || "[]");
           if (localHist.length > 0) {
             setDriverTrips(localHist);
-            const completedList = localHist.filter((t: any) => t.status === "completed" || t.fare || t.final_fare);
+            const completedList = localHist.filter((t: any) => t.status === "completed" && t.status !== "cancelled");
             const totalEarned = completedList.reduce((sum: number, t: any) => sum + (Number(t.final_fare) || Number(t.fare) || 0), 0);
             const todayStr = new Date().toDateString();
             const todayList = completedList.filter((t: any) => {
@@ -664,8 +664,20 @@ export function DriverRadarPanel({
         });
         const bJson = await bRes.json();
         const rawBookings = bJson.bookings || (bJson.booking ? [bJson.booking] : []);
-        // Filter out pending rides older than 5 minutes (300s) or taken by another driver or > 35 km
+        // Filter out pending rides older than 5 minutes (300s), taken by another driver, > 15 km, or ignored
+        const ignoredSet = new Set<string>();
+        try {
+          if (typeof window !== "undefined") {
+            const saved = localStorage.getItem("sr_ignored_bookings");
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed)) parsed.forEach((id: string) => { if (id) ignoredSet.add(id); });
+            }
+          }
+        } catch {}
+
         const validPending = rawBookings.filter((b: any) => {
+          if (ignoredSet.has(b.id) || (b.booking_number && ignoredSet.has(b.booking_number))) return false;
           if (b.status !== "pending") return false;
           if (b.driver_id) return false;
           if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 300 * 1000) return false;
@@ -983,15 +995,21 @@ export function DriverRadarPanel({
                     </div>
 
                     <div className="text-right">
-                      <span className="text-sm font-black font-mono text-emerald-700">
-                        ₹{trip.final_fare || trip.estimated_fare || 30}.০০
-                      </span>
+                      {isCompleted ? (
+                        <span className="text-sm font-black font-mono text-emerald-700">
+                          ₹{trip.final_fare || trip.estimated_fare || 30}.০০
+                        </span>
+                      ) : (
+                        <span className="text-sm font-semibold font-mono text-slate-400 line-through">
+                          ₹{trip.final_fare || trip.estimated_fare || 30}.০০
+                        </span>
+                      )}
                       <span
-                        className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded block ${
+                        className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded block ${
                           isCompleted ? "text-emerald-700 bg-emerald-50" : "text-red-700 bg-red-50"
                         }`}
                       >
-                        {isCompleted ? "সম্পন্ন ✓" : "বাতিল"}
+                        {isCompleted ? "সম্পন্ন ✓" : "বাতিল (₹০)"}
                       </span>
                     </div>
                   </div>
@@ -1426,17 +1444,39 @@ export function DriverRadarPanel({
                               </span>
                             )}
                           </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              setPendingBookings((prev) => prev.filter((p) => p.id !== booking.id));
-                              onAcceptRide(booking);
-                            }}
-                            className="shrink-0 h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 cursor-pointer"
-                          >
-                            গ্রহণ
-                          </Button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                try {
+                                  if (typeof window !== "undefined") {
+                                    const saved = localStorage.getItem("sr_ignored_bookings");
+                                    const list = saved ? JSON.parse(saved) : [];
+                                    if (booking.id && !list.includes(booking.id)) list.push(booking.id);
+                                    if (booking.booking_number && !list.includes(booking.booking_number)) list.push(booking.booking_number);
+                                    localStorage.setItem("sr_ignored_bookings", JSON.stringify(list.slice(-100)));
+                                  }
+                                } catch {}
+                                setPendingBookings((prev) => prev.filter((p) => p.id !== booking.id && p.booking_number !== booking.booking_number));
+                                toast.info("রাইডটি তালিকা থেকে সরানো হয়েছে");
+                              }}
+                              title="উপেক্ষা করুন (Ignore)"
+                              className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setPendingBookings((prev) => prev.filter((p) => p.id !== booking.id));
+                                onAcceptRide(booking);
+                              }}
+                              className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 cursor-pointer"
+                            >
+                              গ্রহণ
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}

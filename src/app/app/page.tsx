@@ -504,7 +504,49 @@ function MobileAppPageContent() {
   const hasCompletedNotifiedRef = useRef<string | null>(null);
   const activeAlertBookingIdRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
+  const ignoredBookingIdsRef = useRef<Set<string>>(new Set());
   const alertedBookingIdsRef = useRef<Set<string>>(new Set());
+
+  // Initialize permanently ignored bookings from local device storage
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("sr_ignored_bookings");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((id: string) => {
+              if (id) {
+                ignoredBookingIdsRef.current.add(id);
+                declinedBookingIdsRef.current.add(id);
+              }
+            });
+          }
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Permanently ignore a specific ride request so it never pops up or chimes again
+  const handleIgnoreRide = useCallback((bookingId?: string, bookingNumber?: string) => {
+    if (bookingId) {
+      ignoredBookingIdsRef.current.add(bookingId);
+      declinedBookingIdsRef.current.add(bookingId);
+    }
+    if (bookingNumber) {
+      ignoredBookingIdsRef.current.add(bookingNumber);
+      declinedBookingIdsRef.current.add(bookingNumber);
+    }
+    try {
+      if (typeof window !== "undefined") {
+        const list = Array.from(ignoredBookingIdsRef.current).slice(-100);
+        localStorage.setItem("sr_ignored_bookings", JSON.stringify(list));
+      }
+    } catch {}
+    setIncomingRide(null);
+    activeAlertBookingIdRef.current = null;
+    toast.info("রাইডটি স্থায়ীভাবে উপেক্ষা করা হয়েছে (এটি আর দেখানো হবে না)");
+  }, []);
   const isAcceptingRef = useRef<string | null>(null);
   const acceptedRideIdsRef = useRef<Set<string>>(new Set());
   const lastAlertedTimeRef = useRef<Map<string, number>>(new Map());
@@ -1690,11 +1732,24 @@ function MobileAppPageContent() {
           if (prev <= 1) {
             clearInterval(interval);
             clearInterval(soundInterval);
-            // 30 seconds finished: stop loud alarm and dismiss modal so it doesn't block screen,
-            // but do NOT permanently blacklist the ride so driver can still see and accept it!
+            // 30 seconds finished: stop loud alarm and permanently dismiss so it never pops up again!
+            if (incomingRide?.id) {
+              declinedBookingIdsRef.current.add(incomingRide.id);
+              ignoredBookingIdsRef.current.add(incomingRide.id);
+            }
+            if (incomingRide?.bookingNumber) {
+              declinedBookingIdsRef.current.add(incomingRide.bookingNumber);
+              ignoredBookingIdsRef.current.add(incomingRide.bookingNumber);
+            }
+            try {
+              if (typeof window !== "undefined") {
+                const list = Array.from(ignoredBookingIdsRef.current).slice(-100);
+                localStorage.setItem("sr_ignored_bookings", JSON.stringify(list));
+              }
+            } catch {}
             setIncomingRide(null);
             activeAlertBookingIdRef.current = null;
-            toast.info("রাইড অনুরোধটি নিচের স্লাইডারে উপলব্ধ রয়েছে। আপনি চাইলে গ্রহণ করতে পারেন।");
+            toast.info("রাইড অনুরোধের ৩০ সেকেন্ড সময় শেষ হয়েছে। এটি আর পপআপে দেখানো হবে না।");
             return 30;
           }
           return prev - 1;
@@ -1802,6 +1857,9 @@ function MobileAppPageContent() {
   // Reusable helper: Display incoming ride modal with audio chime and haptics
   const triggerIncomingRideAlert = useCallback((b: any, isDirectTapped: boolean = false) => {
     if (!b || activeRide || isAcceptingRef.current) return;
+    if (ignoredBookingIdsRef.current.has(b.id)) return;
+    if (b.booking_number && ignoredBookingIdsRef.current.has(b.booking_number)) return;
+    if (b.bookingNumber && ignoredBookingIdsRef.current.has(b.bookingNumber)) return;
     if (declinedBookingIdsRef.current.has(b.id)) return;
     if (acceptedRideIdsRef.current.has(b.id)) return;
     if (b.booking_number && acceptedRideIdsRef.current.has(b.booking_number)) return;
@@ -2031,6 +2089,8 @@ function MobileAppPageContent() {
 
           const b = pendingList.find((item: any) => {
             if (!item || item.status !== "pending" || item.driver_id) return false;
+            if (ignoredBookingIdsRef.current.has(item.id)) return false;
+            if (item.booking_number && ignoredBookingIdsRef.current.has(item.booking_number)) return false;
             if (declinedBookingIdsRef.current.has(item.id)) return false;
             if (acceptedRideIdsRef.current.has(item.id)) return false;
             if (item.booking_number && acceptedRideIdsRef.current.has(item.booking_number)) return false;
@@ -3893,7 +3953,7 @@ function MobileAppPageContent() {
           )
         }
         bottomNav={
-          activeRide ? undefined : (
+          activeRide || incomingRide ? undefined : (
             <MobileBottomNav
               activeTab={bottomNavTab}
               onTabChange={handleNavTabChange}
@@ -4201,8 +4261,8 @@ function MobileAppPageContent() {
         {/* SUNDARBAN RIDERS INCOMING RIDE MODAL SHEET (Light Theme)     */}
         {/* ------------------------------------------------------------- */}
         {incomingRide && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end animate-in slide-in-from-bottom duration-300" style={{background:"rgba(15,23,42,0.55)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
-            <div className="rounded-t-3xl p-6 space-y-5 border-t border-white/20 max-h-[90dvh] overflow-y-auto overscroll-contain pb-8" style={{background:"rgba(255,255,255,0.97)",boxShadow:"0 -8px 40px rgba(0,0,0,0.18), 0 -1px 0 rgba(255,255,255,0.6) inset"}}>
+          <div className="fixed inset-0 z-[9999] flex flex-col justify-end animate-in slide-in-from-bottom duration-300 pointer-events-auto" style={{background:"rgba(15,23,42,0.65)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+            <div className="rounded-t-3xl p-5 sm:p-6 space-y-4 border-t border-white/20 max-h-[88dvh] overflow-y-auto overscroll-contain" style={{background:"rgba(255,255,255,0.98)",boxShadow:"0 -8px 40px rgba(0,0,0,0.25), 0 -1px 0 rgba(255,255,255,0.6) inset", paddingBottom:"max(36px, env(safe-area-inset-bottom, 36px))"}}>
               {/* Header with Circular Countdown & Fare */}
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -4365,21 +4425,36 @@ function MobileAppPageContent() {
                   }}
                 />
 
-                <Button
-                  variant="ghost"
-                  className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 h-10 font-bold"
-                  onClick={() => {
-                    if (incomingRide?.id) {
-                      declinedBookingIdsRef.current.add(incomingRide.id);
-                      alertedBookingIdsRef.current.add(incomingRide.id);
-                    }
-                    setIncomingRide(null);
-                    activeAlertBookingIdRef.current = null;
-                    toast.info("রাইড প্রত্যাখ্যান করা হয়েছে");
-                  }}
-                >
-                  প্রত্যাখ্যান করুন (Decline)
-                </Button>
+                {/* Two Action Buttons: Temporary Dismiss vs Permanent Ignore */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full text-xs text-slate-700 border-slate-300 hover:bg-slate-100 h-11 font-bold rounded-xl"
+                    onClick={() => {
+                      if (incomingRide?.id) {
+                        declinedBookingIdsRef.current.add(incomingRide.id);
+                        alertedBookingIdsRef.current.add(incomingRide.id);
+                      }
+                      setIncomingRide(null);
+                      activeAlertBookingIdRef.current = null;
+                      toast.info("পপআপ সাময়িক বন্ধ করা হয়েছে");
+                    }}
+                  >
+                    ✕ সাময়িক বন্ধ করুন
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="w-full text-xs bg-red-600 hover:bg-red-700 text-white h-11 font-bold rounded-xl shadow-xs"
+                    onClick={() => {
+                      handleIgnoreRide(incomingRide?.id, incomingRide?.bookingNumber);
+                    }}
+                  >
+                    🚫 এই রাইডটি আর দেখাবেন না (Ignore)
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

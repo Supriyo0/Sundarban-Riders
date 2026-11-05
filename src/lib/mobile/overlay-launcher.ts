@@ -6,6 +6,7 @@ export interface OverlayLauncherPlugin {
   bringToForeground(): Promise<void>;
   startBookingService(options?: { driverPhone?: string; apiBaseUrl?: string }): Promise<{ success: boolean }>;
   stopBookingService(): Promise<{ success: boolean }>;
+  getPendingBooking(): Promise<{ bookingId: string }>;
 }
 
 export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLauncher", {
@@ -15,6 +16,7 @@ export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLau
     bringToForeground: async () => {},
     startBookingService: async () => ({ success: true }),
     stopBookingService: async () => ({ success: true }),
+    getPendingBooking: async () => ({ bookingId: "" }),
   },
 });
 

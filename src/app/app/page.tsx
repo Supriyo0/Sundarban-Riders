@@ -96,6 +96,7 @@ import { LiveRideTrackingMap } from "@/components/mobile/live-ride-tracking-map"
 
 import { DriverActiveTripMap } from "@/components/mobile/driver-active-trip-map";
 import {
+  OverlayLauncher,
   bringAppToForeground,
   checkOverlayPermission,
   requestOverlayPermission,
@@ -1868,6 +1869,67 @@ function MobileAppPageContent() {
       dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
     });
   }, [activeRide, incomingRide, driverLiveCoords]);
+
+  // Listen for native Android background booking alert clicks & intent dispatches
+  useEffect(() => {
+    let isHandling = false;
+
+    const handleTappedBooking = async (bId: string) => {
+      if (!bId || isHandling || activeRide || isAcceptingRef.current) return;
+      isHandling = true;
+      try {
+        const res = await fetch(`/api/bookings?id=${encodeURIComponent(bId)}&_t=${Date.now()}`);
+        const data = await res.json();
+        const b = data.booking || (Array.isArray(data.bookings) ? data.bookings.find((item: any) => item.id === bId) : null);
+        if (b && (b.status === "pending" || b.status === "requested") && !b.driver_id) {
+          setRole("rider");
+          setPhase("rider_home");
+          setIsOnline(true);
+          activeAlertBookingIdRef.current = null;
+          declinedBookingIdsRef.current.delete(b.id);
+          triggerIncomingRideAlert(b);
+        }
+      } catch (err) {
+        console.warn("[OverlayLauncher] Failed to fetch tapped booking:", err);
+      } finally {
+        setTimeout(() => {
+          isHandling = false;
+        }, 1500);
+      }
+    };
+
+    const onCustomEvent = (e: any) => {
+      const bId = e?.detail?.bookingId;
+      if (bId) {
+        handleTappedBooking(bId);
+      }
+    };
+
+    window.addEventListener("sr:open_booking", onCustomEvent);
+
+    const checkNativePending = async () => {
+      try {
+        const res = await OverlayLauncher.getPendingBooking();
+        if (res?.bookingId) {
+          handleTappedBooking(res.bookingId);
+        }
+      } catch {}
+    };
+
+    const handleVisibility = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        checkNativePending();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    checkNativePending();
+
+    return () => {
+      window.removeEventListener("sr:open_booking", onCustomEvent);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [activeRide, triggerIncomingRideAlert]);
 
   // Real-Time Incoming Ride Polling & Synchronization for Online Drivers
   useEffect(() => {

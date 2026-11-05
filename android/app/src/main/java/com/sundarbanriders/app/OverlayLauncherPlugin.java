@@ -17,6 +17,25 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class OverlayLauncherPlugin extends Plugin {
 
     private static final String TAG = "OverlayLauncher";
+    private static volatile String pendingBookingId = null;
+
+    public static void setPendingBookingId(String id) {
+        pendingBookingId = id;
+    }
+
+    public static String getAndClearPendingBookingId() {
+        String id = pendingBookingId;
+        pendingBookingId = null;
+        return id;
+    }
+
+    @PluginMethod
+    public void getPendingBooking(PluginCall call) {
+        String id = getAndClearPendingBookingId();
+        JSObject ret = new JSObject();
+        ret.put("bookingId", id != null ? id : "");
+        call.resolve(ret);
+    }
 
     @PluginMethod
     public void canDrawOverlays(PluginCall call) {

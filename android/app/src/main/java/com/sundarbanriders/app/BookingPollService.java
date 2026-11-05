@@ -5,12 +5,13 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
-import android.media.RingtoneManager;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -36,21 +37,22 @@ import java.net.URL;
  * Runs in the background when the driver is ONLINE.
  * Polls the VPS /api/bookings endpoint for new pending rides.
  * When a booking arrives:
- * 1. If "Display over other apps" (SYSTEM_ALERT_WINDOW) is granted, brings MainActivity
+ * 1. Plays Sundarban Riders custom chime sound.
+ * 2. If "Display over other apps" (SYSTEM_ALERT_WINDOW) is granted, brings MainActivity
  *    to the foreground immediately over any other app or lock screen.
- * 2. Fires a Full-Screen Intent Heads-Up Notification with loud alarm sound & vibration.
+ * 3. Fires a High-Priority Full-Screen Heads-Up Notification with custom sound & vibration.
  */
 public class BookingPollService extends Service {
 
     private static final String TAG = "SR_BookingPoll";
 
     public static final String CHANNEL_FOREGROUND = "sr_booking_service_fg";
-    public static final String CHANNEL_ALERT      = "sr_booking_alert_urgent";
+    public static final String CHANNEL_ALERT      = "sr_booking_alert_custom_v3";
 
     private static final int NOTIF_FOREGROUND_ID = 9001;
     private static final int NOTIF_ALERT_BASE_ID = 9500;
 
-    private static final long POLL_INTERVAL_MS = 5000L;
+    private static final long POLL_INTERVAL_MS = 4000L;
 
     public static final String PREF_NAME         = "sr_booking_service_pref";
     public static final String PREF_DRIVER_PHONE = "driver_phone";
@@ -247,7 +249,18 @@ public class BookingPollService extends Service {
     private void triggerRideAlert(String bookingId, String passengerName, String pickup, String drop, String fare) {
         Log.i(TAG, "Triggering ride alert for booking: " + bookingId);
 
-        // 1. Direct Activity Overlay Launch (if SYSTEM_ALERT_WINDOW granted)
+        // 1. Play App Custom Chime Sound
+        try {
+            MediaPlayer mp = MediaPlayer.create(this, R.raw.ride_alert);
+            if (mp != null) {
+                mp.setOnCompletionListener(MediaPlayer::release);
+                mp.start();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "MediaPlayer error: " + e.getMessage());
+        }
+
+        // 2. Direct Activity Overlay Launch (if SYSTEM_ALERT_WINDOW granted)
         boolean hasOverlayPermission = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             hasOverlayPermission = Settings.canDrawOverlays(this);
@@ -270,7 +283,7 @@ public class BookingPollService extends Service {
             }
         }
 
-        // 2. High-Priority Heads-Up FullScreen Notification
+        // 3. High-Priority Heads-Up FullScreen Notification
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
@@ -287,10 +300,7 @@ public class BookingPollService extends Service {
         PendingIntent tapPI = PendingIntent.getActivity(this, (int)(System.currentTimeMillis() % 10000), tapIntent, piFlags);
         PendingIntent fullScreenPI = PendingIntent.getActivity(this, (int)(System.currentTimeMillis() % 10000) + 1, tapIntent, piFlags);
 
-        Uri alertSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-        if (alertSound == null) {
-            alertSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-        }
+        Uri alertSound = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + getPackageName() + "/" + R.raw.ride_alert);
 
         String fareText = fare.isEmpty() ? "" : " • আনুমানিক ₹" + fare;
         String contentText = passengerName + " : " + cleanLocation(pickup) + " → " + cleanLocation(drop) + fareText;
@@ -311,7 +321,7 @@ public class BookingPollService extends Service {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setSound(alertSound)
-            .setVibrate(new long[]{0, 600, 250, 600, 250, 600})
+            .setVibrate(new long[]{0, 500, 200, 500, 200, 500})
             .setLights(0xFF10B981, 600, 300)
             .setContentIntent(tapPI)
             .setFullScreenIntent(fullScreenPI, true);
@@ -363,24 +373,26 @@ public class BookingPollService extends Service {
 
         NotificationChannel alertChannel = new NotificationChannel(
             CHANNEL_ALERT,
-            "নতুন রাইড অ্যালার্ট (জরুরি)",
+            "নতুন রাইড অ্যালার্ট (কাস্টম টোন)",
             NotificationManager.IMPORTANCE_HIGH
         );
         alertChannel.setDescription("নতুন রাইডের অনুরোধের শব্দ ও ফুল-স্ক্রিন পপ-আপ");
         alertChannel.enableVibration(true);
-        alertChannel.setVibrationPattern(new long[]{0, 600, 250, 600, 250, 600});
+        alertChannel.setVibrationPattern(new long[]{0, 500, 200, 500, 200, 500});
         alertChannel.enableLights(true);
         alertChannel.setLightColor(0xFF10B981);
         alertChannel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         alertChannel.setBypassDnd(true);
 
-        Uri alertSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
-        if (alertSound != null) {
+        try {
+            Uri alertSound = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + getPackageName() + "/" + R.raw.ride_alert);
             AudioAttributes audioAttr = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 .build();
             alertChannel.setSound(alertSound, audioAttr);
+        } catch (Exception e) {
+            Log.w(TAG, "Custom sound channel config: " + e.getMessage());
         }
 
         nm.createNotificationChannel(alertChannel);

@@ -65,7 +65,7 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
         {topHeader && (
           <div
             className="absolute top-0 sm:top-7 left-0 right-0 z-40 w-full shrink-0"
-            style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+            style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 14px)" }}
           >
             {topHeader}
           </div>

@@ -2,6 +2,7 @@ package com.sundarbanriders.app;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -31,10 +32,36 @@ public class OverlayLauncherPlugin extends Plugin {
 
     @PluginMethod
     public void getPendingBooking(PluginCall call) {
-        String id = getAndClearPendingBookingId();
+        String id = pendingBookingId;
+        if (id == null || id.isEmpty()) {
+            try {
+                Context ctx = getContext();
+                if (ctx != null) {
+                    SharedPreferences prefs = ctx.getSharedPreferences("sr_booking_service_pref", Context.MODE_PRIVATE);
+                    long tappedTime = prefs.getLong("last_tapped_time", 0L);
+                    // Keep valid for 25 seconds after tap
+                    if (System.currentTimeMillis() - tappedTime < 25000L) {
+                        id = prefs.getString("last_tapped_booking_id", "");
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
         JSObject ret = new JSObject();
         ret.put("bookingId", id != null ? id : "");
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void clearPendingBooking(PluginCall call) {
+        pendingBookingId = null;
+        try {
+            Context ctx = getContext();
+            if (ctx != null) {
+                SharedPreferences prefs = ctx.getSharedPreferences("sr_booking_service_pref", Context.MODE_PRIVATE);
+                prefs.edit().remove("last_tapped_booking_id").remove("last_tapped_time").apply();
+            }
+        } catch (Exception ignored) {}
+        call.resolve();
     }
 
     @PluginMethod

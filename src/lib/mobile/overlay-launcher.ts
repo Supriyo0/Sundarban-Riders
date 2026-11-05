@@ -7,6 +7,7 @@ export interface OverlayLauncherPlugin {
   startBookingService(options?: { driverPhone?: string; apiBaseUrl?: string }): Promise<{ success: boolean }>;
   stopBookingService(): Promise<{ success: boolean }>;
   getPendingBooking(): Promise<{ bookingId: string }>;
+  clearPendingBooking(): Promise<void>;
 }
 
 export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLauncher", {
@@ -17,6 +18,7 @@ export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLau
     startBookingService: async () => ({ success: true }),
     stopBookingService: async () => ({ success: true }),
     getPendingBooking: async () => ({ bookingId: "" }),
+    clearPendingBooking: async () => {},
   },
 });
 
@@ -94,4 +96,14 @@ export async function stopNativeBookingService(): Promise<void> {
   } catch (err) {
     console.warn("[OverlayLauncher] stopBookingService error:", err);
   }
+}
+
+/**
+ * Clears the pending booking in native storage after web UI has handled it.
+ */
+export async function clearPendingBooking(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return;
+  try {
+    await OverlayLauncher.clearPendingBooking();
+  } catch {}
 }

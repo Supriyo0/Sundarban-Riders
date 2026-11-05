@@ -1340,12 +1340,6 @@ export function InteractiveBookingMap({
           return;
         }
 
-        // Discard coarse cellular and IP fixes (> 150m)
-        if (accuracy !== undefined && accuracy > 150) {
-          console.log("[GPS] Discarded coarse position fix with accuracy:", accuracy);
-          return;
-        }
-
         if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
           bestAccuracyRef.current = accuracy;
         }
@@ -1416,43 +1410,37 @@ export function InteractiveBookingMap({
       // 1. Try Native Capacitor Pure Satellite GPS first
       if (isNative) {
         try {
-          const perm = await Geolocation.checkPermissions();
-          const hasLocationPerm =
+          let perm = await Geolocation.checkPermissions();
+          let hasLocationPerm =
             perm.location === "granted" ||
             (perm as any).coarseLocation === "granted" ||
             (perm as any).state === "granted";
 
           if (!hasLocationPerm) {
-            if (!userInitiated) {
-              setIsLocatingInitialLock(false);
-              isLocatingRef.current = false;
-              setIsLocating(false);
-              return;
-            }
-            const req = await Geolocation.requestPermissions();
-            const reqGranted =
-              req.location === "granted" ||
-              (req as any).coarseLocation === "granted" ||
-              (req as any).state === "granted";
-            if (!reqGranted) {
-              handleFail(undefined, true);
-              return;
-            }
+            try {
+              const req = await Geolocation.requestPermissions();
+              hasLocationPerm =
+                req.location === "granted" ||
+                (req as any).coarseLocation === "granted" ||
+                (req as any).state === "granted";
+            } catch {}
           }
 
-          try {
-            const position = await Geolocation.getCurrentPosition({
-              enableHighAccuracy: true,
-              timeout: 7000,
-              maximumAge: 3000,
-            });
+          if (hasLocationPerm) {
+            try {
+              const position = await Geolocation.getCurrentPosition({
+                enableHighAccuracy: true,
+                timeout: 7000,
+                maximumAge: 3000,
+              });
 
-            if (position?.coords?.latitude && position?.coords?.longitude) {
-              await handleSuccess(position.coords.latitude, position.coords.longitude, undefined, position.coords.accuracy);
-              return;
+              if (position?.coords?.latitude && position?.coords?.longitude) {
+                await handleSuccess(position.coords.latitude, position.coords.longitude, undefined, position.coords.accuracy);
+                return;
+              }
+            } catch (e) {
+              console.warn("Capacitor high accuracy GPS error:", e);
             }
-          } catch (e) {
-            console.warn("Capacitor high accuracy GPS error:", e);
           }
         } catch (capErr) {
           console.warn("Capacitor Geolocation error, trying standard browser GPS:", capErr);
@@ -1575,8 +1563,6 @@ export function InteractiveBookingMap({
               if (isCancelled || err || !position?.coords) return;
               const { latitude, longitude, accuracy } = position.coords;
               if (!latitude || !longitude) return;
-              // Discard coarse cellular and IP fixes (> 150m)
-              if (accuracy !== undefined && accuracy > 150) return;
               // Monotonic guard: do not degrade existing solid fix (<= 45m) with jumpy cellular update
               if (bestAccuracyRef.current <= 45 && accuracy !== undefined && accuracy > 75) return;
               if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
@@ -1604,6 +1590,10 @@ export function InteractiveBookingMap({
                 resolveLocationAddress(latitude, longitude).then((resolved) => {
                   if (!isCancelled && resolved) {
                     setPickupInputValue(resolved);
+                    onRouteSelectedRef.current?.({
+                      pickup: resolved,
+                      pickupCoords: [latitude, longitude],
+                    });
                     try {
                       localStorage.setItem("sr_last_known_name", resolved);
                     } catch {}
@@ -1629,8 +1619,6 @@ export function InteractiveBookingMap({
             if (isCancelled || !pos?.coords) return;
             const { latitude, longitude, accuracy } = pos.coords;
             if (!latitude || !longitude) return;
-            // Discard coarse cellular and IP fixes (> 150m)
-            if (accuracy !== undefined && accuracy > 150) return;
             // Monotonic guard: do not degrade existing solid fix (<= 45m) with jumpy cellular update
             if (bestAccuracyRef.current <= 45 && accuracy !== undefined && accuracy > 75) return;
             if (accuracy !== undefined && accuracy < bestAccuracyRef.current) {
@@ -2184,7 +2172,10 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       {/* 2. TOP FLOATING LIQUID GLASS UBER SEARCH CARD & QUICK SHORTCUTS */}
       {/* ------------------------------------------------------------- */}
-      <div className={`absolute top-16 sm:top-18 left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}>
+      <div
+        className={`absolute left-3 right-3 ${activeSearchField ? "z-50" : "z-30"} pointer-events-none`}
+        style={{ top: "calc(env(safe-area-inset-top, 0px) + 78px)" }}
+      >
         <div
           ref={searchContainerRef}
           className={`pointer-events-auto relative rounded-3xl p-3 sm:p-3.5 bg-white border border-slate-200 shadow-xl space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden ${

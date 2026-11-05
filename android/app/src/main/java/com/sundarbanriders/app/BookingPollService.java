@@ -10,6 +10,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ServiceInfo;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -20,6 +24,14 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.core.app.NotificationCompat;
 
@@ -37,9 +49,9 @@ import java.net.URL;
  * Runs in the background when the driver is ONLINE.
  * Polls the VPS /api/bookings endpoint for new pending rides.
  * When a booking arrives:
- * 1. Plays Sundarban Riders custom chime sound.
- * 2. If "Display over other apps" (SYSTEM_ALERT_WINDOW) is granted, brings MainActivity
- *    to the foreground immediately over any other app or lock screen.
+ * 1. Plays Sundarban Riders custom chime sound cleanly on Main Looper.
+ * 2. If "Display over other apps" (SYSTEM_ALERT_WINDOW) is granted, displays a true
+ *    native WindowManager floating overlay view right over whatever app is open.
  * 3. Fires a High-Priority Full-Screen Heads-Up Notification with custom sound & vibration.
  */
 public class BookingPollService extends Service {
@@ -47,12 +59,12 @@ public class BookingPollService extends Service {
     private static final String TAG = "SR_BookingPoll";
 
     public static final String CHANNEL_FOREGROUND = "sr_booking_service_fg";
-    public static final String CHANNEL_ALERT      = "sr_booking_alert_custom_v3";
+    public static final String CHANNEL_ALERT      = "sr_booking_alert_app_v4";
 
     private static final int NOTIF_FOREGROUND_ID = 9001;
     private static final int NOTIF_ALERT_BASE_ID = 9500;
 
-    private static final long POLL_INTERVAL_MS = 4000L;
+    private static final long POLL_INTERVAL_MS = 3500L;
 
     public static final String PREF_NAME         = "sr_booking_service_pref";
     public static final String PREF_DRIVER_PHONE = "driver_phone";
@@ -67,6 +79,8 @@ public class BookingPollService extends Service {
     private String apiBaseUrl  = "";
     private String lastSeenBookingId = "";
     private volatile boolean isRunning = false;
+    private View currentFloatingView = null;
+    private final java.util.concurrent.atomic.AtomicBoolean isChecking = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     @Override
     public void onCreate() {
@@ -149,6 +163,7 @@ public class BookingPollService extends Service {
         if (handler != null && pollRunnable != null) {
             handler.removeCallbacks(pollRunnable);
         }
+        dismissFloatingOverlay();
         if (wakeLock != null && wakeLock.isHeld()) {
             try {
                 wakeLock.release();
@@ -161,17 +176,22 @@ public class BookingPollService extends Service {
             @Override
             public void run() {
                 if (!isRunning) return;
-                new Thread(() -> {
-                    try {
-                        checkForNewBooking();
-                    } catch (Exception e) {
-                        Log.d(TAG, "Poll check: " + e.getMessage());
-                    } finally {
-                        if (isRunning && handler != null) {
-                            handler.postDelayed(pollRunnable, POLL_INTERVAL_MS);
+                if (!isChecking.get()) {
+                    new Thread(() -> {
+                        if (isChecking.compareAndSet(false, true)) {
+                            try {
+                                checkForNewBooking();
+                            } catch (Exception e) {
+                                Log.d(TAG, "Poll check: " + e.getMessage());
+                            } finally {
+                                isChecking.set(false);
+                            }
                         }
-                    }
-                }).start();
+                    }).start();
+                }
+                if (isRunning && handler != null) {
+                    handler.postDelayed(this, POLL_INTERVAL_MS);
+                }
             }
         };
         handler.post(pollRunnable);
@@ -219,7 +239,6 @@ public class BookingPollService extends Service {
 
         if (arr == null || arr.length() == 0) return;
 
-        // Iterate through pending bookings to find unassigned pending ride
         for (int i = 0; i < arr.length(); i++) {
             JSONObject b = arr.getJSONObject(i);
             String id = b.optString("id", "");
@@ -228,12 +247,9 @@ public class BookingPollService extends Service {
 
             if (id.isEmpty()) continue;
             if (!status.equalsIgnoreCase("pending") && !status.equalsIgnoreCase("requested")) continue;
-            // Skip if already assigned to another driver
             if (!assignedDriver.isEmpty() && !assignedDriver.equalsIgnoreCase("null")) continue;
 
-            // Skip if we already alerted for this booking
             if (id.equals(lastSeenBookingId)) continue;
-
             lastSeenBookingId = id;
 
             String passName = b.optString("customer_name", b.optString("passenger_name", "যাত্রী"));
@@ -249,46 +265,38 @@ public class BookingPollService extends Service {
     private void triggerRideAlert(String bookingId, String passengerName, String pickup, String drop, String fare) {
         Log.i(TAG, "Triggering ride alert for booking: " + bookingId);
 
-        // 1. Play App Custom Chime Sound
-        try {
-            MediaPlayer mp = MediaPlayer.create(this, R.raw.ride_alert);
-            if (mp != null) {
-                mp.setOnCompletionListener(MediaPlayer::release);
-                mp.start();
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "MediaPlayer error: " + e.getMessage());
-        }
-
-        // 2. Direct Activity Overlay Launch (if SYSTEM_ALERT_WINDOW granted)
-        boolean hasOverlayPermission = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            hasOverlayPermission = Settings.canDrawOverlays(this);
-        }
-
-        if (hasOverlayPermission) {
+        // 1. Play App Custom Chime Sound on Main Looper safely
+        handler.post(() -> {
             try {
-                Intent frontIntent = new Intent(this, MainActivity.class);
-                frontIntent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK |
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP |
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP |
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                );
-                frontIntent.putExtra("booking_id", bookingId);
-                frontIntent.putExtra("auto_open_booking", true);
-                startActivity(frontIntent);
+                MediaPlayer mp = MediaPlayer.create(getApplicationContext(), R.raw.ride_alert);
+                if (mp != null) {
+                    mp.setOnCompletionListener(MediaPlayer::release);
+                    mp.setOnErrorListener((player, what, extra) -> {
+                        try { player.release(); } catch (Exception ignored) {}
+                        return true;
+                    });
+                    mp.start();
+                }
             } catch (Exception e) {
-                Log.e(TAG, "Direct overlay launch failed: " + e.getMessage());
+                Log.w(TAG, "MediaPlayer error: " + e.getMessage());
             }
-        }
+        });
+
+        // 2. Show Native WindowManager Floating Overlay View (Draw Over Other Apps)
+        showFloatingOverlay(bookingId, passengerName, pickup, drop, fare);
 
         // 3. High-Priority Heads-Up FullScreen Notification
         NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         Intent tapIntent = new Intent(this, MainActivity.class);
-        tapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        tapIntent.setAction("com.sundarbanriders.app.OPEN_BOOKING_" + bookingId);
+        tapIntent.setData(Uri.parse("sundarbanriders://booking/" + bookingId));
+        tapIntent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK |
+            Intent.FLAG_ACTIVITY_SINGLE_TOP |
+            Intent.FLAG_ACTIVITY_CLEAR_TOP
+        );
         tapIntent.putExtra("booking_id", bookingId);
         tapIntent.putExtra("auto_open_booking", true);
 
@@ -328,6 +336,175 @@ public class BookingPollService extends Service {
 
         int notifId = NOTIF_ALERT_BASE_ID + (bookingId.hashCode() & 0x0FFF);
         nm.notify(notifId, builder.build());
+    }
+
+    private void showFloatingOverlay(final String bookingId, final String passengerName, final String pickup, final String drop, final String fare) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            return;
+        }
+
+        handler.post(() -> {
+            try {
+                WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+                if (wm == null) return;
+
+                dismissFloatingOverlay();
+
+                int layoutType = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    : WindowManager.LayoutParams.TYPE_PHONE;
+
+                WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    layoutType,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                    PixelFormat.TRANSLUCENT
+                );
+                params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+                params.y = dp(20);
+
+                // Build modern UI card programmatically
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setPadding(dp(16), dp(14), dp(16), dp(14));
+
+                GradientDrawable bg = new GradientDrawable();
+                bg.setColor(0xFFFFFFFF);
+                bg.setCornerRadius(dp(22));
+                bg.setStroke(dp(2), 0xFF10B981); // Emerald border
+                card.setBackground(bg);
+                card.setElevation(dp(16));
+
+                // Title + Fare Row
+                LinearLayout topRow = new LinearLayout(this);
+                topRow.setOrientation(LinearLayout.HORIZONTAL);
+                topRow.setGravity(Gravity.CENTER_VERTICAL);
+
+                TextView titleTv = new TextView(this);
+                titleTv.setText("🛺 নতুন রাইড অনুরোধ!");
+                titleTv.setTextColor(0xFF047857);
+                titleTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                titleTv.setTypeface(Typeface.DEFAULT_BOLD);
+                LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+                topRow.addView(titleTv, titleLp);
+
+                if (!fare.isEmpty()) {
+                    TextView fareTv = new TextView(this);
+                    fareTv.setText("₹" + fare);
+                    fareTv.setTextColor(0xFF0F172A);
+                    fareTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+                    fareTv.setTypeface(Typeface.DEFAULT_BOLD);
+                    topRow.addView(fareTv);
+                }
+                card.addView(topRow);
+
+                // Passenger Name
+                TextView nameTv = new TextView(this);
+                nameTv.setText("👤 যাত্রী: " + passengerName);
+                nameTv.setTextColor(0xFF334155);
+                nameTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                nameTv.setTypeface(Typeface.DEFAULT_BOLD);
+                nameTv.setPadding(0, dp(4), 0, 0);
+                card.addView(nameTv);
+
+                // Route: Pickup -> Drop
+                TextView routeTv = new TextView(this);
+                routeTv.setText("📍 " + cleanLocation(pickup) + " ➔ " + cleanLocation(drop));
+                routeTv.setTextColor(0xFF64748B);
+                routeTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                routeTv.setPadding(0, dp(2), 0, dp(10));
+                card.addView(routeTv);
+
+                // Buttons Row: [✕ বাতিল] & [ 🛺 রাইড গ্রহণ করুন ]
+                LinearLayout btnRow = new LinearLayout(this);
+                btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+                Button dismissBtn = new Button(this);
+                dismissBtn.setText("✕ বন্ধ করুন");
+                dismissBtn.setTextColor(0xFF64748B);
+                dismissBtn.setBackgroundColor(Color.TRANSPARENT);
+                dismissBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                LinearLayout.LayoutParams dismissLp = new LinearLayout.LayoutParams(0, dp(44), 0.35f);
+                dismissLp.setMargins(0, 0, dp(8), 0);
+                btnRow.addView(dismissBtn, dismissLp);
+
+                Button acceptBtn = new Button(this);
+                acceptBtn.setText("🛺 রাইড দেখুন ও গ্রহণ করুন");
+                acceptBtn.setTextColor(Color.WHITE);
+                GradientDrawable btnBg = new GradientDrawable();
+                btnBg.setColor(0xFF10B981);
+                btnBg.setCornerRadius(dp(14));
+                acceptBtn.setBackground(btnBg);
+                acceptBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                acceptBtn.setTypeface(Typeface.DEFAULT_BOLD);
+                LinearLayout.LayoutParams acceptLp = new LinearLayout.LayoutParams(0, dp(44), 0.65f);
+                btnRow.addView(acceptBtn, acceptLp);
+
+                card.addView(btnRow);
+
+                FrameLayout rootLayout = new FrameLayout(this);
+                rootLayout.setPadding(dp(14), dp(8), dp(14), dp(8));
+                rootLayout.addView(card);
+
+                currentFloatingView = rootLayout;
+                wm.addView(rootLayout, params);
+
+                acceptBtn.setOnClickListener(v -> {
+                    dismissFloatingOverlay();
+                    try {
+                        Intent openIntent = new Intent(this, MainActivity.class);
+                        openIntent.setAction("com.sundarbanriders.app.OPEN_BOOKING_" + bookingId);
+                        openIntent.setData(Uri.parse("sundarbanriders://booking/" + bookingId));
+                        openIntent.addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK |
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        );
+                        openIntent.putExtra("booking_id", bookingId);
+                        openIntent.putExtra("auto_open_booking", true);
+                        startActivity(openIntent);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Failed to launch MainActivity from overlay: " + e.getMessage());
+                    }
+                });
+
+                dismissBtn.setOnClickListener(v -> dismissFloatingOverlay());
+
+                // Auto dismiss after 30 seconds
+                handler.postDelayed(() -> {
+                    if (currentFloatingView == rootLayout) {
+                        dismissFloatingOverlay();
+                    }
+                }, 30000);
+
+            } catch (Exception e) {
+                Log.w(TAG, "Floating overlay display error: " + e.getMessage());
+            }
+        });
+    }
+
+    private void dismissFloatingOverlay() {
+        if (currentFloatingView != null) {
+            try {
+                WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+                if (wm != null && currentFloatingView.isAttachedToWindow()) {
+                    wm.removeViewImmediate(currentFloatingView);
+                }
+            } catch (Exception ignored) {}
+            currentFloatingView = null;
+        }
+    }
+
+    private int dp(int value) {
+        return (int) TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            value,
+            getResources().getDisplayMetrics()
+        );
     }
 
     private String cleanLocation(String loc) {

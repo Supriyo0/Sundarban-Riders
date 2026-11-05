@@ -49,27 +49,22 @@ export function MobileAppHeader({
         <div className="absolute top-0 inset-x-4 h-3 bg-gradient-to-b from-white/80 via-white/20 to-transparent rounded-t-3xl pointer-events-none" />
 
         {/* Brand & User info */}
-        <div className="flex items-center gap-2.5 min-w-0 flex-1 z-10">
-          <div className="w-8.5 h-8.5 rounded-full overflow-hidden shrink-0 ring-2 ring-emerald-500/30 shadow-xs flex items-center justify-center bg-white p-0.5 border border-white">
+        <div className="flex items-center gap-2 min-w-0 flex-1 z-10">
+          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 ring-2 ring-emerald-500/30 shadow-xs flex items-center justify-center bg-white p-0.5 border border-white">
             <img
               src="/sundarban-logo.png"
-              alt="Sundarban Riders Logo"
+              alt="Sundarban Riders"
               className="w-full h-full object-cover rounded-full"
             />
           </div>
           <div className="flex flex-col min-w-0 justify-center">
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-sm tracking-tight text-slate-900 leading-none">
-                SUNDARBAN
-              </span>
-              <span className="font-black text-sm tracking-tight text-emerald-600 leading-none">
-                RIDERS
-              </span>
-            </div>
+            <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 leading-none truncate">
+              {role === "rider" ? "🛺 চালক ড্যাশবোর্ড" : "সুন্দরবন রাইডার্স"}
+            </span>
             {userName && (
-              <span className={`text-[11px] font-bold text-slate-600 truncate mt-0.5 leading-tight items-center gap-1 ${role === "rider" ? "hidden sm:flex" : "flex"}`}>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{role === "rider" ? "🛺 " : "👤 "}{userName}</span>
+              <span className="text-[10.5px] font-bold text-slate-600 truncate mt-0.5 leading-tight flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="truncate">{userName}</span>
               </span>
             )}
           </div>

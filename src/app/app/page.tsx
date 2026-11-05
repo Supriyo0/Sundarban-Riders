@@ -102,6 +102,7 @@ import {
   requestOverlayPermission,
   startNativeBookingService,
   stopNativeBookingService,
+  clearPendingBooking,
 } from "@/lib/mobile/overlay-launcher";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
 import { AppSplashScreen } from "@/components/brand/app-splash-screen";
@@ -1799,12 +1800,12 @@ function MobileAppPageContent() {
   }, [phase, session?.driverId, session?.phone, isOnline]);
 
   // Reusable helper: Display incoming ride modal with audio chime and haptics
-  const triggerIncomingRideAlert = useCallback((b: any) => {
+  const triggerIncomingRideAlert = useCallback((b: any, isDirectTapped: boolean = false) => {
     if (!b || activeRide || isAcceptingRef.current) return;
     if (declinedBookingIdsRef.current.has(b.id)) return;
     if (acceptedRideIdsRef.current.has(b.id)) return;
     if (b.booking_number && acceptedRideIdsRef.current.has(b.booking_number)) return;
-    if (activeAlertBookingIdRef.current === b.id) return;
+    if (!isDirectTapped && activeAlertBookingIdRef.current === b.id) return;
     activeAlertBookingIdRef.current = b.id;
 
     const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
@@ -1818,7 +1819,11 @@ function MobileAppPageContent() {
     const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : (hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920]);
     const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 0.8;
 
-    if (dKm > 15.0) return; // Nearby regional radius
+    // Direct user tap from background notification or overlay ignores radius; passive polling checks radius
+    if (!isDirectTapped && dKm > 35.0) {
+      activeAlertBookingIdRef.current = null;
+      return;
+    }
 
     const isMetered = !hasValidDrop || (typeof b.drop_location === "string" && (b.drop_location.includes("মিটার") || b.drop_location.includes("বিনা গন্তব্য")));
     const tripDistKm = isMetered
@@ -1878,16 +1883,27 @@ function MobileAppPageContent() {
       if (!bId || isHandling || activeRide || isAcceptingRef.current) return;
       isHandling = true;
       try {
+        const savedSession = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+        if (savedSession) {
+          try {
+            const parsed = JSON.parse(savedSession);
+            if (parsed.role === "rider") {
+              setSession(parsed);
+            }
+          } catch {}
+        }
+        setRole("rider");
+        setPhase("rider_home");
+        setIsOnline(true);
+        activeAlertBookingIdRef.current = null;
+
         const res = await fetch(`/api/bookings?id=${encodeURIComponent(bId)}&_t=${Date.now()}`);
         const data = await res.json();
         const b = data.booking || (Array.isArray(data.bookings) ? data.bookings.find((item: any) => item.id === bId) : null);
         if (b && (b.status === "pending" || b.status === "requested") && !b.driver_id) {
-          setRole("rider");
-          setPhase("rider_home");
-          setIsOnline(true);
-          activeAlertBookingIdRef.current = null;
           declinedBookingIdsRef.current.delete(b.id);
-          triggerIncomingRideAlert(b);
+          triggerIncomingRideAlert(b, true);
+          clearPendingBooking().catch(() => {});
         }
       } catch (err) {
         console.warn("[OverlayLauncher] Failed to fetch tapped booking:", err);
@@ -1924,8 +1940,14 @@ function MobileAppPageContent() {
 
     document.addEventListener("visibilitychange", handleVisibility);
     checkNativePending();
+    const t1 = setTimeout(checkNativePending, 500);
+    const t2 = setTimeout(checkNativePending, 1500);
+    const t3 = setTimeout(checkNativePending, 3000);
 
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       window.removeEventListener("sr:open_booking", onCustomEvent);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
@@ -2089,17 +2111,12 @@ function MobileAppPageContent() {
 
     const applyLocationFix = (lat: number, lng: number, accuracy?: number) => {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
-      // Filter coarse cell-tower / IP location (> 150m) to stop location jumping
-      if (accuracy !== undefined && accuracy > 150) {
-        return;
-      }
       if (accuracy !== undefined && accuracy < bestAccuracy) {
         bestAccuracy = accuracy;
       }
 
       setDriverLiveCoords([lat, lng]);
-      // Only set pickup coordinates if not already locked by the interactive booking map
-      setPickupCoords((prev) => (prev[0] === 0 ? [lat, lng] : prev));
+      setPickupCoords([lat, lng]);
       try {
         localStorage.setItem("sr_last_known_lat", lat.toString());
         localStorage.setItem("sr_last_known_lng", lng.toString());
@@ -2124,26 +2141,54 @@ function MobileAppPageContent() {
       });
     };
 
+    let watchId: number | null = null;
+    let capWatchId: string | null = null;
+    let isCancelled = false;
+
     if (isNative) {
       Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 6000, maximumAge: 3000 })
         .then((pos) => {
-          if (pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+          if (!isCancelled && pos?.coords) applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
         })
         .catch(() => {});
-    }
 
-    if (typeof window !== "undefined" && navigator.geolocation) {
-      // Pure Satellite high accuracy GPS
+      Geolocation.watchPosition(
+        { enableHighAccuracy: true, maximumAge: 3000 },
+        (pos, err) => {
+          if (isCancelled || err || !pos?.coords) return;
+          applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        }
+      ).then((id) => { capWatchId = id; }).catch(() => {});
+    } else if (typeof window !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          if (pos?.coords) {
+          if (!isCancelled && pos?.coords) {
             applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
           }
         },
         () => {},
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 3000 }
       );
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (isCancelled || !pos?.coords) return;
+          applyLocationFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 3000 }
+      );
     }
+
+    return () => {
+      isCancelled = true;
+      if (watchId !== null && typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (capWatchId) {
+        Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
+      }
+    };
   }, []);
 
   // Safe phase transition after permission or dismissal

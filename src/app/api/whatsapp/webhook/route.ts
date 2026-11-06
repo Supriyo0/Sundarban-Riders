@@ -441,12 +441,13 @@ async function handleStatusUpdate(status: {
     )
 
     const pending = pendingDispatchesByWamid.get(status.id)
-    if (isRateLimit && pending && pending.retries < 2) {
+    if (isRateLimit && pending && pending.retries < 1) {
       pending.retries += 1
-      console.log(`[RATE_LIMIT_RETRY] Meta throttled wamid=${status.id} to=${pending.to}. Scheduling auto-retry in 2500ms (attempt ${pending.retries})...`)
+      const delayMs = 6000
+      console.log(`[RATE_LIMIT_RETRY] Meta throttled wamid=${status.id} to=${pending.to}. Scheduling single backoff retry in ${delayMs}ms...`)
       setTimeout(async () => {
         try {
-          await paceOutbound(pending.to, 1000)
+          await paceOutbound(pending.to, 1500)
           if (pending.type === 'interactive_buttons' && pending.buttons) {
             const res = await sendInteractiveButtons({
               phoneNumberId: pending.phoneNumberId,
@@ -471,7 +472,7 @@ async function handleStatusUpdate(status: {
         } catch (retryErr) {
           console.error('[RATE_LIMIT_RETRY_FAILED] Retry error:', retryErr)
         }
-      }, 2500)
+      }, delayMs)
     }
     pendingDispatchesByWamid.delete(status.id)
   } else if (status.status === 'delivered' || status.status === 'read') {

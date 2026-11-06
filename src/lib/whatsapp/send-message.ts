@@ -473,13 +473,18 @@ export async function sendMessageToConversation(
   // migrations and may not be present on all deployments.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const outboundRow: Record<string, any> = {
+    account_id: conversation.account_id || accountId,
+    contact_id: conversation.contact_id || conversation.contact?.id,
     conversation_id: conversationId,
+    direction: 'outbound',
     sender_type: 'agent',
     content_type: messageType,
     content_text: persistedText,
+    body: persistedText,
     media_url: mediaUrl || null,
     template_name: templateName || null,
     message_id: waMessageId,
+    wamid: waMessageId,
     status: 'sent',
   }
   // Conditionally add columns that may be absent on older schema

@@ -223,11 +223,14 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: input.conversationId,
+    direction: 'outbound',
     sender_type: 'bot',
     content_type,
     content_text,
+    body: content_text,
     template_name,
     message_id: waMessageId,
+    wamid: waMessageId,
     status: 'sent',
   })
   if (msgErr) {

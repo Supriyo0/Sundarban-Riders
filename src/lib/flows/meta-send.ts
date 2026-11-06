@@ -127,10 +127,13 @@ export async function engineSendText(
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
+    direction: 'outbound',
     sender_type: 'bot',
     content_type: 'text',
     content_text: args.text,
+    body: args.text,
     message_id: waMessageId,
+    wamid: waMessageId,
     status: 'sent',
     ai_generated: args.aiGenerated ?? false,
   })
@@ -245,10 +248,13 @@ export async function engineSendMedia(
   const preview = args.caption?.trim() || `[${args.kind}]`
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: args.conversationId,
+    direction: 'outbound',
     sender_type: 'bot',
     content_type: args.kind,
     content_text: args.caption ?? null,
+    body: args.caption ?? null,
     message_id: waMessageId,
+    wamid: waMessageId,
     status: 'sent',
   })
   if (msgErr) {
@@ -437,11 +443,14 @@ async function sendInteractiveViaMeta(
 
   const { error: msgErr } = await db.from('messages').insert({
     conversation_id: input.conversationId,
+    direction: 'outbound',
     sender_type: 'bot',
     content_type: 'interactive',
     content_text: input.bodyText,
+    body: input.bodyText,
     // interactive_payload omitted — column may not exist on all deployments
     message_id: waMessageId,
+    wamid: waMessageId,
     status: 'sent',
   })
   if (msgErr) {

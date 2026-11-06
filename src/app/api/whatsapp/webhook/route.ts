@@ -495,7 +495,9 @@ async function handleStatusUpdate(status: {
     .maybeSingle()
 
   if (recFetchErr) {
-    console.error('Error fetching broadcast recipient:', recFetchErr)
+    if (recFetchErr.code !== 'PGRST205') {
+      console.error('Error fetching broadcast recipient:', recFetchErr)
+    }
   } else if (
     recipient &&
     // Guard transitions — forward-only on the success ladder, and
@@ -578,7 +580,9 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
       .eq('id', row.id)
 
     if (updErr) {
-      console.error('Error marking broadcast recipient replied:', updErr)
+      if (updErr.code !== 'PGRST205') {
+        console.error('Error marking broadcast recipient replied:', updErr)
+      }
     }
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)

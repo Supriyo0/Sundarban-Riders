@@ -205,6 +205,14 @@ function MobileAppPageContent() {
   const [loading, setLoading] = useState(false);
   const [fallbackOtp, setFallbackOtp] = useState<string | null>(null);
 
+  // 4-Digit Security PIN & Auth Mode State (Eliminates repeated OTPs & WhatsApp rate limits)
+  const [authMode, setAuthMode] = useState<"phone" | "pin" | "otp" | "setup_pin">("phone");
+  const [pinInput, setPinInput] = useState("");
+  const [newPinInput, setNewPinInput] = useState("");
+  const [confirmPinInput, setConfirmPinInput] = useState("");
+  const [hasSetupPin, setHasSetupPin] = useState<boolean | null>(null);
+  const [isCheckingPin, setIsCheckingPin] = useState(false);
+
   // Driver KYC Form State
   const [kycName, setKycName] = useState("");
   const [kycEmail, setKycEmail] = useState("");
@@ -2470,6 +2478,183 @@ function MobileAppPageContent() {
     }
   };
 
+  // Check if entered phone number already has an established 4-digit PIN
+  const checkUserPin = useCallback(async (num: string) => {
+    const clean = num.replace(/\D/g, "").slice(-10);
+    if (clean.length !== 10) return;
+    try {
+      setIsCheckingPin(true);
+      // Check local cache first for instant 0ms transition
+      if (typeof window !== "undefined" && localStorage.getItem(`sr_has_pin_${clean}`) === "true") {
+        setHasSetupPin(true);
+        setAuthMode("pin");
+        setPinInput("");
+        return;
+      }
+      const res = await fetch("/api/auth/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "check", phone: clean, role }),
+      });
+      const data = await res.json();
+      if (data.hasPin) {
+        setHasSetupPin(true);
+        setAuthMode("pin");
+        setPinInput("");
+        if (typeof window !== "undefined") localStorage.setItem(`sr_has_pin_${clean}`, "true");
+      } else {
+        setHasSetupPin(false);
+        setAuthMode("phone");
+      }
+    } catch {
+      setHasSetupPin(false);
+      setAuthMode("phone");
+    } finally {
+      setIsCheckingPin(false);
+    }
+  }, [role]);
+
+  // Handle Login via 4-Digit Security PIN (Instant 0-SMS 0-WhatsApp login)
+  const handleLoginWithPin = async () => {
+    if (!pinInput || pinInput.length !== 4) {
+      toast.error("সঠিক ৪ সংখ্যার পিন কোড লিখুন");
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await fetch("/api/auth/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", phone: phoneInput, pin: pinInput, role }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        playSuccessSound();
+        const cleanPhone = (json.phone || phoneInput).replace(/\D/g, "").slice(-10);
+        const alreadyAccepted = hasUserAcceptedDisclaimer(role, cleanPhone);
+
+        if (role === "rider") {
+          const isReg = Boolean(json.is_registered);
+          const isApp = json.is_approved !== false;
+          const newSession: MobileSession = {
+            phone: cleanPhone,
+            role: "rider",
+            isApproved: isReg ? isApp : false,
+            driverId: json.driver?.id,
+            driverName: json.driver?.name,
+            totoNumber: json.driver?.toto_number,
+            uniqueId: json.driver?.unique_id || json.driver?.toto_number,
+          };
+          setSession(newSession);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
+            localStorage.setItem(`sr_has_pin_${cleanPhone}`, "true");
+          }
+
+          if (isReg && alreadyAccepted) {
+            if (isApp) {
+              setPhase("rider_home");
+              toast.success("স্বাগতম চালক বন্ধু!");
+            } else {
+              setPhase("kyc_pending");
+            }
+          } else {
+            setPendingAuthResult({
+              role: "rider",
+              phone: cleanPhone,
+              is_registered: isReg,
+              is_approved: isApp,
+              driver: json.driver,
+            });
+            setPhase("disclaimer");
+          }
+        } else {
+          const pName = json.customer?.name || "যাত্রী বন্ধু";
+          const newSession: MobileSession = {
+            phone: cleanPhone,
+            role: "passenger",
+            passengerName: pName,
+          };
+          setSession(newSession);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
+            localStorage.setItem(`sr_has_pin_${cleanPhone}`, "true");
+          }
+
+          if (alreadyAccepted) {
+            setPhase("passenger_home");
+            toast.success(`স্বাগতম ${pName}!`);
+          } else {
+            setPendingAuthResult({
+              role: "passenger",
+              phone: cleanPhone,
+              customer: { name: pName, phone: cleanPhone },
+            });
+            setPhase("disclaimer");
+          }
+        }
+      } else {
+        toast.error(json.message || "ভুল পিন কোড! পুনরায় চেষ্টা করুন অথবা পিন রিসেট করুন।");
+      }
+    } catch {
+      toast.error("সার্ভার ত্রুটি");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Save New 4-Digit Security PIN
+  const handleSavePinAndProceed = async () => {
+    if (!newPinInput || newPinInput.length !== 4) {
+      toast.error("৪ সংখ্যার সিকিউরিটি পিন লিখুন");
+      return;
+    }
+    if (newPinInput !== confirmPinInput) {
+      toast.error("উভয় পিন মিলছে না! পুনরায় যাচাই করুন");
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await fetch("/api/auth/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "set", phone: phoneInput, pin: newPinInput, role }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        const cleanPhone = phoneInput.replace(/\D/g, "").slice(-10);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`sr_has_pin_${cleanPhone}`, "true");
+        }
+        toast.success("৪ সংখ্যার পিন সফলভাবে সংরক্ষিত হয়েছে!");
+
+        // Complete the pending auth session
+        const alreadyAccepted = hasUserAcceptedDisclaimer(role, cleanPhone);
+        if (role === "rider") {
+          const isReg = Boolean(pendingAuthResult?.is_registered);
+          const isApp = pendingAuthResult?.is_approved !== false;
+          if (isReg && alreadyAccepted) {
+            setPhase(isApp ? "rider_home" : "kyc_pending");
+          } else {
+            setPhase("disclaimer");
+          }
+        } else {
+          if (alreadyAccepted) {
+            setPhase("passenger_home");
+          } else {
+            setPhase("disclaimer");
+          }
+        }
+      } else {
+        toast.error(json.message || "পিন সংরক্ষণ ব্যর্থ হয়েছে");
+      }
+    } catch {
+      toast.error("সার্ভার ত্রুটি");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Handle Send WhatsApp OTP
   const handleSendOtp = async () => {
     if (!phoneInput || phoneInput.length < 10) {
@@ -2559,8 +2744,24 @@ function MobileAppPageContent() {
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
+          setPendingAuthResult({
+            role: "rider",
+            phone: cleanPhone,
+            is_registered: isReg,
+            is_approved: isApp,
+            driver: json.driver,
+          });
 
-          // If already registered and already accepted disclaimer: bypass directly
+          // Check if user already has PIN; if not, force 4-digit PIN setup
+          const hasPinCached = typeof window !== "undefined" && localStorage.getItem(`sr_has_pin_${cleanPhone}`) === "true";
+          if (!hasPinCached) {
+            setAuthMode("setup_pin");
+            setNewPinInput("");
+            setConfirmPinInput("");
+            toast.success("OTP সফলভাবে যাচাই হয়েছে! এবার আপনার ৪ সংখ্যার সিকিউরিটি পিন সেট করুন।");
+            return;
+          }
+
           if (isReg && alreadyAccepted) {
             if (isApp) {
               setPhase("rider_home");
@@ -2569,14 +2770,6 @@ function MobileAppPageContent() {
               setPhase("kyc_pending");
             }
           } else {
-            // New driver or has not accepted rider disclaimer yet
-            setPendingAuthResult({
-              role: "rider",
-              phone: cleanPhone,
-              is_registered: isReg,
-              is_approved: isApp,
-              driver: json.driver,
-            });
             setPhase("disclaimer");
             toast.info("অনুগ্রহ করে চালক পার্টনার শর্তাবলীতে সম্মতি জানান");
           }
@@ -2590,18 +2783,26 @@ function MobileAppPageContent() {
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
+          setPendingAuthResult({
+            role: "passenger",
+            phone: cleanPhone,
+            customer: { name: pName, phone: cleanPhone },
+          });
 
-          // If already registered / accepted disclaimer: bypass directly
+          // Check if passenger already has PIN; if not, force 4-digit PIN setup
+          const hasPinCached = typeof window !== "undefined" && localStorage.getItem(`sr_has_pin_${cleanPhone}`) === "true";
+          if (!hasPinCached) {
+            setAuthMode("setup_pin");
+            setNewPinInput("");
+            setConfirmPinInput("");
+            toast.success("OTP সফলভাবে যাচাই হয়েছে! এবার আপনার ৪ সংখ্যার সিকিউরিটি পিন সেট করুন।");
+            return;
+          }
+
           if (alreadyAccepted) {
             setPhase("passenger_home");
             toast.success(`স্বাগতম ${pName}!`);
           } else {
-            // New passenger or has not accepted passenger disclaimer yet
-            setPendingAuthResult({
-              role: "passenger",
-              phone: cleanPhone,
-              customer: { name: pName, phone: cleanPhone },
-            });
             setPhase("disclaimer");
             toast.info("অনুগ্রহ করে যাত্রী সুরক্ষা শর্তাবলীতে সম্মতি জানান");
           }
@@ -3185,23 +3386,120 @@ function MobileAppPageContent() {
                     type="tel"
                     placeholder="9876543210"
                     value={phoneInput}
-                    disabled={otpSent}
-                    onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    disabled={otpSent || authMode === "setup_pin"}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      setPhoneInput(val);
+                      if (val.length === 10) {
+                        checkUserPin(val);
+                      } else {
+                        setHasSetupPin(null);
+                        setAuthMode("phone");
+                        setOtpSent(false);
+                      }
+                    }}
                     className="h-14 pl-14 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500"
                   />
                 </div>
               </div>
 
-              {otpSent && (
+              {/* MODE A: 4-DIGIT PIN LOGIN (Returning Users - 0 SMS / 0 WhatsApp messages) */}
+              {authMode === "pin" && !otpSent && (
                 <div className="space-y-3 pt-2 animate-in fade-in">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার OTP কোড</Label>
+                    <Label className="text-xs text-slate-700 font-bold flex items-center gap-1.5">
+                      <span>🔒 আপনার ৪ সংখ্যার সিকিউরিটি পিন (PIN)</span>
+                    </Label>
+                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-full">
+                      দ্রুত লগইন
+                    </span>
+                  </div>
+                  <Input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    placeholder="• • • •"
+                    value={pinInput}
+                    onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="h-16 text-center text-3xl font-black tracking-[0.8em] bg-white border-2 border-emerald-500 text-slate-900 rounded-2xl shadow-sm focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <div className="flex items-center justify-between pt-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("otp");
+                        handleSendOtp();
+                      }}
+                      className="text-amber-600 hover:text-amber-700 font-bold hover:underline cursor-pointer"
+                    >
+                      🔑 পিন ভুলে গেছেন? OTP দিয়ে রিসেট করুন
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode("phone");
+                        setPhoneInput("");
+                        setPinInput("");
+                        setHasSetupPin(null);
+                      }}
+                      className="text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
+                    >
+                      নম্বর পরিবর্তন
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE B: FIRST-TIME PIN SETUP (After OTP Verified) */}
+              {authMode === "setup_pin" && (
+                <div className="space-y-3.5 pt-2 animate-in fade-in bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200">
+                  <div className="text-center pb-1">
+                    <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block">
+                      🔐 নতুন সিকিউরিটি পিন তৈরি করুন
+                    </span>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      পরের বার থেকে কোনো OTP ছাড়াই সরাসরি এই পিন দিয়ে লগইন করতে পারবেন।
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-700 font-semibold block mb-1">৪ সংখ্যার পিন লিখুন:</Label>
+                    <Input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="• • • •"
+                      value={newPinInput}
+                      onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      className="h-12 text-center text-2xl font-black tracking-[0.6em] bg-white border border-emerald-400 rounded-xl"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-700 font-semibold block mb-1">পিন নিশ্চিত করুন:</Label>
+                    <Input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="• • • •"
+                      value={confirmPinInput}
+                      onChange={(e) => setConfirmPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      className="h-12 text-center text-2xl font-black tracking-[0.6em] bg-white border border-emerald-400 rounded-xl"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* MODE C: OTP ENTRY (New Users OR Forgot PIN) */}
+              {otpSent && authMode !== "setup_pin" && (
+                <div className="space-y-3 pt-2 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-slate-700 font-semibold">৪ সংখ্যার WhatsApp OTP কোড</Label>
                     <span className="text-xs text-emerald-600 font-mono font-bold">
                       {otpTimer > 0 ? `পুনরায় পাঠাতে: ${otpTimer}s` : ""}
                     </span>
                   </div>
                   <Input
                     type="text"
+                    inputMode="numeric"
                     maxLength={4}
                     placeholder="• • • •"
                     value={otpInput}
@@ -3209,9 +3507,7 @@ function MobileAppPageContent() {
                     className="h-16 text-center text-2xl font-black tracking-[1em] bg-white border-2 border-emerald-500 text-emerald-700 rounded-2xl shadow-sm"
                   />
 
-
-
-                  {/* Direct One-Tap WhatsApp Button to open chat & receive OTP instantly */}
+                  {/* Direct One-Tap WhatsApp Button */}
                   <a
                     href={`https://wa.me/918348122122?text=${encodeURIComponent("OTP")}`}
                     target="_blank"
@@ -3240,6 +3536,7 @@ function MobileAppPageContent() {
                         setOtpSent(false);
                         setOtpInput("");
                         setFallbackOtp(null);
+                        setAuthMode("phone");
                       }}
                       className="text-xs text-slate-500 hover:text-slate-800 font-semibold underline cursor-pointer"
                     >
@@ -3252,7 +3549,25 @@ function MobileAppPageContent() {
           </div>
 
           <div className="pb-6 px-6 max-w-md mx-auto w-full">
-            {!otpSent ? (
+            {authMode === "setup_pin" ? (
+              <Button
+                size="lg"
+                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                onClick={handleSavePinAndProceed}
+                disabled={loading || newPinInput.length !== 4 || confirmPinInput.length !== 4}
+              >
+                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : "পিন সংরক্ষণ করুন ও প্রবেশ করুন ✓"}
+              </Button>
+            ) : authMode === "pin" && !otpSent ? (
+              <Button
+                size="lg"
+                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                onClick={handleLoginWithPin}
+                disabled={loading || pinInput.length !== 4}
+              >
+                {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : "🔒 পিন দিয়ে লগইন করুন"}
+              </Button>
+            ) : !otpSent ? (
               <Button
                 size="lg"
                 className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
@@ -3275,7 +3590,7 @@ function MobileAppPageContent() {
                 {loading ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
                 ) : (
-                  "ভেরিফাই করুন ও প্রবেশ করুন"
+                  "ভেরিফাই করুন"
                 )}
               </Button>
             )}

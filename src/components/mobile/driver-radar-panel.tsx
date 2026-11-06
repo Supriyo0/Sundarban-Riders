@@ -259,8 +259,9 @@ export function DriverRadarPanel({
       const prev = lastBackendSyncedCoordsRef.current;
       const distKm = prev[0] !== 0 ? calculateDistanceKm(prev[0], prev[1], lat, lng) : 999;
 
-      // Only send PATCH to database if forced, or at least 15s passed, or moved >= 20m (0.02km)
-      if (!force && timeSinceLast < 15000 && distKm < 0.02) {
+      // Intelligent GPS throttling: If stationary (< 15m), throttle database sync to 30s to conserve battery & quota
+      const minIntervalMs = distKm < 0.015 ? 30000 : 12000;
+      if (!force && timeSinceLast < minIntervalMs && distKm < 0.02) {
         return;
       }
 

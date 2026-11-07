@@ -153,26 +153,35 @@ export async function POST(req: Request) {
       }
 
       // PIN is valid! Generate session payload
+      const last10 = cleanPhone.slice(-10);
       if (role === "rider") {
-        const { data: driver } = await supabase
+        const { data: driversList } = await supabase
           .from("drivers")
-          .select("id, name, phone, toto_number, unique_id, is_active, is_available, current_location_name")
-          .or(`phone.ilike.%${cleanPhone}%,phone.eq.${cleanPhone}`)
-          .maybeSingle();
+          .select("id, name, phone, toto_number, unique_id, is_active, is_available, current_location_name, created_at")
+          .or(`phone.ilike.%${last10}%,phone.eq.${cleanPhone},phone.eq.91${last10},phone.eq.+91${last10}`)
+          .order("is_active", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(5);
 
+        const driver = driversList && driversList.length > 0 ? driversList[0] : null;
         const isRegistered = Boolean(driver);
-        let isApproved = isRegistered;
-        if (driver && driver.current_location_name) {
-          try {
-            const meta = typeof driver.current_location_name === "string" 
-              ? JSON.parse(driver.current_location_name) 
-              : driver.current_location_name;
-            if (meta.status === "pending_approval" || meta.status === "rejected") {
-              isApproved = false;
-            } else if (meta.status === "approved") {
-              isApproved = true;
-            }
-          } catch {}
+        let isApproved = false;
+        if (driver) {
+          isApproved = Boolean(driver.is_active);
+          if (driver.current_location_name) {
+            try {
+              const meta = typeof driver.current_location_name === "string" 
+                ? JSON.parse(driver.current_location_name) 
+                : driver.current_location_name;
+              if (meta.status === "approved" || meta.approved_at) {
+                isApproved = true;
+              } else if (meta.status === "rejected") {
+                isApproved = false;
+              } else if (meta.status === "pending_approval" && !driver.is_active) {
+                isApproved = false;
+              }
+            } catch {}
+          }
         }
 
         return NextResponse.json({
@@ -188,11 +197,14 @@ export async function POST(req: Request) {
           } : { phone: cleanPhone, name: "চালক বন্ধু", is_approved: false },
         });
       } else {
-        const { data: customer } = await supabase
+        const { data: customerList } = await supabase
           .from("customers")
-          .select("id, name, phone")
-          .or(`phone.ilike.%${cleanPhone}%,phone.eq.${cleanPhone}`)
-          .maybeSingle();
+          .select("id, name, phone, created_at")
+          .or(`phone.ilike.%${last10}%,phone.eq.${cleanPhone},phone.eq.91${last10},phone.eq.+91${last10}`)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        const customer = customerList && customerList.length > 0 ? customerList[0] : null;
 
         return NextResponse.json({
           success: true,

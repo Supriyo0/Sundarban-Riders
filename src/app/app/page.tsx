@@ -2693,8 +2693,7 @@ function MobileAppPageContent() {
               if (foundDrv) {
                 isReg = true;
                 isApp = foundDrv.is_approved !== false;
-                setSession(prev => ({
-                  ...prev,
+                const newDriverSession: MobileSession = {
                   phone: cleanPhone,
                   role: "rider",
                   isApproved: isApp,
@@ -2702,7 +2701,11 @@ function MobileAppPageContent() {
                   driverName: foundDrv.name,
                   totoNumber: foundDrv.toto_number,
                   uniqueId: foundDrv.unique_id || foundDrv.toto_number,
-                }));
+                };
+                setSession(newDriverSession);
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("sr_mobile_session", JSON.stringify(newDriverSession));
+                }
               }
             } catch {}
           }
@@ -2763,15 +2766,38 @@ function MobileAppPageContent() {
   };
 
   // Handle Disclaimer Accepted Callback
-  const handleDisclaimerAccepted = () => {
+  const handleDisclaimerAccepted = async () => {
     const effectivePhone = (phoneInput || session?.phone || "").replace(/\D/g, "").slice(-10);
     setUserAcceptedDisclaimer(role, effectivePhone);
     playSuccessSound();
     toast.success("শর্তাবলী সফলভাবে গৃহীত হয়েছে!");
 
     if (role === "rider") {
-      const isReg = pendingAuthResult ? pendingAuthResult.is_registered : session?.driverId;
-      const isApp = pendingAuthResult ? pendingAuthResult.is_approved : session?.isApproved;
+      let isReg = Boolean(pendingAuthResult ? pendingAuthResult.is_registered : session?.driverId);
+      let isApp = pendingAuthResult ? pendingAuthResult.is_approved : session?.isApproved;
+
+      if (!isReg && effectivePhone) {
+        try {
+          const chkRes = await fetch(`/api/drivers?phone=${effectivePhone}`);
+          const chkData = await chkRes.json();
+          const foundDrv = chkData.driver || (chkData.drivers && chkData.drivers.find((x: { phone?: string }) => x.phone?.includes(effectivePhone)));
+          if (foundDrv) {
+            isReg = true;
+            isApp = foundDrv.is_approved !== false;
+            const fixed: MobileSession = {
+              phone: effectivePhone,
+              role: "rider",
+              isApproved: isApp,
+              driverId: foundDrv.id,
+              driverName: foundDrv.name,
+              totoNumber: foundDrv.toto_number,
+              uniqueId: foundDrv.unique_id || foundDrv.toto_number,
+            };
+            setSession(fixed);
+            if (typeof window !== "undefined") localStorage.setItem("sr_mobile_session", JSON.stringify(fixed));
+          }
+        } catch {}
+      }
 
       if (!isReg) {
         setPhase("kyc_form");

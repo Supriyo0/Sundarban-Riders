@@ -117,3 +117,4 @@ export function extractDropCoordinates(b: any): [number, number] | null {
 
   return null;
 }
+

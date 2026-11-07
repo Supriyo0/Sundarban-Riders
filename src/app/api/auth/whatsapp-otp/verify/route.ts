@@ -38,13 +38,18 @@ export async function POST(req: Request) {
       })
     ).toString("base64");
 
+    const last10 = cleanPhone.slice(-10);
     if (role === "rider") {
       // Check if driver is already registered in `drivers` table
-      const { data: driver } = await supabase
+      const { data: driversList } = await supabase
         .from("drivers")
         .select("*")
-        .or(`phone.eq.${cleanPhone},phone.eq.${cleanPhone.replace(/^91/, "")}`)
-        .maybeSingle();
+        .or(`phone.ilike.%${last10}%,phone.eq.${cleanPhone},phone.eq.91${last10},phone.eq.+91${last10}`)
+        .order("is_active", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const driver = driversList && driversList.length > 0 ? driversList[0] : null;
 
       if (!driver) {
         return NextResponse.json({
@@ -57,16 +62,18 @@ export async function POST(req: Request) {
         });
       }
 
-      let isApproved = true;
+      let isApproved = Boolean(driver.is_active);
       if (driver.current_location_name) {
         try {
           const meta = typeof driver.current_location_name === "string" 
             ? JSON.parse(driver.current_location_name) 
             : driver.current_location_name;
-          if (meta.status === "pending_approval" || meta.status === "rejected") {
-            isApproved = false;
-          } else if (meta.status === "approved") {
+          if (meta.status === "approved" || meta.approved_at) {
             isApproved = true;
+          } else if (meta.status === "rejected") {
+            isApproved = false;
+          } else if (meta.status === "pending_approval" && !driver.is_active) {
+            isApproved = false;
           }
         } catch {}
       }

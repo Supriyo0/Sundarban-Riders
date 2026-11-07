@@ -118,6 +118,7 @@ import {
   setUserAcceptedDisclaimer,
 } from "@/components/mobile/disclaimer-screen";
 import { MobileProfileModal } from "@/components/mobile/profile-modal";
+import { extractPickupCoordinates, extractDropCoordinates } from "@/lib/mobile/location-coords";
 
 interface MobileSession {
   phone: string;
@@ -989,8 +990,8 @@ function MobileAppPageContent() {
                   driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
                   pickup: b.pickup_location,
                   drop: b.drop_location,
-                  pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
-                  dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+                  pickupCoords: extractPickupCoordinates(b) || pickupCoords,
+                  dropCoords: extractDropCoordinates(b) || dropCoords,
                   fare: Number(b.estimated_fare || tripFare),
                   status: b.status,
                 };
@@ -1083,8 +1084,10 @@ function MobileAppPageContent() {
         if (b) {
           if (b.pickup_location) setPickupText(b.pickup_location);
           if (b.drop_location) setDropText(b.drop_location);
-          if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
-          if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+          const pC = extractPickupCoordinates(b);
+          const dC = extractDropCoordinates(b);
+          if (pC) setPickupCoords(pC);
+          if (dC) setDropCoords(dC);
           if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
 
           const acceptedPassengerBooking = {
@@ -1101,8 +1104,8 @@ function MobileAppPageContent() {
             driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
             pickup: b.pickup_location,
             drop: b.drop_location,
-            pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
-            dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+            pickupCoords: pC || pickupCoords,
+            dropCoords: dC || dropCoords,
             fare: Number(b.estimated_fare || tripFare),
             status: b.status,
           };
@@ -1186,8 +1189,8 @@ function MobileAppPageContent() {
             driver_coords: b.driver_coords || (b.driver_lat && b.driver_lng ? [Number(b.driver_lat), Number(b.driver_lng)] : undefined),
             pickup: b.pickup_location,
             drop: b.drop_location,
-            pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : pickupCoords,
-            dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : dropCoords,
+            pickupCoords: extractPickupCoordinates(b) || pickupCoords,
+            dropCoords: extractDropCoordinates(b) || dropCoords,
             fare: Number(b.estimated_fare || tripFare),
             status: b.status,
           };
@@ -1204,8 +1207,10 @@ function MobileAppPageContent() {
         // Keep locations and coordinates synchronized
         if (b.pickup_location) setPickupText(b.pickup_location);
         if (b.drop_location) setDropText(b.drop_location);
-        if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
-        if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+        const syncPC = extractPickupCoordinates(b);
+        const syncDC = extractDropCoordinates(b);
+        if (syncPC) setPickupCoords(syncPC);
+        if (syncDC) setDropCoords(syncDC);
         if (b.final_fare || b.estimated_fare) setTripFare(Number(b.final_fare || b.estimated_fare));
         if (b.actual_distance_km) setTripDistance(Number(b.actual_distance_km));
 
@@ -1606,6 +1611,8 @@ function MobileAppPageContent() {
 
           if (data?.booking && (data.booking.status === "assigned" || data.booking.status === "in_progress")) {
             const b = data.booking;
+            const pCoords = extractPickupCoordinates(b) || [21.8760, 88.1920];
+            const dCoords = extractDropCoordinates(b) || [pCoords[0] + 0.015, pCoords[1] + 0.015];
             const restoredRide = {
               id: b.id,
               bookingNumber: b.booking_number,
@@ -1614,8 +1621,8 @@ function MobileAppPageContent() {
               passengerPhone: b.customer_phone || "",
               pickup: b.pickup_location || "পিকআপ পয়েন্ট",
               drop: b.drop_location || "গন্তব্য",
-              pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : [21.8760, 88.1920],
-              dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : [21.8680, 88.1630],
+              pickupCoords: pCoords,
+              dropCoords: dCoords,
               status: b.status === "in_progress" ? "on_trip" : "heading_pickup",
               tripStartTime: b.trip_start_time || b.tripStartTime,
               trip_start_time: b.trip_start_time || b.tripStartTime,
@@ -1661,8 +1668,10 @@ function MobileAppPageContent() {
             if (b.status === "pending") {
               setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
               setDropText(b.drop_location || "");
-              if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
-              if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+              const pendingPC = extractPickupCoordinates(b);
+              const pendingDC = extractDropCoordinates(b);
+              if (pendingPC) setPickupCoords(pendingPC);
+              if (pendingDC) setDropCoords(pendingDC);
               if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
               setActiveBookingId(b.id);
               setSearchStatus("searching");
@@ -1675,8 +1684,10 @@ function MobileAppPageContent() {
             } else if (b.status === "assigned" || b.status === "in_progress") {
               setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
               setDropText(b.drop_location || "");
-              if (b.pickup_lat && b.pickup_lng) setPickupCoords([Number(b.pickup_lat), Number(b.pickup_lng)]);
-              if (b.drop_lat && b.drop_lng) setDropCoords([Number(b.drop_lat), Number(b.drop_lng)]);
+              const activePC = extractPickupCoordinates(b);
+              const activeDC = extractDropCoordinates(b);
+              if (activePC) setPickupCoords(activePC);
+              if (activeDC) setDropCoords(activeDC);
               if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
               const restoredPassenger = {
                 id: b.id,
@@ -1906,10 +1917,12 @@ function MobileAppPageContent() {
     if (!isDirectTapped && activeAlertBookingIdRef.current === b.id) return;
     activeAlertBookingIdRef.current = b.id;
 
-    const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
-    const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-    const dDropLat = Number(b.drop_lat || b.end_coords?.[0]);
-    const dDropLng = Number(b.drop_lng || b.end_coords?.[1]);
+    const pCoords = extractPickupCoordinates(b);
+    const dCoords = extractDropCoordinates(b);
+    const pLat = pCoords ? pCoords[0] : Number(b.pickup_lat || b.start_coords?.[0] || 0);
+    const pLng = pCoords ? pCoords[1] : Number(b.pickup_lng || b.start_coords?.[1] || 0);
+    const dDropLat = dCoords ? dCoords[0] : Number(b.drop_lat || b.end_coords?.[0] || 0);
+    const dDropLng = dCoords ? dCoords[1] : Number(b.drop_lng || b.end_coords?.[1] || 0);
 
     const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
     const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
@@ -1972,8 +1985,8 @@ function MobileAppPageContent() {
       distanceKm: initialTripDist,
       estimatedDistanceKm: initialTripDist,
       estimatedFare: displayFare,
-      pickupCoords: hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920],
-      dropCoords: hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630]),
+      pickupCoords: pCoords || (hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920]),
+      dropCoords: dCoords || (hasValidDrop ? [dDropLat, dDropLng] : (hasValidPickup ? [pLat + 0.01, pLng + 0.01] : [21.8680, 88.1630])),
     });
   }, [activeRide, incomingRide, driverLiveCoords]);
 
@@ -2140,15 +2153,14 @@ function MobileAppPageContent() {
             if (item.booking_number && acceptedRideIdsRef.current.has(item.booking_number)) return false;
             if (isAcceptingRef.current === item.id) return false;
 
-            const pLat = Number(item.pickup_lat || item.start_coords?.[0]);
-            const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
-            if (coords && coords[0] !== 0 && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
-              const dKm = calculateDistanceKm(coords[0], coords[1], pLat, pLng);
+            const pCoords = extractPickupCoordinates(item);
+            if (coords && coords[0] !== 0 && pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {
+              const dKm = calculateDistanceKm(coords[0], coords[1], pCoords[0], pCoords[1]);
               if (dKm > 6.0) {
                 // Strictly ignore rides farther than 6.0 km
                 return false;
               }
-            } else {
+            } else if (!pCoords) {
               // Reject rides without valid pickup coordinates
               return false;
             }
@@ -4403,6 +4415,9 @@ function MobileAppPageContent() {
                 if (b.booking_number) acceptedRideIdsRef.current.add(b.booking_number);
                 isAcceptingRef.current = b.id;
 
+                const pCoords = extractPickupCoordinates(b) || (b.pickupCoords && b.pickupCoords[0] !== 0 ? b.pickupCoords : (driverLiveCoords && driverLiveCoords[0] !== 0 ? [driverLiveCoords[0] + 0.005, driverLiveCoords[1] + 0.005] : [21.8760, 88.1920]));
+                const dCoords = extractDropCoordinates(b) || (b.dropCoords && b.dropCoords[0] !== 0 ? b.dropCoords : [pCoords[0] + 0.015, pCoords[1] + 0.015]);
+
                 const startMs = Date.now();
                 const optimisticRide = {
                   id: b.id,
@@ -4415,8 +4430,8 @@ function MobileAppPageContent() {
                   passengerPhone: b.customer_phone || b.passengerPhone || "",
                   pickup: b.pickup_location || b.pickup || "পিকআপ পয়েন্ট",
                   drop: b.drop_location || b.drop || "গন্তব্য",
-                  pickupCoords: b.pickup_lat && b.pickup_lng ? [Number(b.pickup_lat), Number(b.pickup_lng)] : (b.pickupCoords || [21.8760, 88.1920]),
-                  dropCoords: b.drop_lat && b.drop_lng ? [Number(b.drop_lat), Number(b.drop_lng)] : (b.dropCoords || [21.8680, 88.1630]),
+                  pickupCoords: pCoords,
+                  dropCoords: dCoords,
                   status: "heading_pickup",
                   tripStartTime: startMs,
                   trip_start_time: startMs,
@@ -4759,9 +4774,13 @@ function MobileAppPageContent() {
                     isAcceptingRef.current = rideToAccept.id;
 
                     // 1. OPTIMISTIC UPDATE: Instant 0ms transition into active trip mode!
+                    const pCoords = extractPickupCoordinates(rideToAccept) || (rideToAccept.pickupCoords && rideToAccept.pickupCoords[0] !== 0 ? rideToAccept.pickupCoords : (driverLiveCoords && driverLiveCoords[0] !== 0 ? [driverLiveCoords[0] + 0.005, driverLiveCoords[1] + 0.005] : [21.8760, 88.1920]));
+                    const dCoords = extractDropCoordinates(rideToAccept) || (rideToAccept.dropCoords && rideToAccept.dropCoords[0] !== 0 ? rideToAccept.dropCoords : [pCoords[0] + 0.015, pCoords[1] + 0.015]);
                     const startMs = Date.now();
                     const optimisticRide = {
                       ...rideToAccept,
+                      pickupCoords: pCoords,
+                      dropCoords: dCoords,
                       distanceKm: typeof rideToAccept.distanceKm === "number" ? rideToAccept.distanceKm : (typeof rideToAccept.estimated_distance_km === "number" ? rideToAccept.estimated_distance_km : 1.5),
                       estimatedDistanceKm: typeof rideToAccept.estimatedDistanceKm === "number" ? rideToAccept.estimatedDistanceKm : (typeof rideToAccept.estimated_distance_km === "number" ? rideToAccept.estimated_distance_km : 1.5),
                       estimatedFare: rideToAccept.estimatedFare || rideToAccept.fare || 50,
@@ -4822,13 +4841,11 @@ function MobileAppPageContent() {
                                 pickup: currentBooking.pickup_location || prev.pickup,
                                 drop: currentBooking.drop_location || prev.drop,
                                 pickupCoords:
-                                  currentBooking.pickup_lat && currentBooking.pickup_lng
-                                    ? [Number(currentBooking.pickup_lat), Number(currentBooking.pickup_lng)]
-                                    : prev.pickupCoords,
+                                  extractPickupCoordinates(currentBooking) ||
+                                  prev.pickupCoords,
                                 dropCoords:
-                                  currentBooking.drop_lat && currentBooking.drop_lng
-                                    ? [Number(currentBooking.drop_lat), Number(currentBooking.drop_lng)]
-                                    : prev.dropCoords,
+                                  extractDropCoordinates(currentBooking) ||
+                                  prev.dropCoords,
                               }
                             : null
                         );
@@ -5472,15 +5489,13 @@ function MobileAppPageContent() {
                   dropText={dropText}
                   pickupCoords={
                     passengerBooking.pickupCoords ||
-                    (passengerBooking.pickup_lat && passengerBooking.pickup_lng
-                      ? [Number(passengerBooking.pickup_lat), Number(passengerBooking.pickup_lng)]
-                      : pickupCoords)
+                    extractPickupCoordinates(passengerBooking) ||
+                    pickupCoords
                   }
                   dropCoords={
                     passengerBooking.dropCoords ||
-                    (passengerBooking.drop_lat && passengerBooking.drop_lng
-                      ? [Number(passengerBooking.drop_lat), Number(passengerBooking.drop_lng)]
-                      : dropCoords)
+                    extractDropCoordinates(passengerBooking) ||
+                    dropCoords
                   }
                   tripDistance={tripDistance}
                   tripFare={tripFare}

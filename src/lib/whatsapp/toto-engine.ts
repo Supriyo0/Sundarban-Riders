@@ -2617,17 +2617,27 @@ ${
       const seedDigits = bookingNumber.replace(/\D/g, "").slice(-4);
       const startOtp = seedDigits.length === 4 ? seedDigits : Math.floor(1000 + Math.random() * 9000).toString();
 
+      const pickupWithGps = pLat && pLng
+        ? (pickupLocation.includes("GPS:") ? pickupLocation : `${pickupLocation} (GPS: ${pLat.toFixed(5)},${pLng.toFixed(5)})`)
+        : pickupLocation;
+
+      const dropWithGps = dLatDrop && dLngDrop
+        ? (dropLocation.includes("GPS:") ? dropLocation : `${dropLocation} (GPS: ${dLatDrop.toFixed(5)},${dLngDrop.toFixed(5)})`)
+        : dropLocation;
+
       const { data: newBooking } = await supabase.from("bookings").insert({
         booking_number: bookingNumber,
         customer_phone: cleanPhone,
         customer_name: ctx.senderName || "গ্রাহক",
-        pickup_location: pickupLocation,
-        drop_location: dropLocation,
+        pickup_location: pickupWithGps,
+        drop_location: dropWithGps,
         estimated_fare: estimatedFare,
         feedback: JSON.stringify({
           start_otp: startOtp,
           start_coords: pLat && pLng ? [pLat, pLng] : undefined,
           end_coords: dLatDrop && dLngDrop ? [dLatDrop, dLngDrop] : undefined,
+          pickup_coords: pLat && pLng ? [pLat, pLng] : undefined,
+          drop_coords: dLatDrop && dLngDrop ? [dLatDrop, dLngDrop] : undefined,
           passenger_count: passengerCount,
           estimated_distance_km: estDistanceKm,
           estimated_fare: estimatedFare,

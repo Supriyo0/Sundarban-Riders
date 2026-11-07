@@ -35,6 +35,7 @@ import { Geolocation } from "@capacitor/geolocation";
 import "leaflet/dist/leaflet.css";
 import { showLocalRideAlertNotification } from "@/lib/mobile/push-notifications";
 import { checkOverlayPermission, requestOverlayPermission } from "@/lib/mobile/overlay-launcher";
+import { extractPickupCoordinates, extractDropCoordinates } from "@/lib/mobile/location-coords";
 
 function playRideChime() {
   try {
@@ -689,16 +690,11 @@ export function DriverRadarPanel({
           if (b.driver_id) return false;
           if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 300 * 1000) return false;
           if (curCoords[0] !== 0) {
-            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
-            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
-              const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
+            const pCoords = extractPickupCoordinates(b);
+            if (pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {
+              const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pCoords[0], pCoords[1]);
               if (dKm > 6.0) return false;
-            } else {
-              return false;
             }
-          } else {
-            return false;
           }
           return true;
         });
@@ -716,7 +712,8 @@ export function DriverRadarPanel({
           }
           const first = newlyArrivedRides[0];
           const pText = cleanLocation(first.pickup_location) || "পিকআপ";
-          const isMetered = !first.drop_lat || (typeof first.drop_location === "string" && (first.drop_location.includes("মিটার") || first.drop_location.includes("বিনা গন্তব্য")));
+          const firstDropCoords = extractDropCoordinates(first);
+          const isMetered = !firstDropCoords || (typeof first.drop_location === "string" && (first.drop_location.includes("মিটার") || first.drop_location.includes("বিনা গন্তব্য")));
           const dText = isMetered ? "মিটার অনুযায়ী গন্তব্য" : (cleanLocation(first.drop_location) || "গন্তব্য");
           let fare = Number(first.estimated_fare) || Number(first.fare) || 34;
           if (fare > 5000) {
@@ -853,9 +850,9 @@ export function DriverRadarPanel({
         const bId = b.id || b.booking_number;
         if (existingIds.has(bId)) return;
 
-        const lat = Number(b.pickup_lat);
-        const lng = Number(b.pickup_lng);
-        if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+        const pCoords = extractPickupCoordinates(b);
+        if (!pCoords || pCoords[0] === 0 || pCoords[1] === 0) return;
+        const [lat, lng] = pCoords;
 
         const dist =
           curCoords[0] !== 0
@@ -1423,11 +1420,11 @@ export function DriverRadarPanel({
                   </span>
                   <div className="max-h-48 overflow-y-auto space-y-2 pr-0.5">
                     {pendingBookings.map((booking) => {
-                      const pLat = Number(booking.pickup_lat);
-                      const pLng = Number(booking.pickup_lng);
+                      const pCoords = extractPickupCoordinates(booking);
+                      const dCoords = extractDropCoordinates(booking);
                       const dist =
-                        hasValidLocation && driverCoords[0] !== 0 && pLat && pLng
-                          ? calculateDistanceKm(driverCoords[0], driverCoords[1], pLat, pLng)
+                        hasValidLocation && driverCoords[0] !== 0 && pCoords
+                          ? calculateDistanceKm(driverCoords[0], driverCoords[1], pCoords[0], pCoords[1])
                           : null;
 
                       return (
@@ -1441,7 +1438,7 @@ export function DriverRadarPanel({
                                 👤 {booking.customer_name || "যাত্রী"}
                               </span>
                               <span className="text-xs font-black font-mono text-emerald-700">
-                                {booking.drop_location?.includes("মিটার") || !booking.drop_lat
+                                {booking.drop_location?.includes("মিটার") || !dCoords
                                   ? `মিটার বেস: ₹${booking.estimated_fare || 34}.০০`
                                   : `₹${booking.estimated_fare || 40}.০০`}
                               </span>

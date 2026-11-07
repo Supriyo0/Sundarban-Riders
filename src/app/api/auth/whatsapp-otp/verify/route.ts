@@ -57,11 +57,13 @@ export async function POST(req: Request) {
         });
       }
 
-      let isApproved = Boolean(driver.is_active);
+      let isApproved = true;
       if (driver.current_location_name) {
         try {
-          const meta = JSON.parse(driver.current_location_name);
-          if (meta.status === "pending_approval") {
+          const meta = typeof driver.current_location_name === "string" 
+            ? JSON.parse(driver.current_location_name) 
+            : driver.current_location_name;
+          if (meta.status === "pending_approval" || meta.status === "rejected") {
             isApproved = false;
           } else if (meta.status === "approved") {
             isApproved = true;

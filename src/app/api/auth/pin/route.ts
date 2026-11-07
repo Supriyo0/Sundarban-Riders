@@ -141,19 +141,36 @@ export async function POST(req: Request) {
       if (role === "rider") {
         const { data: driver } = await supabase
           .from("drivers")
-          .select("id, name, phone, toto_number, unique_id, is_active, is_available")
+          .select("id, name, phone, toto_number, unique_id, is_active, is_available, current_location_name")
           .or(`phone.ilike.%${cleanPhone}%,phone.eq.${cleanPhone}`)
           .maybeSingle();
 
         const isRegistered = Boolean(driver);
+        let isApproved = isRegistered;
+        if (driver && driver.current_location_name) {
+          try {
+            const meta = typeof driver.current_location_name === "string" 
+              ? JSON.parse(driver.current_location_name) 
+              : driver.current_location_name;
+            if (meta.status === "pending_approval" || meta.status === "rejected") {
+              isApproved = false;
+            } else if (meta.status === "approved") {
+              isApproved = true;
+            }
+          } catch {}
+        }
+
         return NextResponse.json({
           success: true,
           message: "পিন সফলভাবে যাচাই হয়েছে!",
           phone: cleanPhone,
           role: "rider",
           is_registered: isRegistered,
-          is_approved: isRegistered ? driver?.is_active !== false : false,
-          driver: driver || { phone: cleanPhone, name: "চালক বন্ধু" },
+          is_approved: isApproved,
+          driver: driver ? {
+            ...driver,
+            is_approved: isApproved,
+          } : { phone: cleanPhone, name: "চালক বন্ধু", is_approved: false },
         });
       } else {
         const { data: customer } = await supabase

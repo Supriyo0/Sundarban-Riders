@@ -106,11 +106,13 @@ export async function GET(request: Request) {
 
       // Strict: Do not generate fake/mock GPS coordinates. Only use real driver coordinates if available.
 
-      let isApproved = Boolean(d.is_active);
+      let isApproved = true;
       if (d.current_location_name) {
         try {
-          const meta = JSON.parse(d.current_location_name);
-          if (meta.status === "pending_approval") {
+          const meta = typeof d.current_location_name === "string" 
+            ? JSON.parse(d.current_location_name) 
+            : d.current_location_name;
+          if (meta.status === "pending_approval" || meta.status === "rejected") {
             isApproved = false;
           } else if (meta.status === "approved") {
             isApproved = true;

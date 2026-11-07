@@ -70,14 +70,20 @@ export function NearbyRidersRadarMap({
       if (typeof window === "undefined" || !mapContainerRef.current) return;
       if (mapInstanceRef.current) return;
 
-      const L = await import("leaflet");
+      try {
+        if ((mapContainerRef.current as any)._leaflet_id) {
+          (mapContainerRef.current as any)._leaflet_id = null;
+        }
 
-      // Create map centered on Pickup
-      const map = L.map(mapContainerRef.current, {
-        center: pickupCoords,
-        zoom: 14,
-        zoomControl: false,
-      });
+        const L = await import("leaflet");
+        if (!isMounted || !mapContainerRef.current) return;
+
+        // Create map centered on Pickup
+        const map = L.map(mapContainerRef.current, {
+          center: pickupCoords,
+          zoom: 14,
+          zoomControl: false,
+        });
 
       // Google Maps Clean Roads Layer
       L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
@@ -132,9 +138,12 @@ export function NearbyRidersRadarMap({
       map.fitBounds(bounds, { padding: [60, 60] });
 
       mapInstanceRef.current = map;
+    } catch (err) {
+      console.warn("[NearbyRidersRadarMap] Leaflet init error:", err);
     }
+  }
 
-    initRadarMap();
+  initRadarMap();
 
     return () => {
       isMounted = false;

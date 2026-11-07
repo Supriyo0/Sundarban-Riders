@@ -133,14 +133,33 @@ public class BookingPollService extends Service {
 
         // Start Foreground Service with correct type on Android 14+
         Notification notification = buildForegroundNotification();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-            } catch (Exception e) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                boolean hasLocationPermission = true;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    hasLocationPermission = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                                           checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+                }
+                if (hasLocationPermission) {
+                    startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+                } else {
+                    try {
+                        startForeground(NOTIF_FOREGROUND_ID, notification);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Cannot start foreground without location permission: " + t.getMessage());
+                        stopSelf();
+                        return START_NOT_STICKY;
+                    }
+                }
+            } else {
                 startForeground(NOTIF_FOREGROUND_ID, notification);
             }
-        } else {
-            startForeground(NOTIF_FOREGROUND_ID, notification);
+        } catch (Throwable t) {
+            Log.e(TAG, "Safe guard on startForeground: " + t.getMessage());
+            try {
+                stopSelf();
+            } catch (Throwable ignored) {}
+            return START_NOT_STICKY;
         }
 
         if (!isRunning) {
@@ -340,7 +359,17 @@ public class BookingPollService extends Service {
             .setFullScreenIntent(fullScreenPI, true);
 
         int notifId = NOTIF_ALERT_BASE_ID + (bookingId.hashCode() & 0x0FFF);
-        nm.notify(notifId, builder.build());
+        try {
+            nm.notify(notifId, builder.build());
+        } catch (Throwable t) {
+            Log.w(TAG, "Notification failed with fullScreenIntent, trying fallback: " + t.getMessage());
+            try {
+                builder.setFullScreenIntent(null, false);
+                nm.notify(notifId, builder.build());
+            } catch (Throwable t2) {
+                Log.e(TAG, "Fallback notification error: " + t2.getMessage());
+            }
+        }
     }
 
     private void showFloatingOverlay(final String bookingId, final String passengerName, final String pickup, final String drop, final String fare) {

@@ -655,6 +655,12 @@ export function DriverRadarPanel({
           setOtherDrivers(others);
         }
 
+        // CRITICAL: When driver is offline, NEVER fetch pending rides, NEVER alert, and clear pending list
+        if (!isOnline) {
+          setPendingBookings([]);
+          return;
+        }
+
         const qParams =
           curCoords[0] !== 0
             ? `?status=pending&driver_lat=${curCoords[0]}&driver_lng=${curCoords[1]}`
@@ -685,10 +691,14 @@ export function DriverRadarPanel({
           if (curCoords[0] !== 0) {
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
+            if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
               const dKm = calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng);
-              if (dKm > 15.0) return false;
+              if (dKm > 6.0) return false;
+            } else {
+              return false;
             }
+          } else {
+            return false;
           }
           return true;
         });
@@ -737,7 +747,7 @@ export function DriverRadarPanel({
     }, 4500);
 
     return () => clearInterval(pollTimer);
-  }, [driverSession?.driverId]);
+  }, [driverSession?.driverId, isOnline]);
 
   // 4. Initialize Full-Screen Leaflet Map
   useEffect(() => {

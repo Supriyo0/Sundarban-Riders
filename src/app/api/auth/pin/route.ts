@@ -34,6 +34,19 @@ export async function POST(req: Request) {
     const supabase = getSupabaseAdmin();
     const settingKey = `user_pin_${cleanPhone}`;
 
+    function parseSettingValue(val: unknown): Record<string, any> | null {
+      if (!val) return null;
+      if (typeof val === "object") return val as Record<string, any>;
+      if (typeof val === "string") {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+
     // 1. CHECK IF USER HAS A PIN
     if (action === "check") {
       const { data, error } = await supabase
@@ -46,7 +59,8 @@ export async function POST(req: Request) {
         console.warn("Error checking pin:", error);
       }
 
-      const hasPin = Boolean(data && data.value && data.value.pin_hash);
+      const parsedVal = parseSettingValue(data?.value);
+      const hasPin = Boolean(parsedVal && parsedVal.pin_hash);
       return NextResponse.json({ success: true, hasPin });
     }
 
@@ -122,7 +136,8 @@ export async function POST(req: Request) {
         .eq("key", settingKey)
         .maybeSingle();
 
-      if (error || !setting || !setting.value || !setting.value.pin_hash) {
+      const parsedVal = parseSettingValue(setting?.value);
+      if (error || !parsedVal || !parsedVal.pin_hash) {
         return NextResponse.json(
           { success: false, message: "এই নম্বরে কোনো পিন সেট করা নেই। OTP দিয়ে লগইন করুন।" },
           { status: 404 }
@@ -130,7 +145,7 @@ export async function POST(req: Request) {
       }
 
       const computedHash = hashPin(pin, cleanPhone);
-      if (computedHash !== setting.value.pin_hash) {
+      if (computedHash !== parsedVal.pin_hash) {
         return NextResponse.json(
           { success: false, message: "ভুল পিন কোড! পুনরায় চেষ্টা করুন অথবা পিন রিসেট করুন।" },
           { status: 401 }

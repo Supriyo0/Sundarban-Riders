@@ -847,9 +847,6 @@ export async function GET(request: Request) {
     }
 
     if (status === "pending") {
-      if (pendingBookingsCache && Date.now() - pendingBookingsCache.timestamp < PENDING_CACHE_TTL) {
-        return NextResponse.json(pendingBookingsCache.data, { headers: NO_CACHE_HEADERS });
-      }
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
       // Automatically cancel any pending bookings older than 5 minutes throttled to once per minute
@@ -900,7 +897,7 @@ export async function GET(request: Request) {
             dLng = Number(dRec.longitude);
           } else if (dRec?.current_location_name) {
             try {
-              const meta = JSON.parse(dRec.current_location_name);
+              const meta = typeof dRec.current_location_name === "string" ? JSON.parse(dRec.current_location_name) : dRec.current_location_name;
               if (meta.lat && meta.lng) {
                 dLat = Number(meta.lat);
                 dLng = Number(meta.lng);
@@ -910,28 +907,33 @@ export async function GET(request: Request) {
         } catch {}
       }
 
+      // STRICT RADIUS FILTERING:
+      // Toto service only serves nearby pickups (<= 6.0 km). Never send distant bookings (50-60 km)!
       if (dLat !== null && !isNaN(dLat) && dLat !== 0 && dLng !== null && !isNaN(dLng) && dLng !== 0) {
         enriched = enriched
           .map((b) => {
             const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
             const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            const distKm = (pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0)
+            const hasPickupCoords = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
+            const distKm = hasPickupCoords
               ? calculateDistanceKm(dLat!, dLng!, pLat, pLng)
-              : 0.05;
+              : 999;
             return {
               ...b,
               driver_distance_km: distKm,
             };
           })
-          .filter((b) => b.driver_distance_km <= 15.0)
+          .filter((b) => typeof b.driver_distance_km === "number" && b.driver_distance_km <= 6.0)
           .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
+      } else {
+        // Driver has unknown coordinates — do not send arbitrary distant rides
+        enriched = [];
       }
 
       const resPayload = {
         bookings: enriched,
         booking: enriched[0] || null,
       };
-      pendingBookingsCache = { data: resPayload, timestamp: Date.now() };
       return NextResponse.json(resPayload, { headers: NO_CACHE_HEADERS });
     }
 

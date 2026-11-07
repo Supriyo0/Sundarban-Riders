@@ -1485,9 +1485,35 @@ function MobileAppPageContent() {
     return () => clearInterval(pollInterval);
   }, [phase, session?.phone, phoneInput]);
 
-  // 1. Session Persistence Check on Load
+  // 1. Session Persistence Check & Safe Global Error Trap on Load
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Guard against unhandled promise rejections crashing WebView on some Android devices
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.warn("[App] Suppressed unhandled promise rejection:", event.reason);
+      try {
+        event.preventDefault();
+      } catch {}
+    };
+
+    const handleError = (event: ErrorEvent) => {
+      // Suppress known non-fatal third-party script or network errors
+      if (
+        event.message?.includes("ResizeObserver loop") ||
+        event.message?.includes("Script error") ||
+        event.message?.includes("NetworkError") ||
+        event.message?.includes("Failed to fetch")
+      ) {
+        try {
+          event.preventDefault();
+        } catch {}
+      }
+    };
+
+    window.addEventListener("unhandledrejection", handleRejection);
+    window.addEventListener("error", handleError);
+
     const perms = localStorage.getItem("sr_permissions_granted");
     if (perms) {
       setPermissionsGranted(true);
@@ -1513,6 +1539,11 @@ function MobileAppPageContent() {
         // fallback
       }
     }
+
+    return () => {
+      window.removeEventListener("unhandledrejection", handleRejection);
+      window.removeEventListener("error", handleError);
+    };
   }, []);
 
   // -------------------------------------------------------------
@@ -1864,7 +1895,8 @@ function MobileAppPageContent() {
 
   // Reusable helper: Display incoming ride modal with audio chime and haptics
   const triggerIncomingRideAlert = useCallback((b: any, isDirectTapped: boolean = false) => {
-    if (!b || activeRide || isAcceptingRef.current) return;
+    // CRITICAL: Offline drivers NEVER receive ride popups or alerts!
+    if (!isOnline || !b || activeRide || isAcceptingRef.current) return;
     if (ignoredBookingIdsRef.current.has(b.id)) return;
     if (b.booking_number && ignoredBookingIdsRef.current.has(b.booking_number)) return;
     if (b.bookingNumber && ignoredBookingIdsRef.current.has(b.bookingNumber)) return;
@@ -1882,11 +1914,15 @@ function MobileAppPageContent() {
     const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
     const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
 
-    const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : (hasValidPickup ? [pLat, pLng] : [21.8760, 88.1920]);
-    const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 0.8;
+    const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : null;
+    if (!curCoords) {
+      activeAlertBookingIdRef.current = null;
+      return;
+    }
+    const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 999;
 
-    // Direct user tap from background notification or overlay ignores radius; passive polling checks radius
-    if (!isDirectTapped && dKm > 35.0) {
+    // Strict local radius: Toto riders should NEVER get bookings > 6.0 km away!
+    if (!isDirectTapped && dKm > 6.0) {
       activeAlertBookingIdRef.current = null;
       return;
     }
@@ -2108,10 +2144,13 @@ function MobileAppPageContent() {
             const pLng = Number(item.pickup_lng || item.start_coords?.[1]);
             if (coords && coords[0] !== 0 && pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0) {
               const dKm = calculateDistanceKm(coords[0], coords[1], pLat, pLng);
-              if (dKm > 15.0) {
-                // Skip out of regional radius
+              if (dKm > 6.0) {
+                // Strictly ignore rides farther than 6.0 km
                 return false;
               }
+            } else {
+              // Reject rides without valid pickup coordinates
+              return false;
             }
             return true;
           });

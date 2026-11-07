@@ -157,7 +157,7 @@ export async function POST(req: Request) {
       if (role === "rider") {
         const { data: driversList } = await supabase
           .from("drivers")
-          .select("id, name, phone, toto_number, unique_id, is_active, is_available, current_location_name, created_at")
+          .select("id, name, phone, toto_number, unique_id, is_active, is_available, current_location_name, license_number, created_at")
           .or(`phone.ilike.%${last10}%,phone.eq.${cleanPhone},phone.eq.91${last10},phone.eq.+91${last10}`)
           .order("is_active", { ascending: false })
           .order("created_at", { ascending: false })
@@ -166,6 +166,10 @@ export async function POST(req: Request) {
         const driver = driversList && driversList.length > 0 ? driversList[0] : null;
         const isRegistered = Boolean(driver);
         let isApproved = false;
+        let aadharNumber = driver ? (driver.license_number || "") : "";
+        let district = "দক্ষিণ ২৪ পরগনা";
+        let block = "কাকদ্বীপ";
+
         if (driver) {
           isApproved = Boolean(driver.is_active);
           if (driver.current_location_name) {
@@ -173,6 +177,11 @@ export async function POST(req: Request) {
               const meta = typeof driver.current_location_name === "string" 
                 ? JSON.parse(driver.current_location_name) 
                 : driver.current_location_name;
+              if (meta.aadhar_no || meta.aadhar_number || meta.aadharNo) {
+                aadharNumber = meta.aadhar_no || meta.aadhar_number || meta.aadharNo;
+              }
+              if (meta.district) district = meta.district;
+              if (meta.block) block = meta.block;
               if (meta.status === "approved" || meta.approved_at) {
                 isApproved = true;
               } else if (meta.status === "rejected") {
@@ -193,6 +202,10 @@ export async function POST(req: Request) {
           is_approved: isApproved,
           driver: driver ? {
             ...driver,
+            aadhar_no: aadharNumber,
+            aadhar_number: aadharNumber,
+            district,
+            block,
             is_approved: isApproved,
           } : { phone: cleanPhone, name: "চালক বন্ধু", is_approved: false },
         });

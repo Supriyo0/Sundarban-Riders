@@ -908,12 +908,12 @@ export function DriverRadarPanel({
   // -------------------------------------------------------------
   if (activeTab === "trips") {
     return (
-      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pt-18 pb-40 bg-slate-50 select-none">
+      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pt-24 pb-40 bg-slate-50 select-none">
         {/* Header */}
         <div className="flex items-center justify-between pb-1 border-b border-slate-200">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">আমার রাইড ও আয়</h2>
-            <p className="text-xs text-slate-500 font-medium">আজকের সম্পন্ন ট্রিপ ও ডিজিটাল রসিদ</p>
+            <p className="text-xs text-slate-500 font-medium">রাইড ও ট্রিপ সামারি</p>
           </div>
           <button
             type="button"
@@ -1034,7 +1034,7 @@ export function DriverRadarPanel({
                   <div className="flex items-center justify-between pt-1 text-[10px] text-emerald-700 font-bold border-t border-slate-100">
                     <span className="flex items-center gap-1">
                       <Receipt className="w-3 h-3" />
-                      <span>রসিদ ও যাত্রীর বিবরণ দেখতে ট্যাপ করুন</span>
+                      <span>ট্রিপ সামারি ও যাত্রীর বিবরণ দেখতে ট্যাপ করুন</span>
                     </span>
                     <ChevronRight className="w-3 h-3 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                   </div>
@@ -1057,8 +1057,11 @@ export function DriverRadarPanel({
                     <h3 className="font-black text-sm text-slate-900">
                       #{selectedTripDetail.booking_number || selectedTripDetail.id?.slice(0, 8)}
                     </h3>
-                    <span className="text-[10.5px] text-slate-500 font-medium">
-                      ডিজিটাল ট্রিপ ভাউচার
+                    <span className="text-[11px] text-slate-700 font-bold block">
+                      ডিজিটাল ট্রিপ সামারি
+                    </span>
+                    <span className="text-[9.5px] text-emerald-700 font-semibold block">
+                      GPS দূরত্ব ভিত্তিক রাইড (GPS Distance Trip)
                     </span>
                   </div>
                 </div>
@@ -1116,7 +1119,9 @@ export function DriverRadarPanel({
                   <div>
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">গন্তব্য পয়েন্ট</span>
                     <span className="font-bold text-slate-800">
-                      {cleanLocation(selectedTripDetail.drop_location)}
+                      {cleanLocation(selectedTripDetail.drop_location)?.includes("মিটারযুক্ত রাইড") || cleanLocation(selectedTripDetail.drop_location)?.includes("Metered Trip")
+                        ? "GPS দূরত্ব ভিত্তিক রাইড (GPS Distance Trip)"
+                        : cleanLocation(selectedTripDetail.drop_location)}
                     </span>
                   </div>
                 </div>

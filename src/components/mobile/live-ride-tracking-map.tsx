@@ -584,8 +584,8 @@ export function LiveRideTrackingMap({
   const driverUid = bAny?.unique_id || bAny?.uniqueId || bAny?.feedback?.unique_id || bAny?.feedback?.driver_unique_id || "";
   const totoNum = bAny?.toto_number || bAny?.totoNumber || bAny?.feedback?.toto_number || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
-  const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : tripFare;
-  const displayKm = effectiveRideStep === "in_trip" ? (liveMeterKm > 0 ? liveMeterKm.toFixed(1) : "0.0") : tripDistance.toFixed(1);
+  const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : (tripFare || 20);
+  const displayKm = effectiveRideStep === "in_trip" ? (liveMeterKm > 0 ? liveMeterKm.toFixed(1) : "0.0") : (tripDistance !== undefined && tripDistance !== null ? Number(tripDistance).toFixed(1) : "0.0");
 
   // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement
   if (rideStep === "arrived") {

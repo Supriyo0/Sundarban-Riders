@@ -19,7 +19,7 @@ export function MobileBottomNav({
   const tabs = [
     {
       id: "home" as const,
-      label: role === "rider" ? "ডিউটি" : "রাইড রিকোয়েস্ট",
+      label: role === "rider" ? "রাইড গ্রহণ" : "রাইড রিকোয়েস্ট",
       icon: Car,
       activeColor: "from-emerald-500/25 to-teal-500/10",
       textColor: "text-emerald-800",

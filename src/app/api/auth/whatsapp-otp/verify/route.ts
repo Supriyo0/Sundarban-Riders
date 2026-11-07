@@ -63,11 +63,20 @@ export async function POST(req: Request) {
       }
 
       let isApproved = Boolean(driver.is_active);
+      let aadharNumber = driver.license_number || "";
+      let district = "দক্ষিণ ২৪ পরগনা";
+      let block = "কাকদ্বীপ";
+
       if (driver.current_location_name) {
         try {
           const meta = typeof driver.current_location_name === "string" 
             ? JSON.parse(driver.current_location_name) 
             : driver.current_location_name;
+          if (meta.aadhar_no || meta.aadhar_number || meta.aadharNo) {
+            aadharNumber = meta.aadhar_no || meta.aadhar_number || meta.aadharNo;
+          }
+          if (meta.district) district = meta.district;
+          if (meta.block) block = meta.block;
           if (meta.status === "approved" || meta.approved_at) {
             isApproved = true;
           } else if (meta.status === "rejected") {
@@ -85,6 +94,10 @@ export async function POST(req: Request) {
         is_approved: isApproved,
         driver: {
           ...driver,
+          aadhar_no: aadharNumber,
+          aadhar_number: aadharNumber,
+          district,
+          block,
           is_approved: isApproved,
         },
         sessionToken,

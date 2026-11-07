@@ -130,6 +130,10 @@ interface MobileSession {
   totoNumber?: string;
   uniqueId?: string;
   isApproved?: boolean;
+  aadharNumber?: string;
+  aadharNo?: string;
+  district?: string;
+  block?: string;
   passengerName?: string;
   photo?: string;
   driverPhoto?: string;
@@ -826,7 +830,7 @@ function MobileAppPageContent() {
 
     const effectiveDropCoords = overrides?.dropCoords !== undefined ? overrides.dropCoords : dropCoords;
     const effectiveTripDistance = overrides?.tripDistance !== undefined ? overrides.tripDistance : tripDistance;
-    const isMetered = effectiveDropText.includes("মিটার") || (effectiveDropCoords && effectiveDropCoords[0] === 0);
+    const isMetered = (effectiveDropText || "").includes("মিটার") || (effectiveDropCoords && effectiveDropCoords[0] === 0);
     const meteredBaseFare = calculateTotoFare(0, 4, DEFAULT_TOTO_PRICING).totalFare;
     const effectiveTripFare = isMetered
       ? (overrides?.estimatedFare || meteredBaseFare)
@@ -1465,6 +1469,10 @@ function MobileAppPageContent() {
           driverName: driver.name,
           totoNumber: driver.toto_number,
           uniqueId: driver.unique_id || driver.toto_number,
+          aadharNumber: driver.aadhar_no || driver.license_number,
+          aadharNo: driver.aadhar_no || driver.license_number,
+          district: driver.district,
+          block: driver.block,
         };
         setSession(approvedSession);
         localStorage.setItem("sr_mobile_session", JSON.stringify(approvedSession));
@@ -2327,7 +2335,18 @@ function MobileAppPageContent() {
               .then(d => {
                 const drv = d.driver || (d.drivers && d.drivers.find((x: { phone?: string }) => x.phone?.includes(phone.replace(/\D/g, ""))));
                 if (drv && drv.is_approved !== false) {
-                  const fixed = { ...parsed, isApproved: true, driverId: drv.id, driverName: drv.name, totoNumber: drv.toto_number };
+                  const fixed = {
+                    ...parsed,
+                    isApproved: true,
+                    driverId: drv.id,
+                    driverName: drv.name,
+                    totoNumber: drv.toto_number,
+                    uniqueId: drv.unique_id || drv.toto_number,
+                    aadharNumber: drv.aadhar_no || drv.license_number || parsed.aadharNumber,
+                    aadharNo: drv.aadhar_no || drv.license_number || parsed.aadharNo,
+                    district: drv.district || parsed.district,
+                    block: drv.block || parsed.block,
+                  };
                   setSession(fixed);
                   if (typeof window !== "undefined") localStorage.setItem("sr_mobile_session", JSON.stringify(fixed));
                   setPhase("rider_home");
@@ -2604,6 +2623,10 @@ function MobileAppPageContent() {
             driverName: json.driver?.name,
             totoNumber: json.driver?.toto_number,
             uniqueId: json.driver?.unique_id || json.driver?.toto_number,
+            aadharNumber: json.driver?.aadhar_no || json.driver?.aadhar_number || json.driver?.license_number,
+            aadharNo: json.driver?.aadhar_no || json.driver?.aadhar_number,
+            district: json.driver?.district,
+            block: json.driver?.block,
           };
           setSession(newSession);
           if (typeof window !== "undefined") {
@@ -2701,6 +2724,10 @@ function MobileAppPageContent() {
                   driverName: foundDrv.name,
                   totoNumber: foundDrv.toto_number,
                   uniqueId: foundDrv.unique_id || foundDrv.toto_number,
+                  aadharNumber: foundDrv.aadhar_no || foundDrv.license_number,
+                  aadharNo: foundDrv.aadhar_no || foundDrv.license_number,
+                  district: foundDrv.district,
+                  block: foundDrv.block,
                 };
                 setSession(newDriverSession);
                 if (typeof window !== "undefined") {
@@ -2792,6 +2819,10 @@ function MobileAppPageContent() {
               driverName: foundDrv.name,
               totoNumber: foundDrv.toto_number,
               uniqueId: foundDrv.unique_id || foundDrv.toto_number,
+              aadharNumber: foundDrv.aadhar_no || foundDrv.license_number,
+              aadharNo: foundDrv.aadhar_no || foundDrv.license_number,
+              district: foundDrv.district,
+              block: foundDrv.block,
             };
             setSession(fixed);
             if (typeof window !== "undefined") localStorage.setItem("sr_mobile_session", JSON.stringify(fixed));
@@ -2845,6 +2876,10 @@ function MobileAppPageContent() {
             driverName: json.driver?.name,
             totoNumber: json.driver?.toto_number,
             uniqueId: json.driver?.unique_id || json.driver?.toto_number,
+            aadharNumber: json.driver?.aadhar_no || json.driver?.aadhar_number || json.driver?.license_number,
+            aadharNo: json.driver?.aadhar_no || json.driver?.aadhar_number,
+            district: json.driver?.district,
+            block: json.driver?.block,
           };
           setSession(newSession);
           localStorage.setItem("sr_mobile_session", JSON.stringify(newSession));
@@ -5099,13 +5134,13 @@ function MobileAppPageContent() {
           userPhone={session?.phone}
           userPhoto={session?.photo || session?.driverPhoto}
           driverKyc={{
-            aadharNumber: kycAadharNumber,
+            aadharNumber: kycAadharNumber || session?.aadharNumber || session?.aadharNo,
             totoNumber: kycTotoNumber || session?.totoNumber,
             licenseNumber: kycLicenseNumber,
             aadharDoc: kycAadharDoc,
             receiptDoc: kycReceiptDoc,
-            district: kycDistrict,
-            block: kycBlock,
+            district: kycDistrict || session?.district,
+            block: kycBlock || session?.block,
             isApproved: session?.isApproved ?? true,
           }}
           cancellationStrikes={customerStrikes}
@@ -5493,135 +5528,164 @@ function MobileAppPageContent() {
               </div>
             ) : null}
 
-            {passengerBooking ? (
-              <div className="w-full h-full relative overflow-hidden">
-                <LiveRideTrackingMap
-                  booking={{
-                    id: passengerBooking.id,
-                    bookingNumber: passengerBooking.bookingNumber,
-                    trip_start_time: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
-                    tripStartTime: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
-                    driverName: passengerBooking.driverName || passengerBooking.driver_name || "টোটো চালক",
-                    driverPhone: passengerBooking.driverPhone || passengerBooking.driver_phone || "",
-                    totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || passengerBooking.toto_number || "",
-                    startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
-                    driver_lat: passengerBooking.driver_lat,
-                    driver_lng: passengerBooking.driver_lng,
-                    status: passengerBooking.status,
-                    route_coordinates: passengerBooking.route_coordinates || (passengerBooking as any)?.coordinates,
-                  }}
-                  rideStep={rideStep}
-                  pickupText={pickupText}
-                  dropText={dropText}
-                  pickupCoords={
-                    passengerBooking.pickupCoords ||
-                    extractPickupCoordinates(passengerBooking) ||
-                    pickupCoords
-                  }
-                  dropCoords={
-                    passengerBooking.dropCoords ||
-                    extractDropCoordinates(passengerBooking) ||
-                    dropCoords
-                  }
-                  tripDistance={tripDistance}
-                  tripFare={tripFare}
-                  onCancelRide={() => setShowCancelModal(true)}
-                  onSosClick={handleOpenSosModal}
-                  onTripFinished={(completedServerBooking?: any) => {
-                    const b = completedServerBooking;
-                    if (b?.status === "cancelled") {
-                      setPassengerBooking(null);
-                      setActiveBookingId(null);
-                      setRideStep("assigned");
-                      setSearchStatus("idle");
-                      setSearchCountdown(0);
-                      setPhase("passenger_home");
+            <AppErrorBoundary
+              fallback={
+                <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-50">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-bold">
+                    🛺
+                  </div>
+                  <h4 className="font-extrabold text-sm text-slate-800">ম্যাপ পুনরায় লোড হচ্ছে...</h4>
+                  <p className="text-xs text-slate-500 max-w-xs">
+                    সংযোগ সুরক্ষিত রাখতে ম্যাপটি রিফ্রেশ করা হচ্ছে।
+                  </p>
+                  <Button
+                    onClick={() => {
                       if (typeof window !== "undefined") {
                         localStorage.removeItem("sr_passenger_booking");
                         localStorage.removeItem("sr_active_booking_id");
                         localStorage.removeItem("sr_search_status");
                       }
-                      toast.warning("চালক রাইড বাতিল করেছেন। অন্য রাইড বুক করতে পারেন।", { duration: 5000 });
-                      return;
+                      setPassengerBooking(null);
+                      setActiveBookingId(null);
+                      setSearchStatus("idle");
+                    }}
+                    className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                  >
+                    পুনরায় লোড করুন
+                  </Button>
+                </div>
+              }
+            >
+              {passengerBooking ? (
+                <div className="w-full h-full relative overflow-hidden">
+                  <LiveRideTrackingMap
+                    booking={{
+                      id: passengerBooking.id,
+                      bookingNumber: passengerBooking.bookingNumber,
+                      trip_start_time: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
+                      tripStartTime: passengerBooking.tripStartTime || passengerBooking.trip_start_time,
+                      driverName: passengerBooking.driverName || passengerBooking.driver_name || "টোটো চালক",
+                      driverPhone: passengerBooking.driverPhone || passengerBooking.driver_phone || "",
+                      totoNumber: passengerBooking.uniqueId || passengerBooking.totoNumber || passengerBooking.toto_number || "",
+                      startOtp: passengerBooking.startOtp || passengerBooking.start_otp || ((passengerBooking.bookingNumber || "").replace(/\D/g, "").slice(-4)) || "5821",
+                      driver_lat: passengerBooking.driver_lat,
+                      driver_lng: passengerBooking.driver_lng,
+                      status: passengerBooking.status,
+                      route_coordinates: passengerBooking.route_coordinates || (passengerBooking as any)?.coordinates,
+                    }}
+                    rideStep={rideStep}
+                    pickupText={pickupText}
+                    dropText={dropText}
+                    pickupCoords={
+                      passengerBooking.pickupCoords ||
+                      extractPickupCoordinates(passengerBooking) ||
+                      pickupCoords
                     }
-                    let bMeta: any = {};
-                    try {
-                      bMeta = typeof b?.feedback === "string" ? JSON.parse(b.feedback) : (b?.feedback || {});
-                    } catch {}
-                    const finalFare = b?.final_fare || bMeta?.calculated_fare || bMeta?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
-                    const finalKm = typeof b?.actual_distance_km === "number"
-                      ? b.actual_distance_km
-                      : (typeof bMeta?.actual_distance_km === "number"
-                          ? bMeta.actual_distance_km
-                          : (typeof b?.estimated_distance_km === "number" ? b.estimated_distance_km : (passengerBooking?.distanceKm || tripDistance)));
-                    const estDist = typeof b?.estimated_distance_km === "number"
-                      ? b.estimated_distance_km
-                      : (typeof bMeta?.estimated_distance_km === "number"
-                          ? bMeta.estimated_distance_km
-                          : (passengerBooking?.distanceKm || tripDistance));
-                    const estFare = typeof b?.estimated_fare === "number"
-                      ? b.estimated_fare
-                      : (typeof bMeta?.estimated_fare === "number"
-                          ? bMeta.estimated_fare
-                          : (passengerBooking?.fare || tripFare));
-                    const durMin = b?.duration_minutes || bMeta?.duration_minutes || passengerBooking?.durationMinutes || 1;
-                    const completedData = {
-                      ...b,
-                      id: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
-                      bookingNumber: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
-                      pickup: b?.pickup_location || passengerBooking?.pickup || pickupText,
-                      drop: b?.drop_location || passengerBooking?.drop || dropText,
-                      fare: finalFare,
-                      final_fare: finalFare,
-                      distanceKm: finalKm,
-                      actual_distance_km: finalKm,
-                      estimatedDistanceKm: estDist,
-                      estimated_distance_km: estDist,
-                      estimatedFare: estFare,
-                      estimated_fare: estFare,
-                      durationMinutes: durMin,
-                      duration_minutes: durMin,
-                      driverName: b?.driver_name || passengerBooking?.driverName || "টোটো চালক",
-                      driverPhone: b?.driver_phone || passengerBooking?.driverPhone || "",
-                      totoNumber: b?.toto_number || passengerBooking?.totoNumber || "SR-DRV",
-                      completedAt: new Date().toISOString(),
-                    };
-                    setPassengerCompletedRide(completedData);
-                    setPassengerBooking(null);
-                    setActiveBookingId(null);
-                    setRideStep("arrived");
-                    setPhase("passenger_trip_completed");
-                    if (typeof window !== "undefined") {
-                      localStorage.removeItem("sr_passenger_booking");
-                      localStorage.removeItem("sr_active_booking_id");
-                      localStorage.removeItem("sr_search_status");
-                      localStorage.setItem("sr_passenger_completed_ride", JSON.stringify(completedData));
-
-                      // Persist full ride history locally on device
+                    dropCoords={
+                      passengerBooking.dropCoords ||
+                      extractDropCoordinates(passengerBooking) ||
+                      dropCoords
+                    }
+                    tripDistance={tripDistance}
+                    tripFare={tripFare}
+                    onCancelRide={() => setShowCancelModal(true)}
+                    onSosClick={handleOpenSosModal}
+                    onTripFinished={(completedServerBooking?: any) => {
+                      const b = completedServerBooking;
+                      if (b?.status === "cancelled") {
+                        setPassengerBooking(null);
+                        setActiveBookingId(null);
+                        setRideStep("assigned");
+                        setSearchStatus("idle");
+                        setSearchCountdown(0);
+                        setPhase("passenger_home");
+                        if (typeof window !== "undefined") {
+                          localStorage.removeItem("sr_passenger_booking");
+                          localStorage.removeItem("sr_active_booking_id");
+                          localStorage.removeItem("sr_search_status");
+                        }
+                        toast.warning("চালক রাইড বাতিল করেছেন। অন্য রাইড বুক করতে পারেন।", { duration: 5000 });
+                        return;
+                      }
+                      let bMeta: any = {};
                       try {
-                        const hist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
-                        const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
-                        localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
+                        bMeta = typeof b?.feedback === "string" ? JSON.parse(b.feedback) : (b?.feedback || {});
                       } catch {}
-                    }
-                    playSuccessSound();
-                    toast.success("যাত্রা সফলভাবে সম্পন্ন হয়েছে! সুন্দরবন রাইডার্সে ধন্যবাদ।");
-                  }}
-                />
-              </div>
-            ) : (
-              <div className="w-full h-full relative overflow-hidden">
-                <InteractiveBookingMap
-                  initialPickup={pickupText}
-                  initialDrop={dropText}
-                  initialPickupCoords={pickupCoords}
-                  initialDropCoords={dropCoords}
-                  onRouteSelected={handleRouteSelected}
-                  onConfirmBooking={handleConfirmBooking}
-                  isBlocked={isCustomerBlocked || customerStrikes >= 3}
-                />
-              </div>
-            )}
+                      const finalFare = b?.final_fare || bMeta?.calculated_fare || bMeta?.final_fare || b?.estimated_fare || passengerBooking?.fare || tripFare;
+                      const finalKm = typeof b?.actual_distance_km === "number"
+                        ? b.actual_distance_km
+                        : (typeof bMeta?.actual_distance_km === "number"
+                            ? bMeta.actual_distance_km
+                            : (typeof b?.estimated_distance_km === "number" ? b.estimated_distance_km : (passengerBooking?.distanceKm || tripDistance)));
+                      const estDist = typeof b?.estimated_distance_km === "number"
+                        ? b.estimated_distance_km
+                        : (typeof bMeta?.estimated_distance_km === "number"
+                            ? bMeta.estimated_distance_km
+                            : (passengerBooking?.distanceKm || tripDistance));
+                      const estFare = typeof b?.estimated_fare === "number"
+                        ? b.estimated_fare
+                        : (typeof bMeta?.estimated_fare === "number"
+                            ? bMeta.estimated_fare
+                            : (passengerBooking?.fare || tripFare));
+                      const durMin = b?.duration_minutes || bMeta?.duration_minutes || passengerBooking?.durationMinutes || 1;
+                      const completedData = {
+                        ...b,
+                        id: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                        bookingNumber: b?.booking_number || passengerBooking?.bookingNumber || passengerBooking?.id || activeBookingId || "",
+                        pickup: b?.pickup_location || passengerBooking?.pickup || pickupText,
+                        drop: b?.drop_location || passengerBooking?.drop || dropText,
+                        fare: finalFare,
+                        final_fare: finalFare,
+                        distanceKm: finalKm,
+                        actual_distance_km: finalKm,
+                        estimatedDistanceKm: estDist,
+                        estimated_distance_km: estDist,
+                        estimatedFare: estFare,
+                        estimated_fare: estFare,
+                        durationMinutes: durMin,
+                        duration_minutes: durMin,
+                        driverName: b?.driver_name || passengerBooking?.driverName || "টোটো চালক",
+                        driverPhone: b?.driver_phone || passengerBooking?.driverPhone || "",
+                        totoNumber: b?.toto_number || passengerBooking?.totoNumber || "SR-DRV",
+                        completedAt: new Date().toISOString(),
+                      };
+                      setPassengerCompletedRide(completedData);
+                      setPassengerBooking(null);
+                      setActiveBookingId(null);
+                      setRideStep("arrived");
+                      setPhase("passenger_trip_completed");
+                      if (typeof window !== "undefined") {
+                        localStorage.removeItem("sr_passenger_booking");
+                        localStorage.removeItem("sr_active_booking_id");
+                        localStorage.removeItem("sr_search_status");
+                        localStorage.setItem("sr_passenger_completed_ride", JSON.stringify(completedData));
+
+                        // Persist full ride history locally on device
+                        try {
+                          const hist = JSON.parse(localStorage.getItem("sr_passenger_ride_history") || "[]");
+                          const updatedHist = [completedData, ...hist.filter((h: any) => h.id !== completedData.id)].slice(0, 100);
+                          localStorage.setItem("sr_passenger_ride_history", JSON.stringify(updatedHist));
+                        } catch {}
+                      }
+                      playSuccessSound();
+                      toast.success("যাত্রা সফলভাবে সম্পন্ন হয়েছে! সুন্দরবন রাইডার্সে ধন্যবাদ।");
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="w-full h-full relative overflow-hidden">
+                  <InteractiveBookingMap
+                    initialPickup={pickupText}
+                    initialDrop={dropText}
+                    initialPickupCoords={pickupCoords}
+                    initialDropCoords={dropCoords}
+                    onRouteSelected={handleRouteSelected}
+                    onConfirmBooking={handleConfirmBooking}
+                    isBlocked={isCustomerBlocked || customerStrikes >= 3}
+                  />
+                </div>
+              )}
+            </AppErrorBoundary>
           </div>
         )}
 
@@ -5686,9 +5750,9 @@ function MobileAppPageContent() {
                         </span>
                       </div>
                       <span className="text-[11px] font-bold text-slate-700 ml-auto shrink-0">
-                        {dropText.includes("মিটার") || tripDistance === 0
-                          ? `মিটারযুক্ত রাইড • প্রারম্ভিক বেস ₹${tripFare}.০০`
-                          : `${tripDistance} কিমি • ₹${tripFare}.০০`}
+                        {(dropText || "").includes("মিটার") || tripDistance === 0
+                          ? `মিটারযুক্ত রাইড • প্রারম্ভিক বেস ₹${tripFare || 20}.০০`
+                          : `${tripDistance} কিমি • ₹${tripFare || 20}.০০`}
                       </span>
                     </div>
 

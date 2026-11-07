@@ -208,7 +208,7 @@ export function TripCompletionReceipt({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between p-4 sm:p-6 select-none animate-in fade-in duration-300">
+    <div className="min-h-screen w-full max-w-md mx-auto bg-slate-50 text-slate-900 flex flex-col justify-between p-4 sm:p-5 select-none overflow-x-hidden box-border pt-12 sm:pt-6 animate-in fade-in duration-300">
       <div className="space-y-4 max-w-md mx-auto w-full">
         {/* Header Status */}
         <div className="relative text-center pt-2">
@@ -681,7 +681,7 @@ export function TripCompletionReceipt({
         >
           <span>
             {role === "rider"
-              ? "✅ পরবর্তী রাইডের জন্য প্রস্তুত (ডিউটিতে ফিরুন)"
+              ? "✅ পরবর্তী রাইডের জন্য প্রস্তুত থাকুন"
               : "🛺 নতুন রাইডের অনুরোধ পাঠান"}
           </span>
           <ChevronRight className="w-4 h-4 ml-1" />

@@ -96,8 +96,13 @@ export async function POST(request: Request) {
         : DEFAULT_TOTO_SLABS;
 
     const config: TotoPricingConfig = {
-      perKmRate: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
+      minimumFare: Number(body.minimumFare ?? DEFAULT_TOTO_PRICING.minimumFare),
       minBillableKm: Number(body.minBillableKm ?? DEFAULT_TOTO_PRICING.minBillableKm),
+      rateTier1: Number(body.rateTier1 ?? DEFAULT_TOTO_PRICING.rateTier1),
+      rateTier2: Number(body.rateTier2 ?? DEFAULT_TOTO_PRICING.rateTier2),
+      rateTier3: Number(body.rateTier3 ?? DEFAULT_TOTO_PRICING.rateTier3),
+      rateTier4Extra: Number(body.rateTier4Extra ?? DEFAULT_TOTO_PRICING.rateTier4Extra),
+      perKmRate: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
       includedPassengers: Number(body.includedPassengers ?? DEFAULT_TOTO_PRICING.includedPassengers),
       extraPassengerRatePerKm: Number(body.extraPassengerRatePerKm ?? DEFAULT_TOTO_PRICING.extraPassengerRatePerKm),
       nightStartTime: String(body.nightStartTime || DEFAULT_TOTO_PRICING.nightStartTime),
@@ -105,13 +110,14 @@ export async function POST(request: Request) {
       nightChargeTier1: Number(body.nightChargeTier1 ?? DEFAULT_TOTO_PRICING.nightChargeTier1),
       nightChargeTier2: Number(body.nightChargeTier2 ?? DEFAULT_TOTO_PRICING.nightChargeTier2),
       nightChargeTier3: Number(body.nightChargeTier3 ?? DEFAULT_TOTO_PRICING.nightChargeTier3),
+      nightChargeTier4: Number(body.nightChargeTier4 ?? DEFAULT_TOTO_PRICING.nightChargeTier4),
       slabs: incomingSlabs,
 
       // Backward compatibility fields
-      baseFare: Number(incomingSlabs[0]?.bookingCharge ?? 10),
-      ratePerKm0to10: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
-      ratePerKm10to20: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
-      ratePerKm20to25: Number(body.perKmRate ?? DEFAULT_TOTO_PRICING.perKmRate),
+      baseFare: Number(incomingSlabs[0]?.bookingCharge ?? DEFAULT_TOTO_PRICING.baseFare),
+      ratePerKm0to10: Number(body.rateTier1 ?? DEFAULT_TOTO_PRICING.rateTier1),
+      ratePerKm10to20: Number(body.rateTier2 ?? DEFAULT_TOTO_PRICING.rateTier2),
+      ratePerKm20to25: Number(body.rateTier3 ?? DEFAULT_TOTO_PRICING.rateTier3),
       maxServiceKm: Number(body.maxServiceKm ?? DEFAULT_TOTO_PRICING.maxServiceKm),
       defaultPassengerCount: Number(body.defaultPassengerCount ?? DEFAULT_TOTO_PRICING.defaultPassengerCount),
       minPassengers: Number(body.minPassengers ?? DEFAULT_TOTO_PRICING.minPassengers),

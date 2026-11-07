@@ -1717,7 +1717,7 @@ export function InteractiveBookingMap({
         }
 
         let initialCenter: [number, number] = DEFAULT_REGION_HUB;
-        if (hasValidPickup && pickupCoords[0] !== 0) {
+        if (hasValidPickup && pickupCoords[0] !== 0 && !isNaN(pickupCoords[0])) {
           initialCenter = pickupCoords;
         } else if (typeof window !== "undefined") {
           const savedLat = parseFloat(localStorage.getItem("sr_last_known_lat") || "");
@@ -1727,22 +1727,50 @@ export function InteractiveBookingMap({
           }
         }
 
-        // Strictly West Bengal Geographic Boundary — No dragging to world map or outside state
+        // Sanity-check bounds to prevent Leaflet Set center outside maxBounds crash
+        if (
+          !initialCenter ||
+          isNaN(initialCenter[0]) ||
+          isNaN(initialCenter[1]) ||
+          initialCenter[0] < 21.0 ||
+          initialCenter[0] > 27.8 ||
+          initialCenter[1] < 85.5 ||
+          initialCenter[1] > 90.2
+        ) {
+          initialCenter = DEFAULT_REGION_HUB;
+        }
+
+        // Strictly West Bengal Geographic Boundary — Soft boundary without hard crash
         const WEST_BENGAL_BOUNDS: [[number, number], [number, number]] = [
-          [21.2000, 85.8000],
-          [27.4000, 89.9500],
+          [21.0000, 85.5000],
+          [27.8000, 90.2000],
         ];
 
-        const map = L.map(mapContainerRef.current, {
-          center: initialCenter,
-          zoom: 15,
-          minZoom: 8,
-          maxZoom: 19,
-          maxBounds: WEST_BENGAL_BOUNDS,
-          maxBoundsViscosity: 1.0,
-          zoomControl: false,
-          attributionControl: false,
-        });
+        let map: any = null;
+        try {
+          map = L.map(mapContainerRef.current, {
+            center: initialCenter,
+            zoom: 15,
+            minZoom: 8,
+            maxZoom: 19,
+            maxBounds: WEST_BENGAL_BOUNDS,
+            zoomControl: false,
+            attributionControl: false,
+          });
+        } catch (mapErr) {
+          console.warn("Leaflet map constructor retry with fallback hub:", mapErr);
+          if (mapContainerRef.current) {
+            (mapContainerRef.current as any)._leaflet_id = null;
+          }
+          map = L.map(mapContainerRef.current, {
+            center: DEFAULT_REGION_HUB,
+            zoom: 15,
+            minZoom: 8,
+            maxZoom: 19,
+            zoomControl: false,
+            attributionControl: false,
+          });
+        }
 
         // Google Maps Clean Street Tile Layer (Multi-subdomain high concurrency)
         const streetUrl = "https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}";
@@ -1858,8 +1886,36 @@ export function InteractiveBookingMap({
 
     return () => {
       isMounted = false;
-      driverMarkersRef.current.forEach((item) => item.marker.remove());
+      driverMarkersRef.current.forEach((item) => {
+        try { item.marker.remove(); } catch {}
+      });
       driverMarkersRef.current = [];
+      if (pickupMarkerRef.current) {
+        try { pickupMarkerRef.current.remove(); } catch {}
+        pickupMarkerRef.current = null;
+      }
+      if (dropMarkerRef.current) {
+        try { dropMarkerRef.current.remove(); } catch {}
+        dropMarkerRef.current = null;
+      }
+      if (liveUserDotRef.current) {
+        try { liveUserDotRef.current.remove(); } catch {}
+        liveUserDotRef.current = null;
+      }
+      if (routeLineRef.current) {
+        try { routeLineRef.current.remove(); } catch {}
+        routeLineRef.current = null;
+      }
+      if (routeLineBorderRef.current) {
+        try { routeLineBorderRef.current.remove(); } catch {}
+        routeLineBorderRef.current = null;
+      }
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch {}
+        mapInstanceRef.current = null;
+      }
     };
   }, []);
 

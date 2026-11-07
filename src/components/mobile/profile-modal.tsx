@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   X,
   User,
@@ -67,6 +67,37 @@ export function MobileProfileModal({
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [showDisclaimerViewer, setShowDisclaimerViewer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [dynamicKyc, setDynamicKyc] = useState<{
+    aadharNumber?: string;
+    totoNumber?: string;
+    licenseNumber?: string;
+    district?: string;
+    block?: string;
+  } | null>(null);
+
+  // If driverKyc lacks aadharNumber, fetch real details from /api/drivers?phone=
+  useEffect(() => {
+    if (role !== "rider" || !isOpen || !userPhone) return;
+    if (driverKyc?.aadharNumber) return;
+
+    const clean = userPhone.replace(/\D/g, "");
+    fetch(`/api/drivers?phone=${clean}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const d = data.driver || (data.drivers && data.drivers[0]);
+        if (d) {
+          setDynamicKyc({
+            aadharNumber: d.aadhar_no || d.license_number || "",
+            totoNumber: d.toto_number || "",
+            licenseNumber: d.license_no || d.license_number || "",
+            district: d.district || "",
+            block: d.block || "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [role, isOpen, userPhone, driverKyc?.aadharNumber]);
 
   // Driver UPI QR & UPI ID state
   const qrInputRef = useRef<HTMLInputElement>(null);
@@ -342,52 +373,68 @@ export function MobileProfileModal({
 
               <div className="space-y-2 text-xs">
                 {/* Aadhaar Card */}
-                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-slate-500 shrink-0" />
-                    <div className="min-w-0">
-                      <span className="font-bold text-slate-800 block truncate">আধার কার্ড (Aadhaar Card)</span>
-                      <span className="text-[10.5px] font-mono text-slate-500">
-                        {driverKyc?.aadharNumber || "XXXX-XXXX-8421"}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg shrink-0">
-                    যাচাইকৃত ✓
-                  </span>
-                </div>
+                {(() => {
+                  const rawAadhar = driverKyc?.aadharNumber || dynamicKyc?.aadharNumber || "";
+                  const aadharDigits = rawAadhar.replace(/\D/g, "");
+                  const displayAadhar = aadharDigits.length >= 4
+                    ? `XXXX-XXXX-${aadharDigits.slice(-4)}`
+                    : (rawAadhar ? `XXXX-XXXX-${rawAadhar.slice(-4)}` : "XXXX-XXXX-••••");
 
-                {/* Toto Municipal Receipt */}
-                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <FileText className="w-4 h-4 text-slate-500 shrink-0" />
-                    <div className="min-w-0">
-                      <span className="font-bold text-slate-800 block truncate">টোটো রশিদ (Toto Receipt)</span>
-                      <span className="text-[10.5px] font-mono text-slate-500">
-                        {driverKyc?.totoNumber || "WB-96-T-8421"}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg shrink-0">
-                    সংযুক্ত ✓
-                  </span>
-                </div>
+                  const effectiveToto = driverKyc?.totoNumber || dynamicKyc?.totoNumber || "WB-96-T-8421";
+                  const effectiveDistrict = driverKyc?.district || dynamicKyc?.district || "দক্ষিণ ২৪ পরগনা";
+                  const effectiveBlock = driverKyc?.block || dynamicKyc?.block || "কাকদ্বীপ";
 
-                {/* Operating Region */}
-                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base shrink-0">📍</span>
-                    <div className="min-w-0">
-                      <span className="font-bold text-slate-800 block truncate">কার্য অঞ্চল (District & Route)</span>
-                      <span className="text-[10.5px] text-slate-500">
-                        {driverKyc?.district || "দক্ষিণ ২৪ পরগনা"} • {driverKyc?.block || "কাকদ্বীপ / নামখানা / বকখালি"}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
-                    সক্রিয় রুট
-                  </span>
-                </div>
+                  return (
+                    <>
+                      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 block truncate">আধার কার্ড (Aadhaar Card)</span>
+                            <span className="text-[10.5px] font-mono text-slate-500">
+                              {displayAadhar}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg shrink-0">
+                          যাচাইকৃত ✓
+                        </span>
+                      </div>
+
+                      {/* Toto Municipal Receipt */}
+                      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 block truncate">টোটো রশিদ (Toto Receipt)</span>
+                            <span className="text-[10.5px] font-mono text-slate-500">
+                              {effectiveToto}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg shrink-0">
+                          সংযুক্ত ✓
+                        </span>
+                      </div>
+
+                      {/* Operating Region */}
+                      <div className="flex items-center justify-between p-2.5 rounded-2xl bg-white border border-slate-200/80">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">📍</span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 block truncate">কার্য অঞ্চল (District & Route)</span>
+                            <span className="text-[10.5px] text-slate-500">
+                              {effectiveDistrict} • {effectiveBlock}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-lg shrink-0">
+                          সক্রিয় রুট
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Driver Direct UPI QR & Payment Settings */}

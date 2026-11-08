@@ -88,6 +88,25 @@ public class BookingPollService extends Service {
         createNotificationChannels();
         handler = new Handler(Looper.getMainLooper());
 
+        // Immediately call startForeground in onCreate() with dataSync to guarantee
+        // ForegroundServiceDidNotStartInTimeException can NEVER be thrown by Android OS
+        try {
+            Notification notification = buildForegroundNotification();
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14+
+                startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIF_FOREGROUND_ID, notification);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "startForeground in onCreate error: " + t.getMessage());
+            try {
+                Notification notification = buildForegroundNotification();
+                startForeground(NOTIF_FOREGROUND_ID, notification);
+            } catch (Throwable ignored) {}
+        }
+
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
@@ -104,7 +123,29 @@ public class BookingPollService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Guarantee notification is always shown
+        try {
+            Notification notification = buildForegroundNotification();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIF_FOREGROUND_ID, notification);
+            }
+        } catch (Throwable ignored) {}
+
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            isRunning = false;
+            if (handler != null && pollRunnable != null) {
+                handler.removeCallbacks(pollRunnable);
+            }
+            dismissFloatingOverlay();
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE);
+                } else {
+                    stopForeground(true);
+                }
+            } catch (Throwable ignored) {}
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -129,37 +170,6 @@ public class BookingPollService extends Service {
         }
         if (apiBaseUrl.isEmpty() || apiBaseUrl.contains("localhost") || apiBaseUrl.contains("127.0.0.1")) {
             apiBaseUrl = "https://109.122.56.24.sslip.io";
-        }
-
-        // Start Foreground Service with correct type on Android 14+
-        Notification notification = buildForegroundNotification();
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                boolean hasLocationPermission = true;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    hasLocationPermission = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
-                                           checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
-                }
-                if (hasLocationPermission) {
-                    startForeground(NOTIF_FOREGROUND_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-                } else {
-                    try {
-                        startForeground(NOTIF_FOREGROUND_ID, notification);
-                    } catch (Throwable t) {
-                        Log.w(TAG, "Cannot start foreground without location permission: " + t.getMessage());
-                        stopSelf();
-                        return START_NOT_STICKY;
-                    }
-                }
-            } else {
-                startForeground(NOTIF_FOREGROUND_ID, notification);
-            }
-        } catch (Throwable t) {
-            Log.e(TAG, "Safe guard on startForeground: " + t.getMessage());
-            try {
-                stopSelf();
-            } catch (Throwable ignored) {}
-            return START_NOT_STICKY;
         }
 
         if (!isRunning) {

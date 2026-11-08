@@ -3475,21 +3475,22 @@ function MobileAppPageContent() {
   if (phase === "otp_login") {
     return (
       <MobileAppShell>
-        <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none" style={{background: "linear-gradient(180deg, #f0fdf4 0%, #f8fafc 40%, #ffffff 100%)"}}>
+        <div className="min-h-full flex-1 text-slate-900 flex flex-col justify-between select-none" style={{background: "linear-gradient(180deg, #ecfdf5 0%, #f8fafc 40%, #ffffff 100%)"}}>
           {/* Top gradient hero area */}
-          <div className="px-6 pt-5 space-y-6 max-w-md mx-auto w-full">
+          <div className="px-5 pt-6 space-y-5 max-w-md mx-auto w-full">
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setPhase("select_role")}
-                className="text-xs text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs transition-all active:scale-95"
+                className="text-xs text-slate-700 hover:text-slate-900 font-bold flex items-center gap-1.5 bg-white/90 hover:bg-white px-3.5 py-2 rounded-2xl border border-slate-200/80 shadow-xs backdrop-blur-md transition-all active:scale-95 cursor-pointer"
               >
                 ← ফিরে যান
               </button>
-              <SundarbanLogo size="sm" variant="badge" showTagline={false} /></div>
+              <SundarbanLogo size="sm" variant="badge" showTagline={false} />
+            </div>
 
-            <div>
+            <div className="bg-white/80 backdrop-blur-md rounded-3xl p-5 border border-white/90 shadow-sm space-y-1.5">
               <span
-                className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${
+                className={`inline-block text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-2xs ${
                   role === "rider"
                     ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                     : "bg-sky-100 text-sky-800 border border-sky-200"
@@ -3497,10 +3498,10 @@ function MobileAppPageContent() {
               >
                 {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন • টোটো বুকিং"}
               </span>
-              <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-2">
+              <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-1">
                 WhatsApp নম্বর দিয়ে প্রবেশ
               </h2>
-              <p className="text-slate-600 text-xs mt-1.5 font-medium leading-relaxed">
+              <p className="text-slate-600 text-xs font-medium leading-relaxed">
                 {role === "passenger"
                   ? otpSent
                     ? "🛺 রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি যাচাই করুন।"
@@ -3509,10 +3510,10 @@ function MobileAppPageContent() {
               </p>
             </div>
 
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4 pt-1">
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-slate-700 font-semibold">
+                <div className="flex items-center justify-between px-1">
+                  <Label className="text-xs text-slate-700 font-bold">
                     {role === "passenger" ? "আপনার হোয়াটসঅ্যাপ মোবাইল নম্বর" : "হোয়াটসঅ্যাপ মোবাইল নম্বর"}
                   </Label>
                   {(authMode !== "phone" || otpSent) && (
@@ -3532,7 +3533,7 @@ function MobileAppPageContent() {
                   )}
                 </div>
                 <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-sm">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 font-black text-xs tracking-wider">
                     +91
                   </span>
                   <Input
@@ -3552,7 +3553,7 @@ function MobileAppPageContent() {
                         setOtpSent(false);
                       }
                     }}
-                    className="h-14 pl-14 pr-10 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500"
+                    className="h-14 pl-16 pr-10 bg-white border-slate-300 text-slate-900 text-lg font-bold rounded-2xl tracking-wider shadow-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15"
                   />
                   {isCheckingPin && (
                     <span className="absolute right-4 top-1/2 -translate-y-1/2">
@@ -3724,7 +3725,7 @@ function MobileAppPageContent() {
             {authMode === "setup_pin" ? (
               <Button
                 size="lg"
-                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                className="w-full h-14 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-lg shadow-emerald-600/25 active:scale-[0.98] transition-all cursor-pointer"
                 onClick={handleSavePinAndProceed}
                 disabled={loading || newPinInput.length !== 4 || confirmPinInput.length !== 4}
               >
@@ -3733,7 +3734,7 @@ function MobileAppPageContent() {
             ) : authMode === "pin" && !otpSent ? (
               <Button
                 size="lg"
-                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                className="w-full h-14 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-lg shadow-emerald-600/25 active:scale-[0.98] transition-all cursor-pointer"
                 onClick={handleLoginWithPin}
                 disabled={loading || pinInput.length !== 4}
               >
@@ -3742,7 +3743,7 @@ function MobileAppPageContent() {
             ) : !otpSent ? (
               <Button
                 size="lg"
-                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                className="w-full h-14 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-lg shadow-emerald-600/25 active:scale-[0.98] transition-all cursor-pointer"
                 onClick={handleSendOtp}
                 disabled={loading || phoneInput.length < 10}
               >
@@ -3755,7 +3756,7 @@ function MobileAppPageContent() {
             ) : (
               <Button
                 size="lg"
-                className="w-full h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-lg shadow-emerald-600/20"
+                className="w-full h-14 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-lg shadow-emerald-600/25 active:scale-[0.98] transition-all cursor-pointer"
                 onClick={handleVerifyOtp}
                 disabled={loading || otpInput.length < 4}
               >

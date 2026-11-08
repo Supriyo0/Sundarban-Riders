@@ -226,18 +226,18 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
           ))}
         </div>
 
-        {/* Floating Card Frame (Compact & Sleek to give background room) */}
+        {/* Floating Card Frame (Stitch Material Design) */}
         <div
-          className="rounded-3xl p-3.5 sm:p-4 text-center space-y-2 border border-white/50 shadow-2xl transition-all"
+          className="rounded-[28px] p-4 sm:p-5 text-center space-y-2.5 border border-white/80 shadow-2xl transition-all"
           style={{
-            background: "rgba(255, 255, 255, 0.95)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            boxShadow: "0 16px 40px rgba(0,0,0,0.4)",
+            background: "rgba(255, 255, 255, 0.96)",
+            backdropFilter: "blur(24px)",
+            WebkitBackdropFilter: "blur(24px)",
+            boxShadow: "0 20px 48px -10px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.6) inset",
           }}
         >
           {/* Badge Tag */}
-          <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold">
+          <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold shadow-2xs">
             <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
             <span>{slide.badge}</span>
           </div>
@@ -260,13 +260,13 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
           </div>
 
           {/* DYNAMIC ACTION BUTTONS */}
-          <div className="space-y-1.5 pt-0.5">
+          <div className="space-y-2 pt-0.5">
             {!isLastSlide ? (
               /* SLIDES 1, 2, 3: Informative walkthrough with Next -> Button */
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Button
                   size="sm"
-                  className="w-full h-10 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs shadow-md shadow-amber-400/25 active:scale-98 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full h-11 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-xs shadow-md shadow-amber-400/30 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-amber-300"
                   onClick={handleNext}
                 >
                   <span>পরবর্তী ধাপ (Next)</span>
@@ -286,16 +286,16 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
               </div>
             ) : (
               /* SLIDE 4 (LAST PAGE): Action Screen -> Rider Login & Book Toto */
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 {/* 1. Book Toto Button (Passenger Cab Booking) */}
                 <button
                   type="button"
                   id="btn-book-toto-main"
                   onClick={() => onSelectRole("passenger")}
-                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 text-slate-950 shadow-md shadow-amber-400/20 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-amber-300 text-left"
+                  className="w-full py-2.5 px-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-amber-400 to-amber-500 hover:from-amber-500 text-slate-950 shadow-md shadow-amber-400/25 active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-amber-300 text-left"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-white/95 shadow-2xs flex items-center justify-center text-lg shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-white/95 shadow-xs flex items-center justify-center text-lg shrink-0">
                       🛺
                     </div>
                     <div className="min-w-0">
@@ -307,7 +307,7 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
                       </span>
                     </div>
                   </div>
-                  <div className="w-6 h-6 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0 ml-2">
+                  <div className="w-6 h-6 rounded-full bg-slate-950 text-white flex items-center justify-center shrink-0 ml-2 shadow-2xs">
                     <ArrowRight className="w-3 h-3 stroke-[2.5]" />
                   </div>
                 </button>
@@ -317,10 +317,10 @@ export function OnboardingCarousel({ onSelectRole }: OnboardingCarouselProps) {
                   type="button"
                   id="btn-rider-login-main"
                   onClick={() => onSelectRole("rider")}
-                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-emerald-50/60 text-slate-900 shadow-2xs active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border border-emerald-500/40 text-left"
+                  className="w-full py-2.5 px-3.5 rounded-2xl bg-white hover:bg-emerald-50/70 text-slate-900 shadow-xs active:scale-[0.98] transition-all flex items-center justify-between cursor-pointer border-2 border-emerald-500/30 text-left"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-base shrink-0 shadow-2xs">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-base shrink-0 shadow-2xs">
                       👨‍✈️
                     </div>
                     <div className="min-w-0">

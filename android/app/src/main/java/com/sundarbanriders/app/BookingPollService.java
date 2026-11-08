@@ -85,7 +85,7 @@ public class BookingPollService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        createNotificationChannels();
+        createNotificationChannels(this);
         handler = new Handler(Looper.getMainLooper());
 
         // Immediately call startForeground in onCreate() with dataSync to guarantee
@@ -577,10 +577,10 @@ public class BookingPollService extends Service {
             .build();
     }
 
-    private void createNotificationChannels() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+    public static void createNotificationChannels(Context ctx) {
+        if (ctx == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
-        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) return;
 
         NotificationChannel fgChannel = new NotificationChannel(
@@ -606,7 +606,7 @@ public class BookingPollService extends Service {
         alertChannel.setBypassDnd(true);
 
         try {
-            Uri alertSound = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + getPackageName() + "/" + R.raw.ride_alert);
+            Uri alertSound = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + ctx.getPackageName() + "/" + R.raw.ride_alert);
             AudioAttributes audioAttr = new AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)

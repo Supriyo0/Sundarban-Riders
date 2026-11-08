@@ -132,7 +132,14 @@ public class OverlayLauncherPlugin extends Plugin {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ctx.startForegroundService(serviceIntent);
+                try {
+                    ctx.startForegroundService(serviceIntent);
+                } catch (Throwable t) {
+                    Log.w(TAG, "startForegroundService exception: " + t.getMessage() + ", fallback to startService");
+                    try {
+                        ctx.startService(serviceIntent);
+                    } catch (Throwable ignored) {}
+                }
             } else {
                 ctx.startService(serviceIntent);
             }

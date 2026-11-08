@@ -26,6 +26,10 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         try {
+            BookingPollService.createNotificationChannels(this);
+        } catch (Exception ignored) {}
+
+        try {
             EdgeToEdge.enable(this);
         } catch (Exception ignored) {}
 

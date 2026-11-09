@@ -401,6 +401,7 @@ export function DriverActiveTripMap({
               action: "update_odometer",
               bookingId,
               distanceKm: reading.totalKm,
+              fare: displayedFare,
               currentCoords: activeDriverCoords,
             }),
           }).catch(() => {});
@@ -535,11 +536,13 @@ export function DriverActiveTripMap({
 
           // Moving driver Toto marker with radar beacon
           const driverIcon = L.divIcon({
-            className: "",
+            className: "sr-smooth-toto-marker",
             html: `<div style="transform:translate(-50%,-50%);position:relative;display:flex;align-items:center;justify-content:center;">
               <div style="position:absolute;width:64px;height:64px;background:rgba(2,132,199,0.25);border-radius:50%;animation:ping 1.8s cubic-bezier(0,0,0.2,1) infinite;"></div>
               <div style="position:absolute;width:48px;height:48px;background:rgba(2,132,199,0.35);border-radius:50%;"></div>
-              <div style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#0284c7,#38bdf8);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:24px;">🛺</div>
+              <div id="driver-toto-icon-box" style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#0284c7,#38bdf8);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:transform 0.4s ease-out;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.64 5H8.36a2 2 0 0 0-1.86 1.3L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/></svg>
+              </div>
             </div>`,
             iconSize: [0, 0],
           });
@@ -599,13 +602,28 @@ export function DriverActiveTripMap({
     };
   }, []);
 
-  // Update driver marker position on every GPS update (smooth tracking like Google Maps)
+  const lastDriverPosRef = useRef<[number, number] | null>(null);
+
+  // Update driver marker position on every GPS update (smooth gliding like Google Maps)
   useEffect(() => {
     if (!mapInstanceRef.current || !driverMarkerRef.current || !currentFrom?.[0]) return;
     try {
+      if (lastDriverPosRef.current) {
+        const [prevLat, prevLng] = lastDriverPosRef.current;
+        const [nextLat, nextLng] = currentFrom;
+        if (Math.abs(nextLat - prevLat) > 0.00005 || Math.abs(nextLng - prevLng) > 0.00005) {
+          const y = Math.sin((nextLng - prevLng) * Math.PI / 180) * Math.cos(nextLat * Math.PI / 180);
+          const x = Math.cos(prevLat * Math.PI / 180) * Math.sin(nextLat * Math.PI / 180) -
+                    Math.sin(prevLat * Math.PI / 180) * Math.cos(nextLat * Math.PI / 180) * Math.cos((nextLng - prevLng) * Math.PI / 180);
+          const brng = ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+          const box = document.getElementById("driver-toto-icon-box");
+          if (box) box.style.transform = `rotate(${Math.round(brng)}deg)`;
+        }
+      }
+      lastDriverPosRef.current = currentFrom;
       driverMarkerRef.current.setLatLng(currentFrom);
       if (isFollowMode && status === "on_trip") {
-        mapInstanceRef.current.panTo(currentFrom, { animate: true, duration: 0.8 });
+        mapInstanceRef.current.panTo(currentFrom, { animate: true, duration: 1.0 });
       }
       mapInstanceRef.current.invalidateSize();
     } catch {}

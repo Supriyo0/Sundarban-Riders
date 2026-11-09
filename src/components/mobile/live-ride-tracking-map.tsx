@@ -30,6 +30,10 @@ interface LiveRideTrackingMapProps {
     driver_lng?: number | string;
     trip_start_time?: string;
     tripStartTime?: string;
+    final_fare?: number;
+    finalFare?: number;
+    actual_distance_km?: number;
+    actualDistanceKm?: number;
     status?: string;
     route_coordinates?: [number, number][];
   };
@@ -480,13 +484,15 @@ export function LiveRideTrackingMap({
           dropMarkerRef.current = dMarker;
         }
 
-        // Moving toto driver marker with Uber-style radar pulse ring
+        // Moving toto driver marker with Uber-style radar pulse ring (Smooth gliding)
         const totoIcon = L.divIcon({
-          className: "",
+          className: "sr-smooth-toto-marker",
           html: `<div style="transform:translate(-50%,-50%);position:relative;display:flex;align-items:center;justify-content:center;">
             <div style="position:absolute;width:64px;height:64px;background:rgba(16,185,129,0.22);border-radius:50%;animation:ping 2s cubic-bezier(0,0,0.2,1) infinite;"></div>
             <div style="position:absolute;width:48px;height:48px;background:rgba(5,150,105,0.3);border-radius:50%;"></div>
-            <div style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#047857,#10b981);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:24px;">🛺</div>
+            <div id="passenger-toto-icon-box" style="position:relative;width:44px;height:44px;background:linear-gradient(135deg,#047857,#10b981);border:3px solid white;border-radius:50%;box-shadow:0 6px 16px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;transition:transform 0.4s ease-out;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.64 5H8.36a2 2 0 0 0-1.86 1.3L5 10 3 8"/><path d="M7 14h.01"/><path d="M17 14h.01"/><rect width="18" height="8" x="3" y="10" rx="2"/><path d="M5 18v2"/><path d="M19 18v2"/></svg>
+            </div>
           </div>`,
           iconSize: [0, 0],
         });
@@ -523,8 +529,23 @@ export function LiveRideTrackingMap({
 
         mapInstanceRef.current = map;
       } else {
-        // Animate driver marker
-        if (driverMarkerRef.current) driverMarkerRef.current.setLatLng(driverPos);
+        // Animate driver marker smoothly with bearing rotation
+        if (driverMarkerRef.current) {
+          if (lastPannedPosRef.current) {
+            const [prevLat, prevLng] = lastPannedPosRef.current;
+            const [nextLat, nextLng] = driverPos;
+            if (Math.abs(nextLat - prevLat) > 0.00005 || Math.abs(nextLng - prevLng) > 0.00005) {
+              const y = Math.sin((nextLng - prevLng) * Math.PI / 180) * Math.cos(nextLat * Math.PI / 180);
+              const x = Math.cos(prevLat * Math.PI / 180) * Math.sin(nextLat * Math.PI / 180) -
+                        Math.sin(prevLat * Math.PI / 180) * Math.cos(nextLat * Math.PI / 180) * Math.cos((nextLng - prevLng) * Math.PI / 180);
+              const brng = ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+              const box = document.getElementById("passenger-toto-icon-box");
+              if (box) box.style.transform = `rotate(${Math.round(brng)}deg)`;
+            }
+          }
+          lastPannedPosRef.current = driverPos;
+          driverMarkerRef.current.setLatLng(driverPos);
+        }
 
         // Update route polyline only if real road route exists
         if (routeCoords && routeCoords.length > 2) {
@@ -584,8 +605,15 @@ export function LiveRideTrackingMap({
   const driverUid = bAny?.unique_id || bAny?.uniqueId || bAny?.feedback?.unique_id || bAny?.feedback?.driver_unique_id || "";
   const totoNum = bAny?.toto_number || bAny?.totoNumber || bAny?.feedback?.toto_number || "WB-96-T-8421";
   const driverName = booking?.driver_name || booking?.driverName || "সুন্দরবন চালক";
-  const displayFare = effectiveRideStep === "in_trip" && liveMeterFare > tripFare ? Math.round(liveMeterFare) : (tripFare || 20);
-  const displayKm = effectiveRideStep === "in_trip" ? (liveMeterKm > 0 ? liveMeterKm.toFixed(1) : "0.0") : (tripDistance !== undefined && tripDistance !== null ? Number(tripDistance).toFixed(1) : "0.0");
+  const serverFare = Number(booking?.final_fare || booking?.finalFare || bAny?.feedback?.live_fare || bAny?.feedback?.final_fare || 0);
+  const serverKm = Number(booking?.actual_distance_km || booking?.actualDistanceKm || bAny?.feedback?.actual_distance_km || bAny?.feedback?.live_distance_km || 0);
+
+  const displayFare = effectiveRideStep === "in_trip" && serverFare > 0
+    ? Math.round(serverFare)
+    : (tripFare || serverFare || 20);
+  const displayKm = effectiveRideStep === "in_trip" && serverKm > 0
+    ? serverKm.toFixed(1)
+    : (tripDistance !== undefined && tripDistance !== null ? Number(tripDistance).toFixed(1) : "0.0");
 
   // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement
   if (rideStep === "arrived") {

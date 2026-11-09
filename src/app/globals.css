@@ -478,4 +478,11 @@ html[data-theme="rose"] {
 .liquid-touch:active {
   transform: scale(0.96) !important;
 }
+
+/* SMOOTH VEHICLE MARKER GLIDE (UBER / RAPIDO STYLE) */
+.sr-smooth-toto-marker {
+  transition: transform 1.2s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+  will-change: transform;
+}
+
 

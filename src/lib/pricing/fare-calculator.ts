@@ -188,6 +188,7 @@ export function calculateTotoFare(
   };
 
   const d = Math.max(0.1, Math.round(distanceKm * 100) / 100);
+  const billableKm = d <= 3.0 ? 3 : Math.ceil(d);
   const maxPaxLimit = effectiveConfig.maxPassengers ?? 4;
   const p = Math.max(1, Math.min(maxPaxLimit, Math.round(passengerCount || 4)));
 
@@ -196,30 +197,30 @@ export function calculateTotoFare(
   let slabNumber = 1;
   let slabName = "স্ল্যাব ১ (০-১০ কিমি)";
 
-  // 1. Calculate Day Fare based on Tiers
+  // 1. Calculate Day Fare based on Tiers (Ceiling Rounding after 3 km)
   if (d <= 3.0) {
     baseDistanceFare = effectiveConfig.minimumFare ?? 42;
     activeRatePerKm = 14;
     slabNumber = 1;
     slabName = "স্ল্যাব ১ (০-৩ কিমি মিনিমাম)";
-  } else if (d <= 10.0) {
-    baseDistanceFare = Math.round(d * 14);
+  } else if (billableKm <= 10) {
+    baseDistanceFare = billableKm * 14;
     activeRatePerKm = 14;
     slabNumber = 1;
     slabName = "স্ল্যাব ১ (৪-১০ কিমি)";
-  } else if (d <= 20.0) {
-    baseDistanceFare = Math.round(d * 15);
+  } else if (billableKm <= 20) {
+    baseDistanceFare = billableKm * 15;
     activeRatePerKm = 15;
     slabNumber = 2;
     slabName = "স্ল্যাব ২ (১১-২০ কিমি)";
-  } else if (d <= 30.0) {
-    baseDistanceFare = Math.round(d * 14.5);
+  } else if (billableKm <= 30) {
+    baseDistanceFare = Math.round(billableKm * 14.5);
     activeRatePerKm = 14.5;
     slabNumber = 3;
     slabName = "স্ল্যাব ৩ (২১-৩০ কিমি)";
   } else {
     // 31 to 40+ km: ₹435 base + ₹10 per km beyond 30 km
-    baseDistanceFare = Math.round(435 + (d - 30.0) * 10);
+    baseDistanceFare = Math.round(435 + (billableKm - 30.0) * 10);
     activeRatePerKm = 10;
     slabNumber = 4;
     slabName = "স্ল্যাব ৪ (৩১+ কিমি)";
@@ -237,11 +238,11 @@ export function calculateTotoFare(
   let nightCharge = 0;
 
   if (isNight) {
-    if (d <= 10.0) {
+    if (billableKm <= 10) {
       nightCharge = Number(effectiveConfig.nightChargeTier1 ?? 50);
-    } else if (d <= 20.0) {
+    } else if (billableKm <= 20) {
       nightCharge = Number(effectiveConfig.nightChargeTier2 ?? 75);
-    } else if (d <= 30.0) {
+    } else if (billableKm <= 30) {
       nightCharge = Number(effectiveConfig.nightChargeTier3 ?? 100);
     } else {
       nightCharge = Number(effectiveConfig.nightChargeTier4 ?? 150);
@@ -256,8 +257,8 @@ export function calculateTotoFare(
     d <= 3.0
       ? `মিনিমাম বেস ভাড়া (০-৩ কিমি): ₹৪২`
       : d > 30.0
-      ? `৩০ কিমি বেস (₹৪৩৫) + অতিরিক্ত (${(d - 30).toFixed(1)} কিমি x ₹১০): ₹${baseDistanceFare}`
-      : `রাইড চার্জ (${d} কিমি x ₹${activeRatePerKm}): ₹${baseDistanceFare}`,
+      ? `৩০ কিমি বেস (₹৪৩৫) + অতিরিক্ত (${billableKm - 30} কিমি x ₹১০): ₹${baseDistanceFare}`
+      : `রাইড চার্জ (${billableKm} কিমি [${d} কিমি] x ₹${activeRatePerKm}): ₹${baseDistanceFare}`,
   ];
   if (isNight) {
     parts.push(`নাইট চার্জ (রাত ৮:৩০ পর): ₹${nightCharge}`);

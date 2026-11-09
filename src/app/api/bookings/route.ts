@@ -1963,7 +1963,8 @@ export async function PATCH(request: Request) {
         updated_at: new Date().toISOString(),
       };
       if (distanceKm !== null) {
-        bookingUpdates.final_fare = liveFare;
+        bookingUpdates.actual_distance_km = distanceKm;
+        bookingUpdates.final_fare = typeof body.fare === "number" && body.fare > 0 ? body.fare : liveFare;
       }
 
       const { data: updated } = await admin

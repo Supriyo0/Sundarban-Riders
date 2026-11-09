@@ -849,9 +849,9 @@ export async function GET(request: Request) {
     }
 
     if (status === "pending") {
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
 
-      // Automatically cancel any pending bookings older than 5 minutes throttled to once per minute
+      // Automatically cancel any pending bookings older than 3 minutes throttled to once per minute
       if (Date.now() - lastStaleCleanupTime > 60000) {
         lastStaleCleanupTime = Date.now();
         try {
@@ -863,7 +863,7 @@ export async function GET(request: Request) {
               updated_at: new Date().toISOString(),
             })
             .eq("status", "pending")
-            .lt("created_at", fiveMinutesAgo);
+            .lt("created_at", threeMinutesAgo);
         } catch {}
       }
 
@@ -871,7 +871,7 @@ export async function GET(request: Request) {
         .from("bookings")
         .select("*")
         .eq("status", "pending")
-        .gte("created_at", fiveMinutesAgo)
+        .gte("created_at", threeMinutesAgo)
         .order("created_at", { ascending: false })
         .limit(50);
 
@@ -1252,8 +1252,8 @@ export async function GET(request: Request) {
     const valid = enriched.filter((b) => {
       if (b.status !== "pending") return false;
       if (b.driver_id) return false;
-      // Allow pending booking to remain active for up to 15 minutes (900 seconds)
-      if (b.created_at && now - new Date(b.created_at).getTime() > 900 * 1000) return false;
+      // Allow pending booking to remain active strictly for up to 3 minutes (180 seconds)
+      if (b.created_at && now - new Date(b.created_at).getTime() > 180 * 1000) return false;
 
       // Extract pickup coordinates
       const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
@@ -1504,7 +1504,7 @@ export async function PATCH(request: Request) {
     const rawBId = (bookingId || "").replace(/^#/, "").trim();
     const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawBId);
     
-    const { data: booking, error: fetchErr } = await withRetry(async () => {
+    let { data: booking, error: fetchErr } = await withRetry(async () => {
       let fetchBookingQuery = admin.from("bookings").select("*");
       if (isBIdUuid) {
         fetchBookingQuery = fetchBookingQuery.or(`id.eq.${rawBId},booking_number.eq.${rawBId},booking_number.eq.#${rawBId}`);
@@ -1513,6 +1513,21 @@ export async function PATCH(request: Request) {
       }
       return fetchBookingQuery.limit(1).maybeSingle();
     });
+
+    // Fallback: If not found by ID/number and this is a driver cancellation or completion, find driver's active ride
+    if (!booking && (action === "cancel" || action === "complete")) {
+      const cleanDPhone = (driverPhone || "").replace(/\D/g, "").slice(-10);
+      if (driverId || cleanDPhone) {
+        let q = admin.from("bookings").select("*").in("status", ["assigned", "in_progress"]);
+        if (driverId) q = q.eq("driver_id", driverId);
+        else if (cleanDPhone) q = q.ilike("driver_phone", `%${cleanDPhone}%`);
+        const { data: dBooking } = await q.order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (dBooking) {
+          booking = dBooking;
+          fetchErr = null;
+        }
+      }
+    }
 
     if (fetchErr || !booking) {
       return NextResponse.json({ error: "বুকিং পাওয়া যায়নি" }, { status: 404 });
@@ -1687,13 +1702,13 @@ export async function PATCH(request: Request) {
         );
       }
 
-      // Check if booking was created more than 15 minutes ago (matching radar window)
-      const isOver15MinExpired = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 15 * 60 * 1000);
-      if (isOver15MinExpired) {
+      // Check if booking was created more than 3 minutes ago (3-min passenger search window)
+      const isOver3MinExpired = booking.created_at && (Date.now() - new Date(booking.created_at).getTime() > 3 * 60 * 1000);
+      if (isOver3MinExpired) {
         return NextResponse.json(
           {
             error: "booking_expired_timeout",
-            message: "⚠️ দুঃখিত! ১৫ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে।",
+            message: "⚠️ দুঃখিত! ৩ মিনিটের বেশি সময় অতিবাহিত হওয়ায় এই রাইডটির মেয়াদ শেষ হয়ে গেছে।",
           },
           { status: 410 }
         );

@@ -1005,7 +1005,8 @@ export function InteractiveBookingMap({
             }
             const controller = new AbortController();
             routeAbortControllerRef.current = controller;
-            const safetyTimer = setTimeout(() => controller.abort(), 6000);
+            // 25s timeout for resilient 2G/3G connectivity in Sundarbans rural areas
+            const safetyTimer = setTimeout(() => controller.abort(), 25000);
 
             const res = await fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
@@ -2217,14 +2218,6 @@ export function InteractiveBookingMap({
       {/* ------------------------------------------------------------- */}
       <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-0" />
 
-      {/* Floating Route & Fare Calculating Popup */}
-      {isCalculatingRoute && Boolean(dropCoords && dropCoords[0] !== 0) && (
-        <div className="absolute top-44 left-1/2 -translate-x-1/2 z-40 bg-zinc-900/90 text-white backdrop-blur-md px-4 py-2.5 rounded-full shadow-2xl border border-emerald-500/40 flex items-center gap-2.5 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
-          <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
-          <span className="text-xs font-bold tracking-wide">সঠিক রাস্তার রুট ও ভাড়া খোঁজা হচ্ছে...</span>
-        </div>
-      )}
-
       {/* ------------------------------------------------------------- */}
       {/* 2. TOP FLOATING LIQUID GLASS UBER SEARCH CARD & QUICK SHORTCUTS */}
       {/* ------------------------------------------------------------- */}
@@ -2670,12 +2663,15 @@ export function InteractiveBookingMap({
         </button>
       </div>
 
-      {/* Route Calculation Non-blocking Floating Status Pill */}
-      {isCalculatingRoute && (
-        <div className="absolute top-28 left-1/2 -translate-x-1/2 z-30 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="px-4 py-2 rounded-full backdrop-blur-xl bg-slate-900/90 text-white shadow-xl border border-white/20 flex items-center gap-2.5 text-xs font-bold pointer-events-auto">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <span>সঠিক রাস্তার রুট ও ভাড়া গণনা হচ্ছে...</span>
+      {/* Single Consolidated Route & Fare Calculation Floating Status Pill */}
+      {isCalculatingRoute && Boolean(dropCoords && dropCoords[0] !== 0) && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200"
+          style={{ top: "calc(env(safe-area-inset-top, 0px) + 146px)" }}
+        >
+          <div className="px-4 py-2.5 rounded-full backdrop-blur-xl bg-zinc-900/92 text-white shadow-2xl border border-emerald-500/40 flex items-center gap-2.5 text-xs font-bold pointer-events-auto">
+            <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            <span className="tracking-wide">সঠিক রাস্তার রুট ও ভাড়া খোঁজা হচ্ছে...</span>
             <button
               type="button"
               onClick={() => {
@@ -2683,7 +2679,8 @@ export function InteractiveBookingMap({
                 routeAbortControllerRef.current?.abort();
                 setIsCalculatingRoute(false);
               }}
-              className="ml-1 text-[11px] text-slate-400 hover:text-white cursor-pointer px-1"
+              className="ml-1 text-[11px] text-slate-400 hover:text-white cursor-pointer px-1.5 py-0.5 rounded-full hover:bg-white/10 transition-colors"
+              title="গণনা বাতিল করুন"
             >
               ✕
             </button>
@@ -2804,7 +2801,7 @@ export function InteractiveBookingMap({
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
       <div
-        className={`absolute bottom-16 sm:bottom-18 left-0 right-0 z-30 pointer-events-none transition-all duration-300 ${
+        className={`absolute bottom-[76px] sm:bottom-[84px] left-0 right-0 z-30 pointer-events-none transition-all duration-300 ${
           activeSearchField
             ? "opacity-0 pointer-events-none translate-y-36 invisible"
             : "opacity-100 pointer-events-auto visible"

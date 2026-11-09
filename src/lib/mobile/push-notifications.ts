@@ -164,7 +164,18 @@ export async function subscribeDriverToPushNotifications(options: {
 export async function showLocalRideAlertNotification(title: string, body: string, bookingId?: string) {
   if (typeof window === "undefined") return;
 
-  // 1. Try Native Capacitor Local Notifications (Android Foreground & Background Heads-Up Banner)
+  // 1. Try Kotlin Android Native Bridge (Guaranteed Heads-Up notification on Android Studio app)
+  try {
+    const androidBridge = (window as any).AndroidNative || (window as any).OverlayLauncher;
+    if (androidBridge && typeof androidBridge.showNotification === "function") {
+      androidBridge.showNotification(title, body, bookingId || "");
+      return;
+    }
+  } catch (bridgeErr) {
+    console.warn("[Push] AndroidNative showNotification error:", bridgeErr);
+  }
+
+  // 2. Try Native Capacitor Local Notifications (Android Foreground & Background Heads-Up Banner)
   try {
     const { Capacitor } = await import("@capacitor/core");
     if (Capacitor.isNativePlatform()) {

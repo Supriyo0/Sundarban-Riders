@@ -688,7 +688,7 @@ export function DriverRadarPanel({
           if (ignoredSet.has(b.id) || (b.booking_number && ignoredSet.has(b.booking_number))) return false;
           if (b.status !== "pending") return false;
           if (b.driver_id) return false;
-          if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 300 * 1000) return false;
+          if (b.created_at && Date.now() - new Date(b.created_at).getTime() > 180 * 1000) return false;
           if (curCoords[0] !== 0) {
             const pCoords = extractPickupCoordinates(b);
             if (pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {

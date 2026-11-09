@@ -442,12 +442,34 @@ function MobileAppPageContent() {
       try {
         const saved = localStorage.getItem("sr_search_status");
         const bId = localStorage.getItem("sr_active_booking_id");
-        if (saved === "searching" && bId) return "searching";
+        const startedAt = Number(localStorage.getItem("sr_search_started_at") || 0);
+        const elapsedMs = startedAt > 0 ? Date.now() - startedAt : 0;
+        if (saved === "searching" && bId) {
+          // Strict 3-minute (180s) search window: Expire immediately if user closes and opens later
+          if (elapsedMs > 180 * 1000) {
+            localStorage.removeItem("sr_search_status");
+            localStorage.removeItem("sr_search_started_at");
+            localStorage.removeItem("sr_active_booking_id");
+            return "idle";
+          }
+          return "searching";
+        }
       } catch {}
     }
     return "idle";
   });
-  const [searchCountdown, setSearchCountdown] = useState(180); // 3 minutes search duration
+  const [searchCountdown, setSearchCountdown] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const startedAt = Number(localStorage.getItem("sr_search_started_at") || 0);
+        if (startedAt > 0) {
+          const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+          return Math.max(0, 180 - elapsedSec);
+        }
+      } catch {}
+    }
+    return 180;
+  });
   const [passengerBooking, setPassengerBooking] = useState<any | null>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -885,9 +907,11 @@ function MobileAppPageContent() {
       }
       if (data.booking && data.booking.id) {
         setActiveBookingId(data.booking.id);
+        setSearchCountdown(180);
         if (typeof window !== "undefined") {
           localStorage.setItem("sr_active_booking_id", data.booking.id);
           localStorage.setItem("sr_search_status", "searching");
+          localStorage.setItem("sr_search_started_at", Date.now().toString());
         }
         requestNotificationPermission().catch(() => {});
       }
@@ -910,6 +934,7 @@ function MobileAppPageContent() {
       try {
         localStorage.removeItem("sr_active_booking_id");
         localStorage.removeItem("sr_search_status");
+        localStorage.removeItem("sr_search_started_at");
         localStorage.removeItem("sr_passenger_booking");
       } catch {}
     }
@@ -4526,7 +4551,7 @@ function MobileAppPageContent() {
                     }),
                   });
                   const data = await res.json();
-                  if (!res.ok && res.status !== 409) {
+                  if (!res.ok) {
                     setActiveRide(null);
                     acceptedRideIdsRef.current.delete(b.id);
                     isAcceptingRef.current = null;
@@ -4880,8 +4905,7 @@ function MobileAppPageContent() {
                         }),
                       });
                       const data = await res.json();
-                      if (!res.ok && res.status !== 409) {
-                        // Revert ONLY if truly failed (not 409 already assigned)
+                      if (!res.ok) {
                         setActiveRide(null);
                         acceptedRideIdsRef.current.delete(rideToAccept.id);
                         isAcceptingRef.current = null;
@@ -5314,7 +5338,7 @@ function MobileAppPageContent() {
             </div>
           </div>
         ) : bottomNavTab === "trips" ? (
-          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 pb-36">
+          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 pt-24 sm:pt-28 space-y-4 pb-36">
             {/* Active ride mini-banner when on trips history tab */}
             {passengerBooking && (
               <button
@@ -5478,7 +5502,7 @@ function MobileAppPageContent() {
                       <div className="flex items-center justify-between pt-1 text-[10.5px] text-emerald-700 font-bold border-t border-slate-100/80">
                         <span className="flex items-center gap-1">
                           <Receipt className="w-3.5 h-3.5" />
-                          <span>রসিদ ও চালকের তথ্য দেখতে ট্যাপ করুন</span>
+                          <span>ট্রিপ সামারি দেখতে ট্যাপ করুন</span>
                         </span>
                         <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
                       </div>
@@ -6066,7 +6090,7 @@ function MobileAppPageContent() {
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2 text-emerald-800 font-extrabold text-sm">
                 <Receipt className="w-4 h-4 text-emerald-600" />
-                <span>ট্রিপ রসিদ ও চালকের বিবরণ</span>
+                <span>ট্রিপ সামারি (Trip Summary)</span>
               </div>
               <button
                 type="button"

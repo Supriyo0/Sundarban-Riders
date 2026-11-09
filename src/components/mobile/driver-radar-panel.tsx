@@ -27,6 +27,8 @@ import {
   Star,
   LogOut,
   Sparkles,
+  Car,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -908,7 +910,13 @@ export function DriverRadarPanel({
   // -------------------------------------------------------------
   if (activeTab === "trips") {
     return (
-      <div className="w-full h-full flex-1 overflow-y-auto p-4 space-y-4 pt-24 pb-40 bg-slate-50 select-none">
+      <div
+        className="w-full h-full flex-1 overflow-y-auto px-4 space-y-4 bg-slate-50 select-none"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top, 0px) + 100px)",
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
+        }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-1 border-b border-slate-200">
           <div>
@@ -965,8 +973,8 @@ export function DriverRadarPanel({
             </div>
           ) : driverTrips.length === 0 ? (
             <div className="p-6 rounded-3xl bg-white border border-slate-200 text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl mx-auto">
-                🛺
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-xs">
+                <Car className="w-6 h-6 text-emerald-600" />
               </div>
               <h4 className="font-bold text-sm text-slate-900">এখনও কোনো ট্রিপ নেই</h4>
               <p className="text-xs text-slate-500">অনলাইন থাকুন, শীঘ্রই রাইড অনুরোধ আসবে!</p>
@@ -990,9 +998,9 @@ export function DriverRadarPanel({
                   className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md cursor-pointer active:scale-[0.99] group"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm">
-                        🛺
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/70 flex items-center justify-center font-bold text-sm">
+                        <Car className="w-4 h-4 text-emerald-600" />
                       </div>
                       <div>
                         <h4 className="font-bold text-xs text-slate-900">
@@ -1049,9 +1057,9 @@ export function DriverRadarPanel({
           <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in select-none">
             <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center text-lg font-black">
-                    🛺
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shadow-xs">
+                    <Car className="w-4 h-4 text-emerald-600" />
                   </div>
                   <div>
                     <h3 className="font-black text-sm text-slate-900">
@@ -1207,7 +1215,10 @@ export function DriverRadarPanel({
           className={`absolute ${locationError ? "top-28" : "top-20"} left-1/2 -translate-x-1/2 z-20 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce cursor-pointer active:scale-95 transition-all`}
         >
           <span className="w-2.5 h-2.5 rounded-full bg-amber-300 animate-ping" />
-          <span>🛺 {pendingBookings.length}টি নতুন রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>
+          <span className="flex items-center gap-1.5">
+            <Car className="w-4 h-4 text-emerald-200 shrink-0" />
+            <span>{pendingBookings.length}টি নতুন রাইড অনুরোধ (দেখতে ট্যাপ করুন)</span>
+          </span>
         </button>
       )}
 
@@ -1241,7 +1252,12 @@ export function DriverRadarPanel({
       </button>
 
       {/* 4. SLIDING UBER DRIVER BOTTOM DRAWER (Positioned strictly above MobileBottomNav) */}
-      <div className="absolute bottom-[72px] sm:bottom-[76px] left-0 right-0 z-30 pointer-events-none">
+      <div
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 98px)",
+        }}
+        className="absolute left-0 right-0 z-30 pointer-events-none"
+      >
         <div
           className={`pointer-events-auto mx-2 sm:mx-3 rounded-3xl bg-white/98 backdrop-blur-2xl shadow-[0_-12px_40px_rgba(0,0,0,0.18)] border border-slate-200/90 p-4 space-y-3 transition-all duration-300 ease-in-out select-none ${
             sheetExpanded
@@ -1289,8 +1305,8 @@ export function DriverRadarPanel({
               className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/90 border border-emerald-300 cursor-pointer shadow-xs active:scale-[0.99] transition-transform"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-lg shrink-0 shadow-xs">
-                  🛺
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Car className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -1338,12 +1354,13 @@ export function DriverRadarPanel({
 
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-black text-base text-slate-900">
-                    👤 {selectedCustomer.customer_name || "যাত্রী"}
+                  <h4 className="font-black text-base text-slate-900 flex items-center gap-1.5">
+                    <User className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{selectedCustomer.customer_name || "যাত্রী"}</span>
                   </h4>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">
                     {selectedCustomer.distanceKm !== null
-                      ? `🚀 আপনার থেকে ~${selectedCustomer.distanceKm} কিমি দূরে`
+                      ? `আপনার থেকে ~${selectedCustomer.distanceKm} কিমি দূরে`
                       : "কাছাকাছি এলাকা"}
                   </p>
                 </div>
@@ -1370,9 +1387,10 @@ export function DriverRadarPanel({
                   onAcceptRide(selectedCustomer);
                   setSelectedCustomer(null);
                 }}
-                className="w-full h-13 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-xl active:scale-98 transition-all cursor-pointer"
+                className="w-full h-13 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base shadow-xl active:scale-98 transition-all cursor-pointer flex items-center justify-center gap-2"
               >
-                ✅ রাইড গ্রহণ করুন (Accept Ride)
+                <Check className="w-5 h-5 text-white" />
+                <span>রাইড গ্রহণ করুন (Accept Ride)</span>
               </Button>
             </div>
           ) : (
@@ -1391,10 +1409,10 @@ export function DriverRadarPanel({
                   type="button"
                   onClick={() => updateDriverLocation(true)}
                   disabled={isUpdatingLocation}
-                  className="w-10 h-10 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl shrink-0 transition-all active:scale-95 cursor-pointer"
+                  className="w-10 h-10 rounded-2xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 transition-all active:scale-95 cursor-pointer border border-emerald-200"
                   title="জিপিএস রিফ্রেশ"
                 >
-                  {isUpdatingLocation ? <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" /> : "🛺"}
+                  {isUpdatingLocation ? <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" /> : <Car className="w-5 h-5 text-emerald-600" />}
                 </button>
               </div>
 

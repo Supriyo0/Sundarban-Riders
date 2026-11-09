@@ -36,6 +36,8 @@ import {
   Compass,
   KeyRound,
   Receipt,
+  RotateCcw,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,7 +82,9 @@ const InteractiveBookingMap = dynamic(
     ssr: false,
     loading: () => (
       <div className="w-full h-80 rounded-3xl bg-slate-100 border border-slate-200 animate-pulse flex flex-col items-center justify-center gap-2 text-slate-400">
-        <div className="w-10 h-10 rounded-full bg-slate-200 animate-bounce flex items-center justify-center text-xl">🛺</div>
+        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-xl">
+          <Car className="w-5 h-5 text-emerald-600 animate-pulse" />
+        </div>
         <span className="text-xs font-bold text-slate-500">স্মার্ট বুকিং ম্যাপ প্রস্তুত হচ্ছে...</span>
       </div>
     ),
@@ -3515,13 +3519,23 @@ function MobileAppPageContent() {
 
             <div className="bg-white/80 backdrop-blur-md rounded-3xl p-5 border border-white/90 shadow-sm space-y-1.5">
               <span
-                className={`inline-block text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-2xs ${
+                className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full shadow-2xs ${
                   role === "rider"
                     ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                     : "bg-sky-100 text-sky-800 border border-sky-200"
                 }`}
               >
-                {role === "rider" ? "🛺 চালক পার্টনার লগইন" : "👤 যাত্রী লগইন • টোটো বুকিং"}
+                {role === "rider" ? (
+                  <>
+                    <Car className="w-3 h-3 text-emerald-700" />
+                    <span>চালক পার্টনার লগইন</span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-3 h-3 text-sky-700" />
+                    <span>যাত্রী লগইন • টোটো বুকিং</span>
+                  </>
+                )}
               </span>
               <h2 className="text-2xl font-black tracking-tight text-slate-900 mt-1">
                 WhatsApp নম্বর দিয়ে প্রবেশ
@@ -3529,8 +3543,8 @@ function MobileAppPageContent() {
               <p className="text-slate-600 text-xs font-medium leading-relaxed">
                 {role === "passenger"
                   ? otpSent
-                    ? "🛺 রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি যাচাই করুন।"
-                    : "🛺 রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি দিন।"
+                    ? "রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি যাচাই করুন।"
+                    : "রাইড অনুরোধের পর স্বাধীন চালক যাতে সরাসরি আপনার সাথে যোগাযোগ করে পিকআপ নিশ্চিত করতে পারেন, তার জন্য হোয়াটসঅ্যাপ নম্বরটি দিন।"
                   : "আপনার হোয়াটসঅ্যাপ নম্বরে কোনো সাধারণ এসএমএস চার্জ ছাড়াই সরাসরি সিকিউরিটি কোড পাঠানো হবে।"}
               </p>
             </div>
@@ -5297,7 +5311,13 @@ function MobileAppPageContent() {
     >
       <div className="w-full h-full flex-1 text-slate-900 flex flex-col select-none overflow-hidden relative">
         {bottomNavTab === "map" ? (
-          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 pb-24">
+          <div
+            className="w-full h-full flex-1 overflow-y-auto px-4 sm:px-5 space-y-4"
+            style={{
+              paddingTop: "calc(env(safe-area-inset-top, 0px) + 100px)",
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
+            }}
+          >
             {/* Active ride mini-banner when on map tab */}
             {passengerBooking && (
               <button
@@ -5307,7 +5327,10 @@ function MobileAppPageContent() {
               >
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping shrink-0" />
-                  <span>🛺 আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                  <span className="flex items-center gap-1.5">
+                    <Car className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                  </span>
                 </div>
                 <span className="text-[11px] font-mono bg-white/20 px-2 py-0.5 rounded-md">
                   #{passengerBooking.bookingNumber || passengerBooking.id?.slice(0, 6)} →
@@ -5338,7 +5361,13 @@ function MobileAppPageContent() {
             </div>
           </div>
         ) : bottomNavTab === "trips" ? (
-          <div className="w-full h-full flex-1 overflow-y-auto p-4 sm:p-5 pt-24 sm:pt-28 space-y-4 pb-36">
+          <div
+            className="w-full h-full flex-1 overflow-y-auto px-4 sm:px-5 space-y-4"
+            style={{
+              paddingTop: "calc(env(safe-area-inset-top, 0px) + 100px)",
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 120px)",
+            }}
+          >
             {/* Active ride mini-banner when on trips history tab */}
             {passengerBooking && (
               <button
@@ -5348,7 +5377,10 @@ function MobileAppPageContent() {
               >
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping shrink-0" />
-                  <span>🛺 আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                  <span className="flex items-center gap-1.5">
+                    <Car className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>আপনার রাইড চলমান • লাইভ ট্র্যাকিংয়ে ফিরে যান</span>
+                  </span>
                 </div>
                 <span className="text-[11px] font-mono bg-white/20 px-2 py-0.5 rounded-md">
                   #{passengerBooking.bookingNumber || passengerBooking.id?.slice(0, 6)} →
@@ -5400,8 +5432,8 @@ function MobileAppPageContent() {
               </div>
             ) : customerHistory.length === 0 ? (
               <div className="bg-white/95 rounded-3xl p-6 border border-slate-200 text-center space-y-3 shadow-xs">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl mx-auto shadow-xs">
-                  🛺
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-600 flex items-center justify-center mx-auto shadow-xs border border-emerald-100">
+                  <Car className="w-7 h-7 text-emerald-600" />
                 </div>
                 <div>
                   <h4 className="font-black text-slate-900 text-base">আপনার কোনো পূর্ববর্তী রাইড নেই</h4>
@@ -5437,9 +5469,9 @@ function MobileAppPageContent() {
                       className="bg-white rounded-3xl p-4 border border-slate-200 shadow-sm space-y-2.5 transition-all hover:shadow-md cursor-pointer active:scale-[0.99] group"
                     >
                       <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-sm">
-                            🛺
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-700 border border-emerald-200/80 flex items-center justify-center shrink-0">
+                            <Car className="w-4 h-4 text-emerald-600" />
                           </div>
                           <div>
                             <h4 className="font-bold text-xs text-slate-900">
@@ -5492,9 +5524,10 @@ function MobileAppPageContent() {
                             setBottomNavTab("home");
                             toast.success("ট্রিপের তথ্য লোড হয়েছে! এবার কনফার্ম করুন");
                           }}
-                          className="h-8 text-[11px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl cursor-pointer"
+                          className="h-8 text-[11px] font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-xl cursor-pointer flex items-center gap-1"
                         >
-                          🔄 পুনরায় বুক করুন
+                          <RotateCcw className="w-3 h-3 text-emerald-600" />
+                          <span>পুনরায় বুক করুন</span>
                         </Button>
                       </div>
 
@@ -5556,8 +5589,8 @@ function MobileAppPageContent() {
             <AppErrorBoundary
               fallback={
                 <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center space-y-3 bg-slate-50">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-bold">
-                    🛺
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-700 flex items-center justify-center font-bold">
+                    <Car className="w-6 h-6 text-emerald-700" />
                   </div>
                   <h4 className="font-extrabold text-sm text-slate-800">ম্যাপ পুনরায় লোড হচ্ছে...</h4>
                   <p className="text-xs text-slate-500 max-w-xs">
@@ -5730,8 +5763,8 @@ function MobileAppPageContent() {
                     <div className="relative w-14 h-14 shrink-0 flex items-center justify-center">
                       <div className="absolute inset-0 rounded-full bg-emerald-200 animate-ping opacity-60" />
                       <div className="absolute inset-1.5 rounded-full bg-emerald-300 animate-ping opacity-30 delay-200" />
-                      <div className="relative w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-2xl shadow-lg">
-                        🛺
+                      <div className="relative w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 flex items-center justify-center text-white shadow-lg">
+                        <Car className="w-6 h-6 text-white" />
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -5767,11 +5800,15 @@ function MobileAppPageContent() {
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
                     <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 shrink-0">
-                          {selectedTier === "shared" ? "🛺⚡ শেয়ার্ড" : selectedTier === "reserved" ? "🛺✨ রিজার্ভ" : "🛺 স্ট্যান্ডার্ড"}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 shrink-0 flex items-center gap-1">
+                          <Car className="w-3 h-3 text-emerald-700" />
+                          <span>
+                            {selectedTier === "shared" ? "শেয়ার্ড" : selectedTier === "reserved" ? "রিজার্ভ" : "স্ট্যান্ডার্ড"}
+                          </span>
                         </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 shrink-0">
-                          👥 সর্বোচ্চ ৪ জন যাত্রী
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 shrink-0 flex items-center gap-1">
+                          <Users className="w-3 h-3 text-blue-700" />
+                          <span>সর্বোচ্চ ৪ জন যাত্রী</span>
                         </span>
                       </div>
                       <span className="text-[11px] font-bold text-slate-700 ml-auto shrink-0">
@@ -6177,14 +6214,15 @@ function MobileAppPageContent() {
 
             {/* Driver / Rider Details */}
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
-              <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wide block">
-                🛺 টোটো চালকের তথ্য (Rider Details)
+              <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                <Car className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>টোটো চালকের তথ্য (Driver Details)</span>
               </span>
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
-                    🛺
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center shadow-sm">
+                    <Car className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h4 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
@@ -6220,9 +6258,10 @@ function MobileAppPageContent() {
                   setBottomNavTab("home");
                   toast.success("পিকআপ ও গন্তব্য সেট করা হয়েছে! এবার রাইড বুক করুন।");
                 }}
-                className="w-full h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md cursor-pointer"
+                className="w-full h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md cursor-pointer flex items-center justify-center gap-1.5"
               >
-                🔄 এই রুটে পুনরায় রাইড বুক করুন
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>এই রুটে পুনরায় রাইড বুক করুন</span>
               </Button>
 
               <Button

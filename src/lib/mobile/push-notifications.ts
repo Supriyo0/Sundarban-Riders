@@ -36,6 +36,17 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     return "denied";
   }
 
+  // 0. Try Native Kotlin Android Bridge (Guarantees POST_NOTIFICATIONS dialog on Android 13+)
+  try {
+    const androidBridge = (window as any).AndroidNative || (window as any).OverlayLauncher;
+    if (androidBridge && typeof androidBridge.requestNotificationPermission === "function") {
+      const allowed = androidBridge.requestNotificationPermission();
+      if (allowed) return "granted";
+    }
+  } catch (err) {
+    console.warn("[Push] AndroidNative requestNotificationPermission error:", err);
+  }
+
   // 1. Try Native Capacitor LocalNotifications first
   try {
     const { Capacitor } = await import("@capacitor/core");

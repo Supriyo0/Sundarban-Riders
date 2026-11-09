@@ -8,6 +8,7 @@ import {
   RefreshCw,
   X,
   ShieldCheck,
+  ShieldAlert,
   ArrowUpDown,
   Users,
   Moon,
@@ -20,6 +21,9 @@ import {
   Minus,
   Navigation,
   Clock,
+  Car,
+  Banknote,
+  Check,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -2801,16 +2805,19 @@ export function InteractiveBookingMap({
       {/* 4. SLIDING UBER BOTTOM SHEET (VEHICLE TIER & CONFIRM RIDE)     */}
       {/* ------------------------------------------------------------- */}
       <div
-        className={`absolute bottom-[76px] sm:bottom-[84px] left-0 right-0 z-30 pointer-events-none transition-all duration-300 ${
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 98px)",
+        }}
+        className={`absolute left-0 right-0 z-30 pointer-events-none transition-all duration-300 ${
           activeSearchField
             ? "opacity-0 pointer-events-none translate-y-36 invisible"
             : "opacity-100 pointer-events-auto visible"
         }`}
       >
         <div
-          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl bg-white border border-slate-200 shadow-2xl p-3.5 sm:p-4 space-y-3 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
+          className={`pointer-events-auto relative mx-2 sm:mx-3 mb-2 rounded-3xl bg-white border border-slate-200 shadow-2xl p-3 sm:p-3.5 space-y-2.5 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] select-none overflow-hidden ${
             sheetExpanded
-              ? "max-h-[86dvh] pb-5 overflow-y-auto"
+              ? "max-h-[84dvh] pb-5 overflow-y-auto"
               : dropInputValue && dropInputValue.trim()
               ? "max-h-[140px] overflow-hidden"
               : "max-h-[110px] overflow-hidden"
@@ -2837,12 +2844,12 @@ export function InteractiveBookingMap({
               {sheetExpanded ? (
                 <>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Tap or drag down to minimize map view</span>
+                  <span>ম্যাপ দেখতে নিচে নামান (Minimize)</span>
                 </>
               ) : (
                 <>
                   <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
-                  <span className="text-emerald-700 font-black">Tap to view fare & ride options ⌃</span>
+                  <span className="text-emerald-700 font-black">ভাড়া ও অপশন দেখতে ট্যাপ করুন ⌃</span>
                 </>
               )}
             </div>
@@ -2863,18 +2870,18 @@ export function InteractiveBookingMap({
                 title="Tap to view full booking details"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-xl shrink-0 shadow-[0_4px_14px_rgba(16,185,129,0.45)] border border-emerald-300/40">
-                    🛺
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shrink-0 shadow-[0_4px_14px_rgba(16,185,129,0.35)] border border-emerald-300/40">
+                    <Car className="w-5 h-5 text-white" />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-black text-xs text-slate-900">Sundarban Smart Toto</span>
+                      <span className="font-black text-xs text-slate-900 truncate">সুন্দরবন স্মার্ট টোটো</span>
                       <span className="text-xs font-black text-emerald-700 font-mono">
                         {isCalculatingRoute ? "₹--" : `₹${fareResult.totalFare}.00`}
                       </span>
                       {isDropOutOfService && (
                         <span className="text-[9px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">
-                          Out of Service Area
+                          সার্ভিস এলাকার বাইরে
                         </span>
                       )}
                     </div>
@@ -2957,12 +2964,12 @@ export function InteractiveBookingMap({
                 {/* Uber Toto Vehicle Card - Liquid Refraction Polish */}
                 <div className="p-3 sm:p-3.5 rounded-2xl liquid-glass-pill bg-white/35 dark:bg-slate-800/35 border-2 border-emerald-500/70 shadow-[0_8px_24px_rgba(16,185,129,0.12),inset_0_1px_1px_rgba(255,255,255,0.9)] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-xl sm:text-2xl shadow-md shadow-emerald-600/30 shrink-0">
-                      🛺
+                    <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 shrink-0 border border-emerald-300/40">
+                      <Car className="w-6 h-6 text-white" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <h4 className="font-black text-xs sm:text-sm text-slate-900 truncate">Sundarban Smart Toto</h4>
+                        <h4 className="font-black text-xs sm:text-sm text-slate-900 truncate">সুন্দরবন স্মার্ট টোটো</h4>
                         {fareResult.isNight && (
                           <span className="text-[9px] font-black bg-purple-700 text-white px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shrink-0">
                             <Moon className="w-2.5 h-2.5" />
@@ -2973,17 +2980,17 @@ export function InteractiveBookingMap({
                       <p className="text-[10px] sm:text-[11px] font-semibold mt-0.5 truncate">
                         {nearbyDrivers.length > 0 ? (
                           <span className="text-emerald-700 font-bold">
-                            ⚡ ~{nearestDriverInfo?.etaMin || 3} min pickup ({nearestDriverInfo?.distanceKm.toFixed(1)} km away)
+                            ~{nearestDriverInfo?.etaMin || 3} মিনিট পিকআপ ({nearestDriverInfo?.distanceKm.toFixed(1)} কিমি)
                           </span>
                         ) : (
                           <span className="text-amber-700 font-bold">
-                            ⚠️ No active toto found within 5 km
+                            ৫ কিমি মধ্যে কোনো সক্রিয় চালক নেই
                           </span>
                         )}
                       </p>
                       <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-emerald-800 font-bold mt-0.5 truncate">
                         <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" />
-                        <span className="truncate">Verified Driver • Non-stop Road Route</span>
+                        <span className="truncate">যাচাইকৃত চালক • সরাসরি রোড রুট</span>
                       </div>
                     </div>
                   </div>
@@ -2993,10 +3000,10 @@ export function InteractiveBookingMap({
                       প্রস্তাবিত ভাড়া
                     </span>
                     <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
-                      {isCalculatingRoute ? "₹--" : `Est. ₹${fareResult.totalFare}.00`}
+                      {isCalculatingRoute ? "₹--" : `₹${fareResult.totalFare}.০০`}
                     </div>
                     <span className="text-[9px] sm:text-[9.5px] font-bold text-slate-500 block">
-                      (Driver proposed fare)
+                      (সরকারি নীতিমালা অনুযায়ী)
                     </span>
                   </div>
                 </div>
@@ -3007,7 +3014,7 @@ export function InteractiveBookingMap({
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Moon className="w-3.5 h-3.5 text-purple-700 shrink-0" />
                       <span className="text-[10.5px] leading-tight">
-                        Daytime: ₹{fareResult.totalFare - fareResult.nightCharge} + 🌙 Night Charge: ₹{fareResult.nightCharge}
+                        দিনের ভাড়া: ₹{fareResult.totalFare - fareResult.nightCharge} + নাইট চার্জ: ₹{fareResult.nightCharge}
                       </span>
                     </div>
                     <span className="text-purple-800 font-mono font-black shrink-0 text-[11px] ml-auto">= ₹{fareResult.totalFare}</span>
@@ -3027,11 +3034,13 @@ export function InteractiveBookingMap({
 
                 {/* Payment Mode */}
                 <div className="flex items-center justify-between text-[10.5px] px-1 text-slate-600">
-                  <span className="flex items-center gap-1 font-bold text-slate-700">
-                    <span>💵</span> Pay directly to Driver (Cash/UPI)
+                  <span className="flex items-center gap-1.5 font-bold text-slate-700">
+                    <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>চালকের সাথে সরাসরি পরিশোধ (Cash/UPI)</span>
                   </span>
                   <span className="text-emerald-700 font-bold flex items-center gap-1">
-                    ✓ Mutual Local Fare
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    <span>ন্যায্য সরকারি ভাড়া</span>
                   </span>
                 </div>
 
@@ -3042,7 +3051,7 @@ export function InteractiveBookingMap({
                     triggerHaptic(30);
                     handleConfirmClick();
                   }}
-                  className={`w-full h-13 rounded-2xl font-black text-base shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
+                  className={`w-full h-12 rounded-2xl font-black text-sm shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all cursor-pointer ${
                     isBlocked
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300 shadow-none"
                       : isCalculatingRoute
@@ -3052,15 +3061,27 @@ export function InteractiveBookingMap({
                       : "bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:brightness-105 text-white shadow-[0_8px_24px_rgba(16,185,129,0.35),inset_0_1px_1px_rgba(255,255,255,0.4)]"
                   }`}
                 >
-                  <span>
-                    {isBlocked
-                      ? "🚫 Account Temporarily Suspended"
-                      : isCalculatingRoute
-                      ? "⏳ Calculating road route & fare..."
-                      : !hasValidPickup
-                      ? "⚠️ Please select pickup location first"
-                      : `🛺 Request Ride (Est. ₹${fareResult.totalFare}.00)`}
-                  </span>
+                  {isBlocked ? (
+                    <span className="flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4 text-rose-500" />
+                      <span>অ্যাকাউন্ট সাময়িকভাবে স্থগিত</span>
+                    </span>
+                  ) : isCalculatingRoute ? (
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      <span>সঠিক ভাড়া ও রুট খোঁজা হচ্ছে...</span>
+                    </span>
+                  ) : !hasValidPickup ? (
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-amber-200" />
+                      <span>প্রথমে পিকআপ লোকেশন নির্বাচন করুন</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <Car className="w-4 h-4 text-white" />
+                      <span>রাইড অনুরোধ পাঠান • আনুমানিক ₹{fareResult.totalFare}.০০</span>
+                    </span>
+                  )}
                 </Button>
               </>
             )
@@ -3071,31 +3092,31 @@ export function InteractiveBookingMap({
             !sheetExpanded ? (
               <div
                 onClick={() => setSheetExpanded(true)}
-                className="flex items-center justify-between p-2 rounded-2xl bg-emerald-50/70 border border-emerald-200 cursor-pointer shadow-xs select-none"
+                className="flex items-center justify-between p-2.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 cursor-pointer shadow-xs select-none"
               >
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                  <span className="text-emerald-600 font-black text-sm">🛺</span>
-                  <span>Where to? Select destination</span>
+                  <Car className="w-4 h-4 text-emerald-600" />
+                  <span>কোথায় যাবেন? গন্তব্য নির্বাচন করুন</span>
                 </div>
-                <span className="text-emerald-700 font-bold text-xs bg-white px-2 py-0.5 rounded-lg border border-emerald-200">
-                  Open ⌃
+                <span className="text-emerald-700 font-bold text-xs bg-white px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs">
+                  খুলুন ⌃
                 </span>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-extrabold text-base text-slate-900 leading-tight">
-                      👋 Where to? Enter your destination
+                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900 leading-tight">
+                      কোথায় যাবেন? আপনার গন্তব্য লিখুন
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5">
                       {hasValidPickup
-                        ? `Pickup: ${pickupInputValue.slice(0, 24)}`
-                        : "Enter destination above or tap below to search"}
+                        ? `পিকআপ: ${pickupInputValue.slice(0, 24)}`
+                        : "উপরে গন্তব্য লিখুন অথবা ম্যাপে নির্বাচন করুন"}
                     </p>
                   </div>
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
-                    🛺
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200/60 shadow-xs">
+                    <Car className="w-5 h-5 text-emerald-600" />
                   </div>
                 </div>
 
@@ -3110,13 +3131,13 @@ export function InteractiveBookingMap({
                 >
                   <div className="flex items-center gap-2">
                     <Search className="w-4 h-4 text-emerald-600" />
-                    <span>Enter destination in West Bengal...</span>
+                    <span>গন্তব্য অনুসন্ধান করুন...</span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400" />
                 </button>
 
                 {/* Metered Ride Option (When no drop location is selected) */}
-                <div className="pt-1.5 space-y-1">
+                <div className="pt-1 space-y-1">
                   <Button
                     size="lg"
                     disabled={isBlocked || !hasValidPickup}
@@ -3124,12 +3145,13 @@ export function InteractiveBookingMap({
                       triggerHaptic(30);
                       handleBookMeteredRide();
                     }}
-                    className="w-full h-12 rounded-2xl font-black text-sm shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white cursor-pointer active:scale-[0.98] transition-all"
+                    className="w-full h-11 rounded-2xl font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:brightness-105 text-white cursor-pointer active:scale-[0.98] transition-all"
                   >
-                    <span>🛺 অনুরোধ পাঠান (রাইড প্রতি আনুমানিক বেস: ₹{calculateTotoFare(0, 4, pricingConfig).totalFare})</span>
+                    <Car className="w-4 h-4 text-white" />
+                    <span>অনুরোধ পাঠান (বেস ভাড়া: ₹{calculateTotoFare(0, 4, pricingConfig).totalFare})</span>
                   </Button>
-                  <p className="text-[10.5px] text-center text-slate-500 font-semibold">
-                    দূরত্ব ভিত্তিক আনুমানিক ভাড়া যাতায়াত শেষে সরাসরি পাইলটকে প্রদেয়
+                  <p className="text-[10px] text-center text-slate-500 font-semibold">
+                    দূরত্ব ভিত্তিক আনুমানিক ভাড়া যাতায়াত শেষে সরাসরি চালককে প্রদেয়
                   </p>
                 </div>
 
@@ -3138,11 +3160,11 @@ export function InteractiveBookingMap({
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span>
                       {nearbyDrivers.length > 0
-                        ? `🛺 ${nearbyDrivers.length} active Totos (within 5 km)`
-                        : "🔔 Driver dispatch active within 5 km"}
+                        ? `${nearbyDrivers.length}টি সক্রিয় টোটো (৫ কিমির মধ্যে)`
+                        : "৫ কিমির মধ্যে চালক খোঁজা হচ্ছে"}
                     </span>
                   </span>
-                  <span className="text-slate-500 font-semibold">⚡ Fast Pickup</span>
+                  <span className="text-slate-500 font-semibold">দ্রুত পিকআপ</span>
                 </div>
               </>
             )

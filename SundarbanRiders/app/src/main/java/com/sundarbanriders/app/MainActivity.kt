@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -27,6 +28,7 @@ import android.webkit.WebViewClient
 import android.app.NotificationManager
 import android.app.PendingIntent
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -321,6 +323,17 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
+        fun requestNotificationPermission(): Boolean {
+            val areEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+            if (!areEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Handler(Looper.getMainLooper()).post {
+                    requestPermissionsLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                }
+            }
+            return areEnabled
+        }
+
+        @JavascriptInterface
         fun showNotification(title: String, body: String, bookingId: String?) {
             Log.i(TAG, "Bridge: showNotification(title=$title, body=$body, bookingId=$bookingId)")
             try {
@@ -347,28 +360,39 @@ class MainActivity : ComponentActivity() {
                     piFlags
                 )
 
-                val notification = NotificationCompat.Builder(context, SundarbanApp.CHANNEL_ALERT)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                val soundUri = Uri.parse("android.resource://${context.packageName}/${R.raw.sundarban_alert_chime}")
+                val logoBitmap = try {
+                    BitmapFactory.decodeResource(context.resources, R.drawable.sundarban_logo)
+                } catch (ignored: Exception) {
+                    null
+                } ?: BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
+
+                val builder = NotificationCompat.Builder(context, SundarbanApp.CHANNEL_ALERT)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setLargeIcon(logoBitmap)
+                    .setColor(0xFF059669.toInt())
                     .setContentTitle(title)
                     .setContentText(body)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                     .setPriority(NotificationCompat.PRIORITY_MAX)
                     .setCategory(NotificationCompat.CATEGORY_CALL)
                     .setAutoCancel(true)
+                    .setSound(soundUri)
+                    .setVibrate(longArrayOf(0, 450, 200, 450, 200, 600))
                     .setFullScreenIntent(pendingIntent, true)
                     .setContentIntent(pendingIntent)
                     .addAction(
-                        android.R.drawable.ic_menu_send,
-                        "🛺 রাইড দেখুন",
+                        R.mipmap.ic_launcher,
+                        "রাইড দেখুন",
                         pendingIntent
                     )
-                    .build()
 
-                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val nm = NotificationManagerCompat.from(context)
                 val notifId = 9500 + (Math.abs(safeBookingId.hashCode()) % 500)
-                nm?.notify(notifId, notification)
+                nm.notify(notifId, builder.build())
+                Log.i(TAG, "Notification delivered successfully: notifId=$notifId, title=$title")
             } catch (t: Throwable) {
-                Log.w(TAG, "Bridge showNotification error: ${t.message}")
+                Log.w(TAG, "Bridge showNotification error: ${t.message}", t)
             }
         }
     }

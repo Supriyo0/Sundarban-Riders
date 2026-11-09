@@ -2,7 +2,7 @@
 
 import React from "react";
 import { SundarbanLogo } from "@/components/brand/sundarban-logo";
-import { ShieldAlert, ArrowRightLeft, Volume2, VolumeX, User } from "lucide-react";
+import { ShieldAlert, ArrowRightLeft, Volume2, VolumeX, User, Car } from "lucide-react";
 
 interface MobileAppHeaderProps {
   role: "rider" | "passenger";
@@ -58,8 +58,15 @@ export function MobileAppHeader({
             />
           </div>
           <div className="flex flex-col min-w-0 justify-center">
-            <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 leading-none truncate">
-              {role === "rider" ? "🛺 চালক ড্যাশবোর্ড" : "সুন্দরবন রাইডার্স"}
+            <span className="font-black text-xs sm:text-sm tracking-tight text-slate-900 leading-none truncate flex items-center gap-1">
+              {role === "rider" ? (
+                <>
+                  <Car className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>চালক ড্যাশবোর্ড</span>
+                </>
+              ) : (
+                <span>সুন্দরবন রাইডার্স</span>
+              )}
             </span>
             {userName && (
               <span className="text-[10.5px] font-bold text-slate-600 truncate mt-0.5 leading-tight flex items-center gap-1">

@@ -89,7 +89,10 @@ export default function DispatchRadarPage() {
       )
       .subscribe();
 
-    const interval = setInterval(() => loadBookings(true), 6000);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      loadBookings(true);
+    }, 15000);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);

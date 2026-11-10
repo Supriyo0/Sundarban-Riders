@@ -1168,8 +1168,8 @@ function MobileAppPageContent() {
 
     if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
       checkBookingAcceptance();
-      // Fast responsive polling (1500ms) with document.hidden guard
-      pollInterval = setInterval(checkBookingAcceptance, 1500);
+      // Responsive polling (2500ms) with document.hidden guard
+      pollInterval = setInterval(checkBookingAcceptance, 2500);
       if (typeof window !== "undefined") {
         window.addEventListener("focus", checkBookingAcceptance);
         document.addEventListener("visibilitychange", checkBookingAcceptance);
@@ -1384,7 +1384,7 @@ function MobileAppPageContent() {
     pollInterval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       pollRideStatus();
-    }, 1800);
+    }, 2800);
     return () => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);
@@ -1522,7 +1522,10 @@ function MobileAppPageContent() {
     let pollInterval: NodeJS.Timeout;
     if (phase === "kyc_pending") {
       checkDriverApprovalStatus();
-      pollInterval = setInterval(() => checkDriverApprovalStatus(), 5000);
+      pollInterval = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        checkDriverApprovalStatus();
+      }, 10000);
     }
     return () => clearInterval(pollInterval);
   }, [phase, session?.phone, phoneInput]);

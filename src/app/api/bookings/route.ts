@@ -4,8 +4,9 @@ export const revalidate = 0;
 let lastStaleCleanupTime = 0;
 const bookingPollCache = new Map<string, { data: any; timestamp: number }>();
 let pendingBookingsCache: { data: any; timestamp: number } | null = null;
-const ID_CACHE_TTL = 800;
-const PENDING_CACHE_TTL = 2000;
+const ID_CACHE_TTL = 1500;
+const PENDING_CACHE_TTL = 3000;
+const BOOKING_SUMMARY_COLUMNS = "id, booking_number, customer_name, customer_phone, pickup_location, drop_location, pickup_lat, pickup_lng, drop_lat, drop_lng, estimated_fare, estimated_distance_km, actual_distance_km, final_fare, status, start_otp, trip_start_time, driver_id, driver_name, driver_phone, driver_lat, driver_lng, created_at, updated_at, feedback";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -806,7 +807,10 @@ export async function GET(request: Request) {
       }
 
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
-      let query = admin.from("bookings").select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)");
+      const selectCols = searchParams.get("full_route") === "true"
+        ? "*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)"
+        : `${BOOKING_SUMMARY_COLUMNS}, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)`;
+      let query = admin.from("bookings").select(selectCols);
       if (isUuid) {
         query = query.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
       } else {
@@ -817,8 +821,9 @@ export async function GET(request: Request) {
       if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
       if (!data) return NextResponse.json({ booking: null }, { headers: NO_CACHE_HEADERS });
 
-      const enriched = enrichBookingCoords(data);
-      const d = data.drivers;
+      const bData = data as any;
+      const enriched = enrichBookingCoords(bData);
+      const d = bData?.drivers;
       let driverUid = d?.unique_id || "";
       if (!driverUid && d?.current_location_name) {
         try {
@@ -832,13 +837,13 @@ export async function GET(request: Request) {
       }
       driverUid = driverUid || "SR-DRV";
 
-      const meta = getBookingMeta(data);
+      const meta = getBookingMeta(bData);
       const resPayload = {
         booking: {
           ...enriched,
-          driver_name: d?.name || meta.driver_name || (data as any).driver_name || "সুন্দরবন চালক",
-          driver_phone: d?.phone || meta.driver_phone || (data as any).driver_phone || null,
-          toto_number: d?.toto_number || meta.toto_number || (data as any).toto_number || "WB-96-T-8421",
+          driver_name: d?.name || meta.driver_name || bData.driver_name || "সুন্দরবন চালক",
+          driver_phone: d?.phone || meta.driver_phone || bData.driver_phone || null,
+          toto_number: d?.toto_number || meta.toto_number || bData.toto_number || "WB-96-T-8421",
           driver_unique_id: driverUid,
           unique_id: driverUid,
         },
@@ -869,7 +874,7 @@ export async function GET(request: Request) {
 
       const { data, error } = await admin
         .from("bookings")
-        .select("*")
+        .select(BOOKING_SUMMARY_COLUMNS)
         .eq("status", "pending")
         .gte("created_at", threeMinutesAgo)
         .order("created_at", { ascending: false })
@@ -1087,7 +1092,7 @@ export async function GET(request: Request) {
 
       const { data, error } = await admin
         .from("bookings")
-        .select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)")
+        .select(`${BOOKING_SUMMARY_COLUMNS}, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)`)
         .in("driver_id", matchedDriverIds)
         .in("status", ["assigned", "in_progress"])
         .order("created_at", { ascending: false })
@@ -1163,7 +1168,7 @@ export async function GET(request: Request) {
 
       let activeQuery = admin
         .from("bookings")
-        .select("*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)")
+        .select(`${BOOKING_SUMMARY_COLUMNS}, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)`)
         .or(custOrClause)
         .order("created_at", { ascending: false });
 

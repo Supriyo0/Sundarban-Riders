@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   MapPin,
   LocateFixed,
+  Loader2,
   Search,
   RefreshCw,
   X,
@@ -429,13 +430,14 @@ export function InteractiveBookingMap({
   const [roadDurationMin, setRoadDurationMin] = useState(5);
   const [realDrivers, setRealDrivers] = useState<any[]>([]);
   const [isCalculatingRoute, setIsCalculatingRoute] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   // Safety auto-unlock: guarantees user is never stuck on loading screen if network fails
   useEffect(() => {
     if (!isCalculatingRoute) return;
     const timer = setTimeout(() => {
       setIsCalculatingRoute(false);
-    }, 9500);
+    }, 50000);
     return () => clearTimeout(timer);
   }, [isCalculatingRoute]);
   // True when user is typing a custom pickup — GPS watcher must NOT override it
@@ -1002,65 +1004,86 @@ export function InteractiveBookingMap({
           if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
           if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
           setIsCalculatingRoute(true);
+          setRouteError(null);
 
-          try {
-            if (routeAbortControllerRef.current) {
-              routeAbortControllerRef.current.abort();
-            }
-            const controller = new AbortController();
-            routeAbortControllerRef.current = controller;
-            // 25s timeout for resilient 2G/3G connectivity in Sundarbans rural areas
-            const safetyTimer = setTimeout(() => controller.abort(), 25000);
+          let routeFound = false;
+          let attempt = 0;
+          const maxAttempts = 3;
 
-            const res = await fetch(
-              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}`,
-              { signal: controller.signal }
-            );
-            clearTimeout(safetyTimer);
-
-            if (res.ok) {
-              const data = await res.json();
-              if (
-                data?.coordinates &&
-                Array.isArray(data.coordinates) &&
-                data.coordinates.length > 2
-              ) {
-                applyRouteGeometry(data.coordinates);
-                routeClientCache.set(cacheKey, {
-                  distanceKm: data.distanceKm,
-                  durationMin: data.durationMin,
-                  coordinates: data.coordinates,
-                });
+          while (!routeFound && attempt < maxAttempts) {
+            attempt++;
+            let controller: AbortController | null = null;
+            try {
+              if (routeAbortControllerRef.current) {
+                routeAbortControllerRef.current.abort();
               }
+              controller = new AbortController();
+              routeAbortControllerRef.current = controller;
+              // 15s timeout per attempt for resilient connectivity
+              const safetyTimer = setTimeout(() => controller?.abort(), 15000);
 
-              if (data?.riverCrossing) {
-                setRiverCrossingAlert(data.riverCrossing);
-              } else {
-                setRiverCrossingAlert(null);
+              const res = await fetch(
+                `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}&_t=${Date.now()}`,
+                { signal: controller.signal }
+              );
+              clearTimeout(safetyTimer);
+
+              if (res.ok) {
+                const data = await res.json();
+                if (
+                  data?.coordinates &&
+                  Array.isArray(data.coordinates) &&
+                  data.coordinates.length > 2
+                ) {
+                  applyRouteGeometry(data.coordinates);
+                  routeClientCache.set(cacheKey, {
+                    distanceKm: data.distanceKm,
+                    durationMin: data.durationMin,
+                    coordinates: data.coordinates,
+                  });
+                  routeFound = true;
+                  setRouteError(null);
+
+                  if (data?.riverCrossing) {
+                    setRiverCrossingAlert(data.riverCrossing);
+                  } else {
+                    setRiverCrossingAlert(null);
+                  }
+
+                  const finalDist = data?.distanceKm || baselineDist;
+                  const finalDur = data?.durationMin || baselineDuration;
+                  setDistanceKm(finalDist);
+                  setRoadDurationMin(finalDur);
+
+                  const computedFare = calculateTotoFare(finalDist, passengerCount, pricingConfig);
+                  onRouteSelectedRef.current?.({
+                    pickup: pText || "Current Location",
+                    drop: dText || "Drop Location",
+                    distanceKm: finalDist,
+                    estimatedFare: computedFare.totalFare,
+                    rideTier: "standard",
+                    pickupCoords: pCoords,
+                    dropCoords: dCoords,
+                    paymentMode: "cash",
+                    passengerCount,
+                  });
+                  break;
+                }
               }
-
-              const finalDist = data?.distanceKm || baselineDist;
-              const finalDur = data?.durationMin || baselineDuration;
-              setDistanceKm(finalDist);
-              setRoadDurationMin(finalDur);
-
-              const computedFare = calculateTotoFare(finalDist, passengerCount, pricingConfig);
-              onRouteSelectedRef.current?.({
-                pickup: pText || "Current Location",
-                drop: dText || "Drop Location",
-                distanceKm: finalDist,
-                estimatedFare: computedFare.totalFare,
-                rideTier: "standard",
-                pickupCoords: pCoords,
-                dropCoords: dCoords,
-                paymentMode: "cash",
-                passengerCount,
-              });
+            } catch (err: any) {
+              if (err?.name === "AbortError" && routeAbortControllerRef.current !== controller) {
+                return;
+              }
             }
-          } catch (err: any) {
-            if (err?.name === "AbortError") {
-              return;
+
+            if (!routeFound && attempt < maxAttempts) {
+              // Pause 2 seconds between attempts while keeping spinner active
+              await new Promise((r) => setTimeout(r, 2000));
             }
+          }
+
+          if (!routeFound) {
+            setRouteError("সঠিক রাস্তার রুট মেলেনি। পুনরায় চেষ্টা করুন।");
             setDistanceKm(baselineDist);
             setRoadDurationMin(baselineDuration);
             const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
@@ -1075,9 +1098,8 @@ export function InteractiveBookingMap({
               paymentMode: "cash",
               passengerCount,
             });
-          } finally {
-            setIsCalculatingRoute(false);
           }
+          setIsCalculatingRoute(false);
         }
       } else {
         // Clear route
@@ -1504,6 +1526,7 @@ export function InteractiveBookingMap({
     triggerHaptic(20);
     hasManualPickupRef.current = false;
     pickupInputFocusedRef.current = false;
+    setIsLocating(true);
 
     // Remove old marker so it doesn't linger
     if (pickupMarkerRef.current) {
@@ -1524,7 +1547,7 @@ export function InteractiveBookingMap({
 
       if (mapInstanceRef.current) {
         try {
-          mapInstanceRef.current.setView(liveCoords, 17, { animate: false });
+          mapInstanceRef.current.setView(liveCoords, 17, { animate: true });
         } catch {}
       }
 
@@ -1535,7 +1558,11 @@ export function InteractiveBookingMap({
       // Quick background reverse geocode update
       resolveLocationAddress(liveCoords[0], liveCoords[1]).then((addr) => {
         if (addr) setPickupInputValue(addr);
+        setIsLocating(false);
+      }).catch(() => {
+        setIsLocating(false);
       });
+      setTimeout(() => setIsLocating(false), 900);
     } else {
       setPickupInputValue("Locating GPS...");
       setHasValidPickup(false);
@@ -2692,6 +2719,32 @@ export function InteractiveBookingMap({
         </div>
       )}
 
+      {/* Route Error & Resilient Retry Banner */}
+      {routeError && !isCalculatingRoute && Boolean(dropCoords && dropCoords[0] !== 0) && (
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-40 pointer-events-auto animate-in fade-in slide-in-from-top-2 duration-200"
+          style={{ top: "calc(env(safe-area-inset-top, 0px) + 146px)" }}
+        >
+          <div className="px-4 py-2.5 rounded-2xl backdrop-blur-xl bg-amber-950/92 text-white shadow-2xl border border-amber-500/60 flex items-center gap-2.5 text-xs font-bold">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="tracking-wide">{routeError}</span>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(15);
+                setRouteError(null);
+                if (pickupCoordsRef.current && dropCoordsRef.current) {
+                  syncMapRouteAndPins(pickupCoordsRef.current, dropCoordsRef.current, pickupInputRef.current, dropInputRef.current);
+                }
+              }}
+              className="ml-1 bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 rounded-xl text-[11px] font-black cursor-pointer shadow-xs active:scale-95 transition-all"
+            >
+              আবার চেষ্টা করুন (Try Again)
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 🚀 INITIAL LOCATION LOCKING FULL SCREEN MODAL (100% Liquid Glass Orb) */}
       {isLocatingInitialLock && (
         <div
@@ -2749,7 +2802,7 @@ export function InteractiveBookingMap({
         </div>
       )}
 
-      {/* Map Layer Switcher: Street vs Satellite (Bottom Right - Safe Above Sheet) */}
+      {/* Map Layer Switcher: Street vs Satellite (Safely above bottom slider) */}
       <button
         type="button"
         onClick={() => {
@@ -2757,31 +2810,37 @@ export function InteractiveBookingMap({
           toggleMapLayer();
         }}
         title={mapLayer === "streets" ? "Satellite view" : "Street view"}
-        className={`absolute bottom-57 right-3.5 z-20 w-11 h-11 bg-white/80 hover:bg-white text-slate-700 rounded-2xl shadow-lg border border-white/80 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-          sheetExpanded || activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 322px)",
+        }}
+        className={`absolute right-3.5 z-40 w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-xl border border-slate-200 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+          activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
         }`}
       >
         <Layers className="w-5 h-5 text-slate-700" />
       </button>
 
-      {/* GPS Recenter Target Button (Bottom Right - Clears 120px Sheet with Comfort) */}
+      {/* GPS Recenter Target Button (Safely positioned above bottom slider card) */}
       <button
         type="button"
         onClick={handleTargetGpsClick}
         disabled={isLocating}
         title="Center on my GPS location"
-        className={`absolute bottom-44 right-3.5 z-20 w-11 h-11 rounded-2xl shadow-lg border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-          sheetExpanded || activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom, 0px) + 265px)",
+        }}
+        className={`absolute right-3.5 z-40 w-11 h-11 rounded-2xl shadow-xl border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+          activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
         } ${
           isLocating
-            ? "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.5)]"
+            ? "bg-emerald-600 text-white border-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.5)]"
             : hasValidPickup
-            ? "bg-white/85 hover:bg-emerald-50 text-emerald-600 border-white/80"
-            : "bg-amber-500/90 text-white border-amber-300 animate-bounce"
+            ? "bg-white hover:bg-emerald-50 text-emerald-600 border-slate-200"
+            : "bg-amber-500 text-white border-amber-300 animate-bounce"
         }`}
       >
         {isLocating ? (
-          <RefreshCw className="w-5 h-5 animate-spin" />
+          <Loader2 className="w-5 h-5 animate-spin text-white" />
         ) : (
           <LocateFixed className="w-5 h-5" />
         )}

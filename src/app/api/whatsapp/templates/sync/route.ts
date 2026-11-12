@@ -199,7 +199,24 @@ export async function POST() {
     let updated = 0
     const errors: { name: string; language: string; message: string }[] = []
 
+    // Load tombstoned template names so explicitly deleted templates are never re-inserted
+    const { data: tombstoneSetting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'deleted_template_names')
+      .maybeSingle()
+    const deletedNames = new Set<string>()
+    if (tombstoneSetting?.value) {
+      try {
+        const parsed = JSON.parse(tombstoneSetting.value)
+        if (Array.isArray(parsed)) parsed.forEach((n: string) => deletedNames.add(n))
+      } catch {}
+    }
+
     for (const t of metaTemplates) {
+      if (deletedNames.has(t.name)) {
+        continue
+      }
       const body = (t.components ?? []).find((c) => c.type === 'BODY')
       const header = (t.components ?? []).find((c) => c.type === 'HEADER')
       const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')

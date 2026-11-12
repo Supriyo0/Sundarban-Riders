@@ -2810,26 +2810,30 @@ export function InteractiveBookingMap({
           toggleMapLayer();
         }}
         title={mapLayer === "streets" ? "Satellite view" : "Street view"}
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 322px)",
-        }}
-        className={`absolute right-3.5 z-40 w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-xl border border-slate-200 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+        style={
+          sheetExpanded
+            ? { top: "calc(env(safe-area-inset-top, 0px) + 115px)" }
+            : { bottom: "calc(env(safe-area-inset-bottom, 0px) + 340px)" }
+        }
+        className={`absolute right-3.5 z-50 w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-xl border border-slate-200 backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
         }`}
       >
         <Layers className="w-5 h-5 text-slate-700" />
       </button>
 
-      {/* GPS Recenter Target Button (Safely positioned above bottom slider card) */}
+      {/* GPS Recenter Target Button (Safely positioned with z-50; pins to top-right if sheet expanded) */}
       <button
         type="button"
         onClick={handleTargetGpsClick}
         disabled={isLocating}
         title="Center on my GPS location"
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 265px)",
-        }}
-        className={`absolute right-3.5 z-40 w-11 h-11 rounded-2xl shadow-xl border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+        style={
+          sheetExpanded
+            ? { top: "calc(env(safe-area-inset-top, 0px) + 172px)" }
+            : { bottom: "calc(env(safe-area-inset-bottom, 0px) + 282px)" }
+        }
+        className={`absolute right-3.5 z-50 w-11 h-11 rounded-2xl shadow-xl border backdrop-blur-xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           activeSearchField ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"
         } ${
           isLocating

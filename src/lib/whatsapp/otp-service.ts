@@ -31,12 +31,47 @@ export function cleanPhoneNumber(phone: string): string {
   return cleaned;
 }
 
+export function toAsciiDigits(str: string): string {
+  const bengaliDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return (str || "")
+    .replace(/[০-৯]/g, (w) => bengaliDigits.indexOf(w).toString())
+    .replace(/\D/g, "");
+}
+
 export interface StoredOtpRecord {
   phone: string;
   otp: string;
   role: "rider" | "passenger";
   expiresAt: number;
   attempts: number;
+}
+
+// In-process memory cache for instant, fail-safe OTP verification across app requests
+const g = globalThis as unknown as { __SR_OTP_CACHE__?: Map<string, StoredOtpRecord> };
+if (!g.__SR_OTP_CACHE__) {
+  g.__SR_OTP_CACHE__ = new Map<string, StoredOtpRecord>();
+}
+const otpMemoryCache = g.__SR_OTP_CACHE__;
+
+function parseOtpRecord(val: unknown): StoredOtpRecord | null {
+  if (!val) return null;
+  if (typeof val === "object" && val !== null && "otp" in val) {
+    return val as StoredOtpRecord;
+  }
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (typeof parsed === "object" && parsed !== null && "otp" in parsed) {
+        return parsed as StoredOtpRecord;
+      }
+      if (typeof parsed === "string") {
+        return JSON.parse(parsed) as StoredOtpRecord;
+      }
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -66,14 +101,19 @@ export async function sendWhatsAppOtp(
     attempts: 0,
   };
 
-  // Store into system_settings under both 91XXXXXXXXXX and 10-digit keys for bulletproof lookup
-  await Promise.all([
+  // 1. Save in memory cache for immediate access
+  otpMemoryCache.set(phone, record);
+  otpMemoryCache.set(last10, record);
+  otpMemoryCache.set(`91${last10}`, record);
+
+  // 2. Store into system_settings under both 91XXXXXXXXXX and 10-digit keys for bulletproof lookup
+  await Promise.allSettled([
     supabase.from("system_settings").upsert(
-      { key: `otp_${phone}`, value: JSON.stringify(record) },
+      { key: `otp_${phone}`, value: record },
       { onConflict: "key" }
     ),
     supabase.from("system_settings").upsert(
-      { key: `otp_${last10}`, value: JSON.stringify(record) },
+      { key: `otp_${last10}`, value: record },
       { onConflict: "key" }
     ),
   ]);
@@ -147,58 +187,75 @@ export async function verifyWhatsAppOtp(
   const supabase = getSupabaseAdmin();
   const phone = cleanPhoneNumber(rawPhone);
   const last10 = phone.slice(-10);
+  const normalizedInput = toAsciiDigits(inputOtp);
 
-  // Check stored record by primary key or last10 key
-  let { data } = await supabase
-    .from("system_settings")
-    .select("value")
-    .eq("key", `otp_${phone}`)
-    .maybeSingle();
-
-  if (!data?.value) {
-    const fallbackRes = await supabase
-      .from("system_settings")
-      .select("value")
-      .eq("key", `otp_${last10}`)
-      .maybeSingle();
-    data = fallbackRes.data;
+  if (!normalizedInput || normalizedInput.length < 4) {
+    return { success: false, message: "সঠিক ৪ সংখ্যার OTP কোড লিখুন।" };
   }
 
-  if (!data?.value) {
+  // 1. Check in-memory cache first (instant 0ms response)
+  const memRecord =
+    otpMemoryCache.get(phone) ||
+    otpMemoryCache.get(last10) ||
+    otpMemoryCache.get(`91${last10}`);
+
+  let record: StoredOtpRecord | null = null;
+
+  if (memRecord && Date.now() <= memRecord.expiresAt) {
+    record = memRecord;
+  }
+
+  // 2. If not found in memory or expired, check database system_settings
+  if (!record) {
+    const keysToCheck = [`otp_${phone}`, `otp_${last10}`, `otp_91${last10}`];
+    const { data: dbRecords } = await supabase
+      .from("system_settings")
+      .select("key, value")
+      .in("key", keysToCheck);
+
+    if (dbRecords && dbRecords.length > 0) {
+      for (const row of dbRecords) {
+        const parsed = parseOtpRecord(row.value);
+        if (parsed && Date.now() <= parsed.expiresAt) {
+          record = parsed;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!record) {
     return { success: false, message: "কোনো সক্রিয় OTP পাওয়া যায়নি। অনুগ্রহ করে নতুন কোড চান।" };
   }
 
   try {
-    const record = JSON.parse(data.value) as StoredOtpRecord;
-
     if (Date.now() > record.expiresAt) {
-      await Promise.all([
+      otpMemoryCache.delete(phone);
+      otpMemoryCache.delete(last10);
+      otpMemoryCache.delete(`91${last10}`);
+      await Promise.allSettled([
         supabase.from("system_settings").delete().eq("key", `otp_${phone}`),
         supabase.from("system_settings").delete().eq("key", `otp_${last10}`),
+        supabase.from("system_settings").delete().eq("key", `otp_91${last10}`),
       ]);
       return { success: false, message: "OTP এর মেয়াদ শেষ হয়ে গেছে। নতুন কোড চান।" };
     }
 
-    if (record.otp !== inputOtp.trim()) {
+    if (record.otp !== normalizedInput) {
       record.attempts = (record.attempts || 0) + 1;
-      await Promise.all([
-        supabase
-          .from("system_settings")
-          .update({ value: JSON.stringify(record) })
-          .eq("key", `otp_${phone}`),
-        supabase
-          .from("system_settings")
-          .update({ value: JSON.stringify(record) })
-          .eq("key", `otp_${last10}`),
-      ]);
-
+      otpMemoryCache.set(phone, record);
+      otpMemoryCache.set(last10, record);
       return { success: false, message: "ভুল OTP কোড। অনুগ্রহ করে সঠিক কোড দিন।" };
     }
 
     // Success -> clean up stored OTP
-    await Promise.all([
+    otpMemoryCache.delete(phone);
+    otpMemoryCache.delete(last10);
+    otpMemoryCache.delete(`91${last10}`);
+    await Promise.allSettled([
       supabase.from("system_settings").delete().eq("key", `otp_${phone}`),
       supabase.from("system_settings").delete().eq("key", `otp_${last10}`),
+      supabase.from("system_settings").delete().eq("key", `otp_91${last10}`),
     ]);
 
     return {

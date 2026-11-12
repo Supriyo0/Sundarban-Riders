@@ -426,7 +426,7 @@ function MobileAppPageContent() {
     }
     return null;
   });
-  const [alertCountdown, setAlertCountdown] = useState(30);
+  const [alertCountdown, setAlertCountdown] = useState(120);
 
   // Passenger State (No hardcoded random place before GPS or user selection)
   const [pickupText, setPickupText] = useState("");
@@ -1839,8 +1839,8 @@ function MobileAppPageContent() {
             } catch {}
             setIncomingRide(null);
             activeAlertBookingIdRef.current = null;
-            toast.info("রাইড অনুরোধের ৩০ সেকেন্ড সময় শেষ হয়েছে। এটি আর পপআপে দেখানো হবে না।");
-            return 30;
+            toast.info("রাইড অনুরোধের ২ মিনিট সময় শেষ হয়েছে। এটি আর পপআপে দেখানো হবে না।");
+            return 120;
           }
           return prev - 1;
         });
@@ -1990,7 +1990,7 @@ function MobileAppPageContent() {
       displayFare = 34;
     }
 
-    setAlertCountdown(30);
+    setAlertCountdown(120);
     playRideAlertSound();
     if (typeof navigator !== "undefined" && navigator.vibrate) {
       try {
@@ -3712,15 +3712,34 @@ function MobileAppPageContent() {
                   />
 
                   {/* Direct One-Tap WhatsApp Button */}
-                  <a
-                    href={`https://wa.me/918348122122?text=${encodeURIComponent("OTP")}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = encodeURIComponent("OTP");
+                      const httpsUrl = `https://api.whatsapp.com/send?phone=918348122122&text=${text}`;
+                      const appUrl = `whatsapp://send?phone=918348122122&text=${text}`;
+                      try {
+                        const isMobile =
+                          typeof navigator !== "undefined" &&
+                          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+                        if (isMobile) {
+                          // Try app scheme, fallback to HTTPS URL in same window without popup blockage
+                          window.location.href = appUrl;
+                          setTimeout(() => {
+                            window.location.href = httpsUrl;
+                          }, 1200);
+                        } else {
+                          window.open(httpsUrl, "_blank", "noopener,noreferrer");
+                        }
+                      } catch {
+                        window.location.href = httpsUrl;
+                      }
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center active:scale-95"
                   >
                     <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>WhatsApp-এ ওটিপি না আসলে এখানে চাপুন (8348122122)</span>
-                  </a>
+                  </button>
 
                   <div className="flex items-center justify-between pt-1">
                     {hasSetupPin ? (
@@ -4808,8 +4827,8 @@ function MobileAppPageContent() {
                   </div>
                 </div>
 
-                {/* 30s Countdown Ring */}
-                <div className="relative w-13 h-13 sm:w-14 sm:h-14 flex items-center justify-center shrink-0">
+                {/* 2-Min (120s) Circular Countdown Ring */}
+                <div className="relative w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center shrink-0">
                   <svg className="w-full h-full transform -rotate-90">
                     <circle cx="28" cy="28" r="24" stroke="currentColor" strokeWidth="4" className="text-slate-100" fill="transparent" />
                     <circle
@@ -4818,13 +4837,21 @@ function MobileAppPageContent() {
                       r="24"
                       stroke="currentColor"
                       strokeWidth="4"
-                      className="text-emerald-600 transition-all duration-1000"
+                      className={`transition-all duration-1000 ${
+                        alertCountdown <= 20
+                          ? "text-red-600 animate-pulse"
+                          : alertCountdown <= 45
+                          ? "text-amber-500"
+                          : "text-emerald-600"
+                      }`}
                       fill="transparent"
                       strokeDasharray={150}
-                      strokeDashoffset={150 - (150 * alertCountdown) / 30}
+                      strokeDashoffset={150 - (150 * alertCountdown) / 120}
                     />
                   </svg>
-                  <span className="absolute font-black text-xs sm:text-sm text-slate-900">{alertCountdown}s</span>
+                  <span className="absolute font-black text-xs sm:text-sm text-slate-900 tracking-tighter">
+                    {Math.floor(alertCountdown / 60)}:{(alertCountdown % 60).toString().padStart(2, "0")}
+                  </span>
                 </div>
               </div>
 
@@ -4863,15 +4890,19 @@ function MobileAppPageContent() {
                 </div>
               </div>
 
-              {/* Swipe to Accept Button */}
+              {/* Prominent One-Tap Accept & Two-Column Secondary Actions */}
               <div className="space-y-3 pt-2">
-                <SwipeToConfirm
-                  label="➡️ স্লাইড করে রাইড গ্রহণ করুন"
-                  confirmedLabel="রাইড গ্রহণ সফল! ✓"
-                  colorScheme="emerald"
-                  onConfirm={async () => {
+                {/* 1. Large High-Touch Tap-to-Accept Button */}
+                <button
+                  type="button"
+                  disabled={isAcceptingRef.current === incomingRide.id}
+                  onClick={async () => {
                     const rideToAccept = incomingRide;
                     if (!rideToAccept) return;
+
+                    if (typeof navigator !== "undefined" && navigator.vibrate) {
+                      try { navigator.vibrate([100, 50, 100]); } catch {}
+                    }
 
                     acceptedRideIdsRef.current.add(rideToAccept.id);
                     if (rideToAccept.bookingNumber) acceptedRideIdsRef.current.add(rideToAccept.bookingNumber);
@@ -4954,17 +4985,23 @@ function MobileAppPageContent() {
                         );
                       }
                     } catch (err) {
-                      console.error("Failed to accept ride via swipe:", err);
+                      console.error("Failed to accept ride:", err);
                     }
                   }}
-                />
+                  className="w-full h-15 sm:h-16 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base sm:text-lg shadow-xl shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 cursor-pointer border border-emerald-400/50"
+                >
+                  <span className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                    <CheckCircle2 className="w-6 h-6 text-white" />
+                  </span>
+                  <span>রাইড গ্রহণ করুন (Accept Ride)</span>
+                </button>
 
-                {/* Two Action Buttons: Temporary Dismiss vs Permanent Ignore */}
+                {/* 2. Secondary Two-Column Action Buttons */}
                 <div className="grid grid-cols-2 gap-2.5 pt-1">
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full text-xs text-slate-700 border-slate-300 hover:bg-slate-100 h-11 font-bold rounded-xl"
+                    className="w-full text-xs text-slate-700 border-slate-300 hover:bg-slate-100 h-11 font-bold rounded-xl active:scale-95 transition-all"
                     onClick={() => {
                       if (incomingRide?.id) {
                         declinedBookingIdsRef.current.add(incomingRide.id);
@@ -4975,7 +5012,7 @@ function MobileAppPageContent() {
                       toast.info("পপআপ সাময়িক বন্ধ করা হয়েছে");
                     }}
                   >
-                    ✕ সাময়িক বন্ধ করুন
+                    ✕ বাতিল / পাস করুন
                   </Button>
 
                   <Button

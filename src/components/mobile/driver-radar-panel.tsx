@@ -1228,24 +1228,28 @@ export function DriverRadarPanel({
         type="button"
         onClick={toggleMapLayer}
         title={mapLayer === "streets" ? "স্যাটেলাইট ভিউ" : "স্ট্রিট ভিউ"}
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 292px)",
-        }}
-        className="absolute right-3.5 z-40 pointer-events-auto w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-xl border border-slate-200 flex items-center justify-center transition-all active:scale-90 cursor-pointer"
+        style={
+          sheetExpanded
+            ? { top: "calc(env(safe-area-inset-top, 0px) + 115px)" }
+            : { bottom: "calc(env(safe-area-inset-bottom, 0px) + 315px)" }
+        }
+        className="absolute right-3.5 z-50 pointer-events-auto w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl shadow-xl border border-slate-200 flex items-center justify-center transition-all active:scale-90 cursor-pointer"
       >
         <Layers className="w-5 h-5 text-slate-700" />
       </button>
 
-      {/* GPS Recenter Button (Safely positioned above bottom drawer) */}
+      {/* GPS Recenter Button (Safely positioned with z-50; pins to top-right if drawer expanded) */}
       <button
         type="button"
         onClick={() => updateDriverLocation(true)}
         disabled={isUpdatingLocation}
         title="আমার অবস্থান"
-        style={{
-          bottom: "calc(env(safe-area-inset-bottom, 0px) + 235px)",
-        }}
-        className={`absolute right-3.5 z-40 pointer-events-auto w-11 h-11 rounded-2xl shadow-xl border flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+        style={
+          sheetExpanded
+            ? { top: "calc(env(safe-area-inset-top, 0px) + 172px)" }
+            : { bottom: "calc(env(safe-area-inset-bottom, 0px) + 258px)" }
+        }
+        className={`absolute right-3.5 z-50 pointer-events-auto w-11 h-11 rounded-2xl shadow-xl border flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
           hasValidLocation
             ? "bg-white hover:bg-emerald-50 text-emerald-600 border-slate-200"
             : "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300 animate-bounce"

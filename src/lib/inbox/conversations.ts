@@ -58,6 +58,98 @@ export function normalizeConversations(
   return rows.map(normalizeConversation);
 }
 
+/**
+ * Resilient conversation fetcher.
+ * Attempts the primary embedded join first, but gracefully falls back to
+ * a two-step point lookup if PostgREST's relationship cache reports PGRST200,
+ * guaranteeing the inbox never shows a blank screen.
+ */
+export async function fetchConversationsWithContacts(supabase: any): Promise<Conversation[]> {
+  try {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select(CONVERSATION_SELECT)
+      .order("last_message_at", { ascending: false });
+
+    if (!error && data) {
+      return normalizeConversations(data);
+    }
+  } catch {
+    // Fall through to point join
+  }
+
+  // Resilient fallback: point lookup for contacts (immune to PGRST200 schema cache misses)
+  const { data: convs, error: convErr } = await supabase
+    .from("conversations")
+    .select("*")
+    .order("last_message_at", { ascending: false });
+
+  if (convErr || !convs) {
+    return [];
+  }
+
+  const contactIds = [...new Set(convs.map((c: any) => c.contact_id).filter(Boolean))];
+  const contactsMap = new Map<string, any>();
+  if (contactIds.length > 0) {
+    const { data: contacts } = await supabase
+      .from("contacts")
+      .select("*")
+      .in("id", contactIds);
+    if (contacts) {
+      contacts.forEach((ct: any) => contactsMap.set(ct.id, ct));
+    }
+  }
+
+  const combined = convs.map((c: any) => ({
+    ...c,
+    contact: contactsMap.get(c.contact_id) || null,
+  }));
+
+  return normalizeConversations(combined);
+}
+
+export async function fetchSingleConversationWithContact(
+  supabase: any,
+  convId: string
+): Promise<Conversation | null> {
+  try {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select(CONVERSATION_SELECT)
+      .eq("id", convId)
+      .maybeSingle();
+
+    if (!error && data) {
+      return normalizeConversation(data);
+    }
+  } catch {
+    // Fall through
+  }
+
+  const { data: conv, error: convErr } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("id", convId)
+    .maybeSingle();
+
+  if (convErr || !conv) return null;
+
+  let contact = null;
+  if (conv.contact_id) {
+    const { data: ct } = await supabase
+      .from("contacts")
+      .select("*")
+      .eq("id", conv.contact_id)
+      .maybeSingle();
+    contact = ct;
+  }
+
+  return normalizeConversation({
+    ...conv,
+    contact,
+  });
+}
+
 export interface ContactFilters {
   /** Tag ids; a conversation matches if its contact has ANY of them (OR). */
   tagIds: string[];

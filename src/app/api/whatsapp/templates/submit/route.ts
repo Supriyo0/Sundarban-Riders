@@ -232,6 +232,25 @@ export async function POST(request: Request) {
       )
     }
 
+    // If this template was previously tombstoned, clear it from tombstone
+    try {
+      const { data: st } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'deleted_template_names')
+        .maybeSingle()
+      if (st?.value) {
+        const list = JSON.parse(st.value)
+        if (Array.isArray(list) && list.includes(payload.name)) {
+          const updated = list.filter((n: string) => n !== payload.name)
+          await supabase
+            .from('system_settings')
+            .update({ value: JSON.stringify(updated), updated_at: new Date().toISOString() })
+            .eq('key', 'deleted_template_names')
+        }
+      }
+    } catch {}
+
     return NextResponse.json({
       success: true,
       template: row,

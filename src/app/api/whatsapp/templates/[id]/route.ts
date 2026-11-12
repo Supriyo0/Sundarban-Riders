@@ -315,6 +315,32 @@ export async function DELETE(
       )
     }
 
+    // Mark in tombstone list so Meta sync never resurrects this deleted template
+    try {
+      const { data: setting } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'deleted_template_names')
+        .maybeSingle()
+      let deletedList: string[] = []
+      if (setting?.value) {
+        try { deletedList = JSON.parse(setting.value) } catch {}
+      }
+      if (!deletedList.includes(existing.name)) {
+        deletedList.push(existing.name)
+        await supabase
+          .from('system_settings')
+          .upsert({
+            key: 'deleted_template_names',
+            value: JSON.stringify(deletedList),
+            description: 'Tombstoned templates that should not be re-synced from Meta',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key' })
+      }
+    } catch (e) {
+      console.warn('Failed to update deleted_template_names tombstone:', e)
+    }
+
     return NextResponse.json({ success: true, dry_run: isDryRun() })
   } catch (error) {
     console.error('Error deleting template:', error)

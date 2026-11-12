@@ -30,11 +30,11 @@ export async function GET(req: Request) {
       console.warn("Cron cleanup messages error:", msgErr);
     }
 
-    // 2. Delete conversations older than 24 hours
+    // 2. Delete conversations older than 24 hours (checked by last_message_at or created_at)
     const { error: convErr, count: convCount } = await supabase
       .from("conversations")
       .delete({ count: "exact" })
-      .lt("created_at", yesterday);
+      .or(`last_message_at.lt.${yesterday},created_at.lt.${yesterday}`);
 
     if (convErr) {
       console.warn("Cron cleanup conversations error:", convErr);
@@ -45,6 +45,7 @@ export async function GET(req: Request) {
       message: "দৈনিক কথোপকথন ও মেসেজ সফলভাবে মুছে পরিষ্কার করা হয়েছে (কন্টাক্টস সম্পূর্ণ অক্ষত রয়েছে)।",
       deletedMessages: msgCount || 0,
       deletedConversations: convCount || 0,
+      preservedContacts: "কন্টাক্টস, ড্রাইভার ও কাস্টমার ডেটা অক্ষত আছে",
       timestamp: new Date().toISOString(),
     });
   } catch (err: any) {

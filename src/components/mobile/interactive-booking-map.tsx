@@ -1000,61 +1000,56 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // Clear stale polyline while exact road route is resolving — NO fake straight line or random curves
-          if (routeLineBorderRef.current) routeLineBorderRef.current.setLatLngs([]);
-          if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+          // 1. INSTANT OPTIMISTIC FARE: Provide baseline distance & fare immediately so user can tap confirm without delay!
+          setDistanceKm(baselineDist);
+          setRoadDurationMin(baselineDuration);
+          const initialFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
+          onRouteSelectedRef.current?.({
+            pickup: pText || "Current Location",
+            drop: dText || "Drop Location",
+            distanceKm: baselineDist,
+            estimatedFare: initialFare.totalFare,
+            rideTier: "standard",
+            pickupCoords: pCoords,
+            dropCoords: dCoords,
+            paymentMode: "cash",
+            passengerCount,
+          });
+
+          // 2. FAST BACKGROUND ROUTE SNAP: Single 3.5-second attempt to fetch real road curves
           setIsCalculatingRoute(true);
           setRouteError(null);
 
-          let routeFound = false;
-          let attempt = 0;
-          const maxAttempts = 3;
+          let controller: AbortController | null = null;
+          try {
+            if (routeAbortControllerRef.current) {
+              routeAbortControllerRef.current.abort();
+            }
+            controller = new AbortController();
+            routeAbortControllerRef.current = controller;
+            const safetyTimer = setTimeout(() => controller?.abort(), 3500);
 
-          while (!routeFound && attempt < maxAttempts) {
-            attempt++;
-            let controller: AbortController | null = null;
-            try {
-              if (routeAbortControllerRef.current) {
-                routeAbortControllerRef.current.abort();
-              }
-              controller = new AbortController();
-              routeAbortControllerRef.current = controller;
-              // 15s timeout per attempt for resilient connectivity
-              const safetyTimer = setTimeout(() => controller?.abort(), 15000);
-
-              const res = await fetch(
-                `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}&_t=${Date.now()}`,
-                { signal: controller.signal }
-              );
-              clearTimeout(safetyTimer);
-
-              if (res.ok) {
-                const data = await res.json();
-                if (
-                  data?.coordinates &&
-                  Array.isArray(data.coordinates) &&
-                  data.coordinates.length > 2
-                ) {
+            fetch(
+              `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}&_t=${Date.now()}`,
+              { signal: controller.signal }
+            )
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                clearTimeout(safetyTimer);
+                if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2) {
                   applyRouteGeometry(data.coordinates);
                   routeClientCache.set(cacheKey, {
                     distanceKm: data.distanceKm,
                     durationMin: data.durationMin,
                     coordinates: data.coordinates,
                   });
-                  routeFound = true;
-                  setRouteError(null);
-
                   if (data?.riverCrossing) {
                     setRiverCrossingAlert(data.riverCrossing);
-                  } else {
-                    setRiverCrossingAlert(null);
                   }
-
                   const finalDist = data?.distanceKm || baselineDist;
                   const finalDur = data?.durationMin || baselineDuration;
                   setDistanceKm(finalDist);
                   setRoadDurationMin(finalDur);
-
                   const computedFare = calculateTotoFare(finalDist, passengerCount, pricingConfig);
                   onRouteSelectedRef.current?.({
                     pickup: pText || "Current Location",
@@ -1067,39 +1062,15 @@ export function InteractiveBookingMap({
                     paymentMode: "cash",
                     passengerCount,
                   });
-                  break;
                 }
-              }
-            } catch (err: any) {
-              if (err?.name === "AbortError" && routeAbortControllerRef.current !== controller) {
-                return;
-              }
-            }
-
-            if (!routeFound && attempt < maxAttempts) {
-              // Pause 2 seconds between attempts while keeping spinner active
-              await new Promise((r) => setTimeout(r, 2000));
-            }
+              })
+              .catch(() => {})
+              .finally(() => {
+                setIsCalculatingRoute(false);
+              });
+          } catch {
+            setIsCalculatingRoute(false);
           }
-
-          if (!routeFound) {
-            setRouteError("সঠিক রাস্তার রুট মেলেনি। পুনরায় চেষ্টা করুন।");
-            setDistanceKm(baselineDist);
-            setRoadDurationMin(baselineDuration);
-            const fallbackFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
-            onRouteSelectedRef.current?.({
-              pickup: pText || "Current Location",
-              drop: dText || "Drop Location",
-              distanceKm: baselineDist,
-              estimatedFare: fallbackFare.totalFare,
-              rideTier: "standard",
-              pickupCoords: pCoords,
-              dropCoords: dCoords,
-              paymentMode: "cash",
-              passengerCount,
-            });
-          }
-          setIsCalculatingRoute(false);
         }
       } else {
         // Clear route

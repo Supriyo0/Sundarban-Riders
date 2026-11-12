@@ -542,6 +542,8 @@ function MobileAppPageContent() {
     return null;
   });
   const hasCompletedNotifiedRef = useRef<string | null>(null);
+  const hasAcceptedNotifiedRef = useRef<Set<string>>(new Set());
+  const hasStartedNotifiedRef = useRef<Set<string>>(new Set());
   const activeAlertBookingIdRef = useRef<string | null>(null);
   const declinedBookingIdsRef = useRef<Set<string>>(new Set());
   const ignoredBookingIdsRef = useRef<Set<string>>(new Set());
@@ -1040,8 +1042,12 @@ function MobileAppPageContent() {
                   localStorage.removeItem("sr_search_status");
                 }
                 setPhase("passenger_home");
-                playSuccessSound();
-                toast.success("একজন চালক আপনার রাইড গ্রহণ করেছেন!");
+                if (!hasAcceptedNotifiedRef.current.has(b.id)) {
+                  hasAcceptedNotifiedRef.current.add(b.id);
+                  if (b.booking_number) hasAcceptedNotifiedRef.current.add(b.booking_number);
+                  playSuccessSound();
+                  toast.success("একজন চালক আপনার রাইড গ্রহণ করেছেন!");
+                }
                 return;
               }
 
@@ -1157,12 +1163,16 @@ function MobileAppPageContent() {
             localStorage.removeItem("sr_search_status");
           }
           setPhase("passenger_home");
-          playSuccessSound();
-          showLocalRideAlertNotification(
-            "🛺 চালক রাইড গ্রহণ করেছেন!",
-            `${b.driver_name || "টোটো চালক"} (${b.driver_unique_id || b.toto_number || "টোটো"}) আপনার পিকআপের উদ্দেশ্যে আসছেন। OTP: ${b.start_otp || ""}`,
-            b.id
-          );
+          if (!hasAcceptedNotifiedRef.current.has(b.id)) {
+            hasAcceptedNotifiedRef.current.add(b.id);
+            if (b.booking_number) hasAcceptedNotifiedRef.current.add(b.booking_number);
+            playSuccessSound();
+            showLocalRideAlertNotification(
+              "🛺 চালক রাইড গ্রহণ করেছেন!",
+              `${b.driver_name || "টোটো চালক"} (${b.driver_unique_id || b.toto_number || "টোটো"}) আপনার পিকআপের উদ্দেশ্যে আসছেন। OTP: ${b.start_otp || ""}`,
+              b.id
+            );
+          }
         }
       } catch {}
     };
@@ -1265,17 +1275,17 @@ function MobileAppPageContent() {
           if (startTime) {
             setPassengerBooking((prev: any) => (prev ? { ...prev, tripStartTime: startTime, trip_start_time: startTime } : prev));
           }
-          setRideStep((prev) => {
-            if (prev !== "in_trip") {
-              playSuccessSound();
-              showLocalRideAlertNotification(
-                "🛺 আপনার যাত্রা শুরু হয়েছে!",
-                "শুভ ও নিরাপদ যাত্রা। গন্তব্যে পৌঁছানো পর্যন্ত লাইভ ট্র্যাকিং সক্রিয় রয়েছে।",
-                b.id
-              );
-            }
-            return "in_trip";
-          });
+          setRideStep("in_trip");
+          if (!hasStartedNotifiedRef.current.has(b.id)) {
+            hasStartedNotifiedRef.current.add(b.id);
+            if (b.booking_number) hasStartedNotifiedRef.current.add(b.booking_number);
+            playSuccessSound();
+            showLocalRideAlertNotification(
+              "🛺 আপনার যাত্রা শুরু হয়েছে!",
+              "শুভ ও নিরাপদ যাত্রা। গন্তব্যে পৌঁছানো পর্যন্ত লাইভ ট্র্যাকিং সক্রিয় রয়েছে।",
+              b.id
+            );
+          }
         } else if (b.status === "completed") {
           if (pollInterval) clearInterval(pollInterval);
           let bMeta: any = {};
@@ -2131,7 +2141,7 @@ function MobileAppPageContent() {
             return;
           }
 
-          // Get driver coords (live or from device cache)
+          // Get driver coords (live, device cache, or regional center)
           let coords = driverLiveCoords;
           if (!coords || coords[0] === 0) {
             if (typeof window !== "undefined") {
@@ -2146,6 +2156,9 @@ function MobileAppPageContent() {
                 }
               }
             }
+          }
+          if (!coords || coords[0] === 0) {
+            coords = [21.8760, 88.1920];
           }
 
           // Build query with live coordinates and driver session identity
@@ -2183,8 +2196,8 @@ function MobileAppPageContent() {
             const pCoords = extractPickupCoordinates(item);
             if (coords && coords[0] !== 0 && pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {
               const dKm = calculateDistanceKm(coords[0], coords[1], pCoords[0], pCoords[1]);
-              if (dKm > 10.0) {
-                // Ignore rides confirmed farther than 10.0 km
+              if (dKm > 15.0) {
+                // Ignore rides confirmed farther than 15.0 km
                 return false;
               }
             }

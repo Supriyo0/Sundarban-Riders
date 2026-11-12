@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { sendInteractiveButtons, sendTextMessage } from "@/lib/whatsapp/meta-api";
-import { calculateDistanceKm } from "@/lib/whatsapp/toto-engine";
+import { calculateDistanceKm, cancelBookingTimeout } from "@/lib/whatsapp/toto-engine";
 import {
   calculateTotoFare,
   DEFAULT_TOTO_PRICING,
@@ -19,6 +19,21 @@ import {
 } from "@/lib/pricing/fare-calculator";
 import { getCustomWhatsAppMessage } from "@/lib/whatsapp/message-templates";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+function invalidateBookingCache(bookingId?: string, bookingNumber?: string) {
+  if (bookingId) {
+    bookingPollCache.delete(bookingId);
+    try { cancelBookingTimeout(bookingId); } catch {}
+  }
+  if (bookingNumber) {
+    const raw = bookingNumber.replace(/^#/, "");
+    bookingPollCache.delete(raw);
+    bookingPollCache.delete(`SR-${raw}`);
+    bookingPollCache.delete(raw.replace(/^SR-?/i, ""));
+    try { cancelBookingTimeout(bookingNumber); } catch {}
+  }
+  pendingBookingsCache = null;
+}
 
 /**
  * Proactively notifies online drivers within 5km radius via WhatsApp
@@ -807,27 +822,37 @@ export async function GET(request: Request) {
       }
 
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+      const digitsOnly = cleanId.replace(/\D/g, "");
+      const searchTerms = new Set<string>([cleanId, cleanId.replace(/^SR-?/i, ""), `#${cleanId}`]);
+      if (digitsOnly) {
+        searchTerms.add(digitsOnly);
+        searchTerms.add(`SR-${digitsOnly}`);
+        searchTerms.add(`#SR-${digitsOnly}`);
+      }
+      const orClauses: string[] = [];
+      if (isUuid) {
+        orClauses.push(`id.eq.${cleanId}`);
+      }
+      Array.from(searchTerms).filter(Boolean).forEach((t) => {
+        orClauses.push(`booking_number.eq.${t}`);
+        orClauses.push(`booking_number.eq.#${t}`);
+      });
+      if (digitsOnly.length >= 3) {
+        orClauses.push(`booking_number.ilike.%${digitsOnly}%`);
+      }
+      const orCondition = orClauses.join(",");
+
       const selectCols = searchParams.get("full_route") === "true"
         ? "*, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)"
         : `${BOOKING_SUMMARY_COLUMNS}, drivers(id, name, phone, toto_number, current_location_name, latitude, longitude)`;
-      let query = admin.from("bookings").select(selectCols);
-      if (isUuid) {
-        query = query.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
-      } else {
-        query = query.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
-      }
+      let query = admin.from("bookings").select(selectCols).or(orCondition);
       let { data: primaryData, error } = await query.maybeSingle();
       let data: any = primaryData;
 
       // Ultra-resilience: If join query with drivers fails (e.g. missing columns or schema differences), fallback to BOOKING_SUMMARY_COLUMNS
       if (error) {
         console.warn("[GET /api/bookings] primary query with drivers join failed, falling back to base columns:", error.message);
-        let fallbackQuery = admin.from("bookings").select(BOOKING_SUMMARY_COLUMNS);
-        if (isUuid) {
-          fallbackQuery = fallbackQuery.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
-        } else {
-          fallbackQuery = fallbackQuery.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
-        }
+        let fallbackQuery = admin.from("bookings").select(BOOKING_SUMMARY_COLUMNS).or(orCondition);
         const fallbackRes = await fallbackQuery.maybeSingle();
         if (fallbackRes.data) {
           data = fallbackRes.data as any;
@@ -949,28 +974,31 @@ export async function GET(request: Request) {
         } catch {}
       }
 
-      // STRICT RADIUS FILTERING:
-      // Toto service only serves nearby pickups (<= 6.0 km). Never send distant bookings (50-60 km)!
-      if (dLat !== null && !isNaN(dLat) && dLat !== 0 && dLng !== null && !isNaN(dLng) && dLng !== 0) {
-        enriched = enriched
-          .map((b) => {
-            const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
-            const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
-            const hasPickupCoords = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
-            const distKm = hasPickupCoords
-              ? calculateDistanceKm(dLat!, dLng!, pLat, pLng)
-              : 999;
-            return {
-              ...b,
-              driver_distance_km: distKm,
-            };
-          })
-          .filter((b) => typeof b.driver_distance_km === "number" && b.driver_distance_km <= 6.0)
-          .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
-      } else {
-        // Driver has unknown coordinates — do not send arbitrary distant rides
-        enriched = [];
+      // REGIONAL RADIUS FILTERING:
+      // Toto service dispatches nearby regional rides (<= 15.0 km, matching WhatsApp dispatch radar).
+      let effectiveLat = dLat;
+      let effectiveLng = dLng;
+      if (!effectiveLat || !effectiveLng || isNaN(effectiveLat) || isNaN(effectiveLng) || effectiveLat === 0) {
+        // Fallback to Kakdwip regional center [21.8760, 88.1920]
+        effectiveLat = 21.8760;
+        effectiveLng = 88.1920;
       }
+
+      enriched = enriched
+        .map((b) => {
+          const pLat = Number(b.pickup_lat || b.start_coords?.[0]);
+          const pLng = Number(b.pickup_lng || b.start_coords?.[1]);
+          const hasPickupCoords = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
+          const distKm = hasPickupCoords
+            ? calculateDistanceKm(effectiveLat!, effectiveLng!, pLat, pLng)
+            : 1.0;
+          return {
+            ...b,
+            driver_distance_km: distKm,
+          };
+        })
+        .filter((b) => typeof b.driver_distance_km === "number" && b.driver_distance_km <= 15.0)
+        .sort((a, b) => (a.driver_distance_km || 0) - (b.driver_distance_km || 0));
 
       const resPayload = {
         bookings: enriched,
@@ -1905,6 +1933,9 @@ export async function PATCH(request: Request) {
         id: validDriverId,
       });
 
+      // Invalidate caches & cancelled booking timeouts
+      invalidateBookingCache(booking.id, booking.booking_number);
+
       const enrichedAssigned = enrichBookingCoords(assigned);
       return NextResponse.json({
         success: true,
@@ -1979,6 +2010,7 @@ export async function PATCH(request: Request) {
       }
 
       if (updated) {
+        invalidateBookingCache(booking.id, booking.booking_number);
         void notifyTripStarted(admin, updated);
       }
 
@@ -2214,6 +2246,7 @@ export async function PATCH(request: Request) {
       });
 
       // Send WhatsApp completion receipt to customer and driver
+      invalidateBookingCache(booking.id, booking.booking_number);
       void notifyTripCompleted(admin, enrichedUpdated);
 
         // Rich payload containing full trip details for local device storage
@@ -2387,6 +2420,7 @@ export async function PATCH(request: Request) {
       }
 
       if (updated) {
+        invalidateBookingCache(booking.id, booking.booking_number);
         void notifyTripCancelled(admin, updated, cancelledBy, body.cancelReason);
       }
 

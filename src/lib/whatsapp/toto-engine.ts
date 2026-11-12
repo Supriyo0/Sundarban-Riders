@@ -1635,6 +1635,8 @@ export async function processTotoMessage(
     });
 
     if (booking) {
+      cancelBookingTimeout(booking.id);
+      if (booking.booking_number) cancelBookingTimeout(booking.booking_number);
       await supabase.from("bookings").update({
         status: "completed",
         final_fare: finalFare,

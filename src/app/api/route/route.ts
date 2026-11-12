@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     if (mapboxToken) {
       try {
         const driveUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?geometries=geojson&overview=full&steps=true&radiuses=unlimited;unlimited&continue_straight=false&access_token=${mapboxToken}`;
-        let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(7000) }).catch(() => null);
+        let mbRes = await fetch(driveUrl, { headers: { "User-Agent": "SundarbanRiders/2.0" }, signal: AbortSignal.timeout(2500) }).catch(() => null);
 
         let route: any = null;
         if (mbRes && mbRes.ok) {
@@ -178,7 +178,7 @@ export async function GET(req: Request) {
         try {
           const res = await fetch(url, {
             headers: { "User-Agent": "SundarbanRiders/2.0" },
-            signal: AbortSignal.timeout(9000),
+            signal: AbortSignal.timeout(3000),
           });
           if (res.ok) {
             const data = await res.json();

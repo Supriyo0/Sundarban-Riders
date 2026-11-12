@@ -899,16 +899,24 @@ export async function GET(request: Request) {
         } catch {}
       }
 
-      const { data, error } = await admin
-        .from("bookings")
-        .select(BOOKING_SUMMARY_COLUMNS)
-        .eq("status", "pending")
-        .gte("created_at", threeMinutesAgo)
-        .order("created_at", { ascending: false })
-        .limit(50);
+      let rawPendingData: any[] = [];
+      if (pendingBookingsCache && Date.now() - pendingBookingsCache.timestamp < PENDING_CACHE_TTL) {
+        rawPendingData = pendingBookingsCache.data;
+      } else {
+        const { data, error } = await admin
+          .from("bookings")
+          .select(BOOKING_SUMMARY_COLUMNS)
+          .eq("status", "pending")
+          .gte("created_at", threeMinutesAgo)
+          .order("created_at", { ascending: false })
+          .limit(50);
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
-      let enriched = (data || []).map(enrichBookingCoords);
+        if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
+        rawPendingData = data || [];
+        pendingBookingsCache = { data: rawPendingData, timestamp: Date.now() };
+      }
+
+      let enriched = rawPendingData.map(enrichBookingCoords);
 
       const dLatStr = searchParams.get("driver_lat") || searchParams.get("lat");
       const dLngStr = searchParams.get("driver_lng") || searchParams.get("lng");

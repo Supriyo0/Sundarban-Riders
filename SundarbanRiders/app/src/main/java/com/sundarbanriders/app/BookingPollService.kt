@@ -50,7 +50,7 @@ class BookingPollService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var driverPhone: String = ""
-    private var apiBaseUrl: String = "https://109.122.56.24.sslip.io"
+    private var apiBaseUrl: String = "https://sundarbanrider.in"
 
     private val alertedBookingTimes = ConcurrentHashMap<String, Long>()
     private var isPolling = false

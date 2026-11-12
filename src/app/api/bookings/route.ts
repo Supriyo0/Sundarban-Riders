@@ -6,7 +6,7 @@ const bookingPollCache = new Map<string, { data: any; timestamp: number }>();
 let pendingBookingsCache: { data: any; timestamp: number } | null = null;
 const ID_CACHE_TTL = 1500;
 const PENDING_CACHE_TTL = 3000;
-const BOOKING_SUMMARY_COLUMNS = "id, booking_number, customer_name, customer_phone, pickup_location, drop_location, pickup_lat, pickup_lng, drop_lat, drop_lng, estimated_fare, estimated_distance_km, actual_distance_km, final_fare, status, start_otp, trip_start_time, driver_id, driver_name, driver_phone, driver_lat, driver_lng, created_at, updated_at, feedback";
+const BOOKING_SUMMARY_COLUMNS = "id, booking_number, customer_name, customer_phone, pickup_location, drop_location, estimated_fare, status, driver_id, created_at, updated_at, feedback";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -1244,10 +1244,10 @@ export async function GET(request: Request) {
 
     const { data, error } = await admin
       .from("bookings")
-      .select("*")
+      .select(BOOKING_SUMMARY_COLUMNS)
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(30);
+      .limit(20);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

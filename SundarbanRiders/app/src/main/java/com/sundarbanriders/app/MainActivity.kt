@@ -203,6 +203,13 @@ class MainActivity : ComponentActivity() {
                             startActivity(intent)
                         } catch (e: Exception) {
                             Log.w(TAG, "Cannot launch external url: $url, err: ${e.message}")
+                            try {
+                                if (scheme == "whatsapp" || url.contains("whatsapp") || url.contains("wa.me")) {
+                                    val playStoreIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.whatsapp"))
+                                    playStoreIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    startActivity(playStoreIntent)
+                                }
+                            } catch (ignored: Exception) {}
                         }
                         return true // HANDLED! Do not attempt to load in WebView!
                     }
@@ -210,11 +217,58 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                    Log.w(TAG, "Web error: ${error?.description} (code ${error?.errorCode}) on ${request?.url}")
-                    // DO NOT call super.onReceivedError when network fails or server resets,
-                    // so the existing web interface stays on screen instead of showing the blank/dinosaur page!
+                    val reqUrl = request?.url?.toString() ?: ""
+                    Log.w(TAG, "Web error: ${error?.description} (code ${error?.errorCode}) on $reqUrl")
+
+                    // 1. Intercept unknown scheme (e.g. whatsapp://) so it NEVER replaces the webpage with ERR_UNKNOWN_URL_SCHEME!
+                    if (error?.errorCode == ERROR_UNKNOWN_URL_SCHEME || reqUrl.startsWith("whatsapp:") || reqUrl.startsWith("intent:")) {
+                        handleExternalUrl(reqUrl)
+                        if (view?.canGoBack() == true) {
+                            view.goBack()
+                        }
+                        return
+                    }
+
+                    // 2. Offline cold-start fallback: Show beautiful branded Sundarban Riders offline card instead of browser dinosaur/error!
                     if (request?.isForMainFrame == true && (error?.errorCode == ERROR_CONNECT || error?.errorCode == ERROR_HOST_LOOKUP || error?.errorCode == ERROR_TIMEOUT)) {
-                        Log.i(TAG, "Offline or VPS error detected on main frame; preserving cached view")
+                        Log.i(TAG, "Offline or VPS error detected on main frame; rendering branded offline card")
+                        val offlineHtml = """
+                            <!DOCTYPE html>
+                            <html lang="bn">
+                            <head>
+                                <meta charset="UTF-8">
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                <title>সুন্দরবন রাইডার্স — অফলাইন</title>
+                                <style>
+                                    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                                    body { background: #f8fafc; color: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }
+                                    .card { background: #ffffff; border-radius: 28px; padding: 32px 24px; width: 100%; max-width: 380px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+                                    .icon { width: 72px; height: 72px; margin: 0 auto 20px; background: #ecfdf5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+                                    h1 { font-size: 20px; font-weight: 800; color: #065f46; margin-bottom: 8px; }
+                                    p { font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 24px; }
+                                    .btn { display: block; width: 100%; padding: 14px 20px; background: #059669; color: #ffffff; font-size: 14px; font-weight: 700; border-radius: 16px; border: none; cursor: pointer; text-decoration: none; box-shadow: 0 4px 12px rgba(5,150,105,0.25); }
+                                    .btn:active { transform: scale(0.98); background: #047857; }
+                                    .btn-call { margin-top: 10px; background: #f1f5f9; color: #334155; box-shadow: none; border: 1px solid #cbd5e1; }
+                                    .status { margin-top: 20px; font-size: 11px; color: #94a3b8; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }
+                                    .dot { width: 8px; height: 8px; background: #ef4444; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; }
+                                    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="card">
+                                    <div class="icon">📡</div>
+                                    <h1>ইন্টারনেট সংযোগ নেই</h1>
+                                    <p>আপনার ফোনের মোবাইল ডেটা বা Wi-Fi সংযোগটি চালু করুন এবং পুনরায় চেষ্টা করুন।</p>
+                                    <button class="btn" onclick="window.location.href='https://sundarbanrider.in/app'">🔄 পুনরায় চেষ্টা করুন</button>
+                                    <a class="btn btn-call" href="tel:8348122122">📞 হেল্পলাইন: 8348122122</a>
+                                    <div class="status">
+                                        <span class="dot"></span> অফলাইন মোড সক্রিয় রয়েছে
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                        """.trimIndent()
+                        view?.loadDataWithBaseURL("https://sundarbanrider.in", offlineHtml, "text/html", "UTF-8", null)
                     }
                 }
             }

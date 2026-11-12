@@ -22,29 +22,49 @@ export const OverlayLauncher = registerPlugin<OverlayLauncherPlugin>("OverlayLau
   },
 });
 
+function getNativeBridge(): any {
+  if (typeof window === "undefined") return null;
+  return (window as any).AndroidNative || (window as any).OverlayLauncher || null;
+}
+
 /**
  * Checks if the Android app has "Display over other apps" (SYSTEM_ALERT_WINDOW) permission.
  */
 export async function checkOverlayPermission(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return true;
-  try {
-    const res = await OverlayLauncher.canDrawOverlays();
-    return !!res?.granted;
-  } catch (err) {
-    console.warn("[OverlayLauncher] check error:", err);
-    return true;
+  const bridge = getNativeBridge();
+  if (bridge?.canDrawOverlays) {
+    try {
+      return Boolean(bridge.canDrawOverlays());
+    } catch {
+      return true;
+    }
   }
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const res = await OverlayLauncher.canDrawOverlays();
+      return !!res?.granted;
+    } catch {
+      return true;
+    }
+  }
+  return true;
 }
 
 /**
  * Opens native Android Settings page to enable "Display over other apps".
  */
 export async function requestOverlayPermission(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await OverlayLauncher.requestOverlayPermission();
-  } catch (err) {
-    console.warn("[OverlayLauncher] request error:", err);
+  const bridge = getNativeBridge();
+  if (bridge?.requestOverlayPermission) {
+    try {
+      bridge.requestOverlayPermission();
+      return;
+    } catch {}
+  }
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await OverlayLauncher.requestOverlayPermission();
+    } catch {}
   }
 }
 
@@ -52,11 +72,17 @@ export async function requestOverlayPermission(): Promise<void> {
  * Wakes up the app and brings it to foreground over whatever app the driver is using.
  */
 export async function bringAppToForeground(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await OverlayLauncher.bringToForeground();
-  } catch (err) {
-    console.warn("[OverlayLauncher] bringToForeground error:", err);
+  const bridge = getNativeBridge();
+  if (bridge?.bringToForeground) {
+    try {
+      bridge.bringToForeground();
+      return;
+    } catch {}
+  }
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await OverlayLauncher.bringToForeground();
+    } catch {}
   }
 }
 
@@ -65,24 +91,36 @@ export async function bringAppToForeground(): Promise<void> {
  * when the app is minimized or the screen is turned off.
  */
 export async function startNativeBookingService(driverPhone?: string): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    let apiBaseUrl = "https://109.122.56.24.sslip.io";
-    if (typeof window !== "undefined") {
-      const origin = window.location.origin;
-      if (
-        origin &&
-        !origin.includes("localhost") &&
-        !origin.includes("127.0.0.1") &&
-        !origin.startsWith("capacitor://") &&
-        !origin.startsWith("file://")
-      ) {
-        apiBaseUrl = origin;
-      }
+  let apiBaseUrl = "https://sundarbanrider.in";
+  if (typeof window !== "undefined") {
+    const origin = window.location.origin;
+    if (
+      origin &&
+      !origin.includes("localhost") &&
+      !origin.includes("127.0.0.1") &&
+      !origin.startsWith("capacitor://") &&
+      !origin.startsWith("file://")
+    ) {
+      apiBaseUrl = origin;
     }
-    await OverlayLauncher.startBookingService({ driverPhone, apiBaseUrl });
-  } catch (err) {
-    console.warn("[OverlayLauncher] startBookingService error:", err);
+  }
+
+  const bridge = getNativeBridge();
+  if (bridge?.startBookingService) {
+    try {
+      bridge.startBookingService(driverPhone || "", apiBaseUrl);
+      return;
+    } catch (e) {
+      console.warn("[Bridge] startBookingService error:", e);
+    }
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await OverlayLauncher.startBookingService({ driverPhone, apiBaseUrl });
+    } catch (err) {
+      console.warn("[OverlayLauncher] startBookingService error:", err);
+    }
   }
 }
 
@@ -90,11 +128,18 @@ export async function startNativeBookingService(driverPhone?: string): Promise<v
  * Stops the native Android Foreground Service when the driver goes offline.
  */
 export async function stopNativeBookingService(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await OverlayLauncher.stopBookingService();
-  } catch (err) {
-    console.warn("[OverlayLauncher] stopBookingService error:", err);
+  const bridge = getNativeBridge();
+  if (bridge?.stopBookingService) {
+    try {
+      bridge.stopBookingService();
+      return;
+    } catch {}
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await OverlayLauncher.stopBookingService();
+    } catch {}
   }
 }
 
@@ -102,8 +147,17 @@ export async function stopNativeBookingService(): Promise<void> {
  * Clears the pending booking in native storage after web UI has handled it.
  */
 export async function clearPendingBooking(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  try {
-    await OverlayLauncher.clearPendingBooking();
-  } catch {}
+  const bridge = getNativeBridge();
+  if (bridge?.clearPendingBooking) {
+    try {
+      bridge.clearPendingBooking();
+      return;
+    } catch {}
+  }
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await OverlayLauncher.clearPendingBooking();
+    } catch {}
+  }
 }

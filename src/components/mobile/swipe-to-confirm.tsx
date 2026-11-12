@@ -127,11 +127,16 @@ export function SwipeToConfirm({
   return (
     <div
       ref={containerRef}
-      className={`relative h-13 w-full select-none touch-none overflow-hidden rounded-full border p-1 transition-colors ${
+      className={`relative h-14 sm:h-15 w-full select-none touch-none overflow-hidden rounded-2xl border-2 p-1 transition-colors ${
         colors.track
       } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       onMouseDown={(e) => handleStart(e.clientX)}
       onTouchStart={(e) => handleStart(e.touches[0].clientX)}
+      onClick={() => {
+        if (!disabled && !isConfirmed) {
+          triggerConfirm();
+        }
+      }}
     >
       {/* Background Fill Progress */}
       <div
@@ -139,26 +144,26 @@ export function SwipeToConfirm({
         style={{ width: `${dragProgress * 100}%` }}
       />
 
-      {/* Label Text */}
-      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none px-12 text-center text-xs sm:text-sm font-extrabold tracking-wide ${colors.textColor}`}>
+      {/* Label Text - Optimized padding so text is NEVER hidden or clipped */}
+      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none pl-12 pr-4 text-center text-xs sm:text-sm font-black tracking-normal ${colors.textColor}`}>
         {isConfirmed ? (
-          <span className="flex items-center gap-2 text-emerald-800 font-black">
-            <Check className="h-4.5 w-4.5 stroke-[3]" /> {confirmedLabel}
+          <span className="flex items-center gap-1.5 text-emerald-800 font-black truncate">
+            <Check className="h-4.5 w-4.5 stroke-[3] shrink-0" /> <span className="truncate">{confirmedLabel}</span>
           </span>
         ) : (
-          <span>{label}</span>
+          <span className="truncate">{label}</span>
         )}
       </div>
 
       {/* Draggable Thumb with zero-latency 60fps tracking */}
       <div
-        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-full shadow-md will-change-transform ${
+        className={`absolute top-1 bottom-1 flex aspect-square items-center justify-center rounded-xl shadow-md will-change-transform ${
           colors.thumb
         } ${isDragging ? "scale-105 shadow-xl transition-none" : "transition-transform duration-200"}`}
         style={{
           transform: `translateX(${
             containerRef.current
-              ? dragProgress * (containerRef.current.clientWidth - 54)
+              ? dragProgress * (containerRef.current.clientWidth - 56)
               : 0
           }px)`,
         }}

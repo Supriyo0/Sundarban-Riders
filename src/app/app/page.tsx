@@ -33,6 +33,7 @@ import {
   MessageCircle,
   X,
   ShieldAlert,
+  WifiOff,
   Compass,
   KeyRound,
   Receipt,
@@ -3716,24 +3717,32 @@ function MobileAppPageContent() {
                     type="button"
                     onClick={() => {
                       const text = encodeURIComponent("OTP");
-                      const httpsUrl = `https://api.whatsapp.com/send?phone=918348122122&text=${text}`;
-                      const appUrl = `whatsapp://send?phone=918348122122&text=${text}`;
-                      try {
-                        const isMobile =
-                          typeof navigator !== "undefined" &&
-                          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-                        if (isMobile) {
-                          // Try app scheme, fallback to HTTPS URL in same window without popup blockage
-                          window.location.href = appUrl;
-                          setTimeout(() => {
-                            window.location.href = httpsUrl;
-                          }, 1200);
-                        } else {
-                          window.open(httpsUrl, "_blank", "noopener,noreferrer");
-                        }
-                      } catch {
-                        window.location.href = httpsUrl;
+                      const phone = "918348122122";
+                      const httpsUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${text}`;
+
+                      // 1. Android Native Bridge intent (0 URL navigation)
+                      if (typeof window !== "undefined" && (window as any).AndroidNative?.openWhatsApp) {
+                        try {
+                          (window as any).AndroidNative.openWhatsApp(phone, "OTP");
+                          toast.success("WhatsApp খোলা হচ্ছে...");
+                          return;
+                        } catch {}
                       }
+
+                      // 2. Clipboard copy fallback
+                      try {
+                        if (typeof navigator !== "undefined" && navigator.clipboard) {
+                          navigator.clipboard.writeText("8348122122");
+                        }
+                      } catch {}
+
+                      // 3. Open WhatsApp via standard HTTPS App Link (NEVER uses whatsapp:// to prevent ERR_UNKNOWN_URL_SCHEME)
+                      try {
+                        window.open(httpsUrl, "_blank", "noopener,noreferrer");
+                      } catch {
+                        window.location.assign(httpsUrl);
+                      }
+                      toast.info("WhatsApp-এ 'OTP' লিখে পাঠান (নম্বর: 8348122122)");
                     }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center active:scale-95"
                   >
@@ -4890,13 +4899,13 @@ function MobileAppPageContent() {
                 </div>
               </div>
 
-              {/* Prominent One-Tap Accept & Two-Column Secondary Actions */}
+              {/* Slide to Accept Action & Two-Column Secondary Buttons */}
               <div className="space-y-3 pt-2">
-                {/* 1. Large High-Touch Tap-to-Accept Button */}
-                <button
-                  type="button"
-                  disabled={isAcceptingRef.current === incomingRide.id}
-                  onClick={async () => {
+                <SwipeToConfirm
+                  label="➡️ স্লাইড করে রাইড গ্রহণ করুন"
+                  confirmedLabel="রাইড গ্রহণ সফল! ✓"
+                  colorScheme="emerald"
+                  onConfirm={async () => {
                     const rideToAccept = incomingRide;
                     if (!rideToAccept) return;
 
@@ -4985,23 +4994,17 @@ function MobileAppPageContent() {
                         );
                       }
                     } catch (err) {
-                      console.error("Failed to accept ride:", err);
+                      console.error("Failed to accept ride via swipe:", err);
                     }
                   }}
-                  className="w-full h-15 sm:h-16 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-base sm:text-lg shadow-xl shadow-emerald-600/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 cursor-pointer border border-emerald-400/50"
-                >
-                  <span className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
-                    <CheckCircle2 className="w-6 h-6 text-white" />
-                  </span>
-                  <span>রাইড গ্রহণ করুন (Accept Ride)</span>
-                </button>
+                />
 
-                {/* 2. Secondary Two-Column Action Buttons */}
+                {/* 2. Secondary Two-Column Action Buttons with Clean Non-Clipped Text */}
                 <div className="grid grid-cols-2 gap-2.5 pt-1">
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full text-xs text-slate-700 border-slate-300 hover:bg-slate-100 h-11 font-bold rounded-xl active:scale-95 transition-all"
+                    className="w-full text-xs font-bold text-slate-700 border-slate-300 hover:bg-slate-100 h-11 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-1.5 px-2"
                     onClick={() => {
                       if (incomingRide?.id) {
                         declinedBookingIdsRef.current.add(incomingRide.id);
@@ -5012,18 +5015,20 @@ function MobileAppPageContent() {
                       toast.info("পপআপ সাময়িক বন্ধ করা হয়েছে");
                     }}
                   >
-                    ✕ বাতিল / পাস করুন
+                    <span>✕</span>
+                    <span className="truncate">পাস করুন (Pass)</span>
                   </Button>
 
                   <Button
                     type="button"
                     variant="destructive"
-                    className="w-full text-xs bg-red-600 hover:bg-red-700 text-white h-11 font-bold rounded-xl shadow-xs"
+                    className="w-full text-xs font-bold bg-red-600 hover:bg-red-700 text-white h-11 rounded-xl shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5 px-2"
                     onClick={() => {
                       handleIgnoreRide(incomingRide?.id, incomingRide?.bookingNumber);
                     }}
                   >
-                    🚫 এই রাইডটি আর দেখাবেন না (Ignore)
+                    <span>🚫</span>
+                    <span className="truncate">ইগনোর (Ignore)</span>
                   </Button>
                 </div>
               </div>

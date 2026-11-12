@@ -162,11 +162,10 @@ class MainActivity : ComponentActivity() {
                 userAgentString = "${settings.userAgentString} SundarbanRidersApp/3.8"
             }
 
-            // CRASH-PROOF WebViewClient: Overrides onRenderProcessGone to prevent process crashes!
+            // CRASH-PROOF & SCHEME-PROOF WebViewClient
             webViewClient = object : WebViewClient() {
                 override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
                     Log.w(TAG, "WebView render process gone! Recovering safely without crash. Did crash: ${detail?.didCrash()}")
-                    // Destroy old webView and reload
                     try {
                         (view?.parent as? ViewGroup)?.removeView(view)
                         view?.destroy()
@@ -175,12 +174,48 @@ class MainActivity : ComponentActivity() {
                     } catch (t: Throwable) {
                         Log.e(TAG, "Recovery error: ${t.message}")
                     }
-                    return true // Handled safely! Android will NOT crash the app!
+                    return true
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    return handleExternalUrl(url)
+                }
+
+                @Suppress("DEPRECATION")
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    if (url == null) return false
+                    return handleExternalUrl(url)
+                }
+
+                private fun handleExternalUrl(url: String): Boolean {
+                    val uri = Uri.parse(url)
+                    val scheme = uri.scheme?.lowercase() ?: ""
+                    if (scheme == "whatsapp" || scheme == "intent" || scheme == "tel" || scheme == "mailto" ||
+                        url.contains("wa.me") || url.contains("api.whatsapp.com") || url.contains("chat.whatsapp.com")) {
+                        try {
+                            val intent = if (scheme == "intent") {
+                                Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                            } else {
+                                Intent(Intent.ACTION_VIEW, uri)
+                            }
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Cannot launch external url: $url, err: ${e.message}")
+                        }
+                        return true // HANDLED! Do not attempt to load in WebView!
+                    }
+                    return false // Let WebView load HTTP/HTTPS in-place
                 }
 
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                    super.onReceivedError(view, request, error)
-                    Log.w(TAG, "Web error: ${error?.description}")
+                    Log.w(TAG, "Web error: ${error?.description} (code ${error?.errorCode}) on ${request?.url}")
+                    // DO NOT call super.onReceivedError when network fails or server resets,
+                    // so the existing web interface stays on screen instead of showing the blank/dinosaur page!
+                    if (request?.isForMainFrame == true && (error?.errorCode == ERROR_CONNECT || error?.errorCode == ERROR_HOST_LOOKUP || error?.errorCode == ERROR_TIMEOUT)) {
+                        Log.i(TAG, "Offline or VPS error detected on main frame; preserving cached view")
+                    }
                 }
             }
 
@@ -320,6 +355,30 @@ class MainActivity : ComponentActivity() {
                 }
                 context.startActivity(intent)
             } catch (ignored: Exception) {}
+        }
+
+        @JavascriptInterface
+        fun openWhatsApp(phone: String, text: String) {
+            Log.i(TAG, "Bridge: openWhatsApp(phone=$phone, text=$text)")
+            try {
+                val clean = phone.replace("+", "").replace(" ", "").trim()
+                val encodedText = Uri.encode(text)
+                val uri = Uri.parse("https://api.whatsapp.com/send?phone=$clean&text=$encodedText")
+                val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage("com.whatsapp")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://api.whatsapp.com/send?phone=$phone&text=${Uri.encode(text)}")).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(fallback)
+                } catch (err: Exception) {
+                    Log.w(TAG, "Cannot launch WhatsApp: ${err.message}")
+                }
+            }
         }
 
         @JavascriptInterface

@@ -11,6 +11,21 @@ interface MobileAppShellProps {
 
 export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShellProps) {
   const [timeStr, setTimeStr] = useState("09:41");
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    if (typeof navigator !== "undefined") {
+      setIsOffline(!navigator.onLine);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -58,6 +73,12 @@ export function MobileAppShell({ children, topHeader, bottomNav }: MobileAppShel
 
         {/* Full-bleed Edge-to-Edge Screen Content (Map and views fill 100% of the screen under header and footer) */}
         <div className="absolute inset-0 z-0 flex flex-col overflow-hidden relative w-full h-full no-scrollbar">
+          {isOffline && (
+            <div className="bg-amber-500 text-slate-950 px-3 py-1.5 text-[11px] font-black flex items-center justify-center gap-2 shadow-md z-[60] sticky top-0 shrink-0 select-none animate-in slide-in-from-top duration-200">
+              <span className="w-2 h-2 rounded-full bg-slate-950 animate-ping shrink-0" />
+              <span>ইন্টারনেট বা সার্ভার সংযোগ বিচ্ছিন্ন — অফলাইন মোড সক্রিয় রয়েছে</span>
+            </div>
+          )}
           {children}
         </div>
 

@@ -1968,15 +1968,26 @@ function MobileAppPageContent() {
     const hasValidPickup = Boolean(pLat && pLng && !isNaN(pLat) && !isNaN(pLng) && pLat !== 0 && pLng !== 0);
     const hasValidDrop = Boolean(dDropLat && dDropLng && !isNaN(dDropLat) && !isNaN(dDropLng) && dDropLat !== 0 && dDropLng !== 0);
 
-    const curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : null;
-    if (!curCoords) {
-      activeAlertBookingIdRef.current = null;
-      return;
+    let curCoords = driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : null;
+    if (!curCoords && typeof window !== "undefined") {
+      const latStr = localStorage.getItem("sr_last_known_lat");
+      const lngStr = localStorage.getItem("sr_last_known_lng");
+      if (latStr && lngStr) {
+        const lat = parseFloat(latStr);
+        const lng = parseFloat(lngStr);
+        if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+          curCoords = [lat, lng];
+        }
+      }
     }
-    const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 999;
+    if (!curCoords) {
+      // Regional Kakdwip town center fallback
+      curCoords = [21.8760, 88.1920];
+    }
+    const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 1.5;
 
-    // Strict local radius: Toto riders should NEVER get bookings > 6.0 km away!
-    if (!isDirectTapped && dKm > 6.0) {
+    // Strict local radius: only ignore if confirmed > 10.0 km away
+    if (!isDirectTapped && hasValidPickup && dKm > 10.0) {
       activeAlertBookingIdRef.current = null;
       return;
     }
@@ -3757,18 +3768,10 @@ function MobileAppPageContent() {
                         }
                       }
 
-                      // 3. Fallback: Safe anchor tag click with wa.me Universal Link (never navigates window frame)
-                      try {
-                        const link = document.createElement("a");
-                        link.href = "https://wa.me/918348122122?text=OTP";
-                        link.target = "_blank";
-                        link.rel = "noopener noreferrer external";
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                      } catch {}
-
-                      toast.success("নম্বর (8348122122) কপি হয়েছে! WhatsApp-এ 'OTP' পাঠান।");
+                      // 3. Fallback: Clipboard copied - ZERO URL navigation (Prevents ERR_UNKNOWN_URL_SCHEME on all Android versions)
+                      toast.success("নম্বর (8348122122) কপি হয়েছে! আপনার WhatsApp খুলে 'OTP' লিখে পাঠান।", {
+                        duration: 6000,
+                      });
                     }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all shadow-2xs cursor-pointer text-center active:scale-95"
                   >

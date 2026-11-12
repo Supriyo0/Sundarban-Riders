@@ -816,14 +816,40 @@ export async function GET(request: Request) {
       } else {
         query = query.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
       }
-      const { data, error } = await query.maybeSingle();
+      let { data, error } = await query.maybeSingle();
+
+      // Ultra-resilience: If join query with drivers fails (e.g. missing columns or schema differences), fallback to BOOKING_SUMMARY_COLUMNS
+      if (error) {
+        console.warn("[GET /api/bookings] primary query with drivers join failed, falling back to base columns:", error.message);
+        let fallbackQuery = admin.from("bookings").select(BOOKING_SUMMARY_COLUMNS);
+        if (isUuid) {
+          fallbackQuery = fallbackQuery.or(`id.eq.${cleanId},booking_number.eq.${cleanId},booking_number.eq.#${cleanId}`);
+        } else {
+          fallbackQuery = fallbackQuery.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
+        }
+        const fallbackRes = await fallbackQuery.maybeSingle();
+        if (fallbackRes.data) {
+          data = fallbackRes.data;
+          error = null;
+        }
+      }
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
       if (!data) return NextResponse.json({ booking: null }, { headers: NO_CACHE_HEADERS });
 
       const bData = data as any;
       const enriched = enrichBookingCoords(bData);
-      const d = bData?.drivers;
+      let d = bData?.drivers;
+      if (!d && bData?.driver_id) {
+        try {
+          const { data: dRow } = await admin
+            .from("drivers")
+            .select("id, name, phone, toto_number, current_location_name")
+            .eq("id", bData.driver_id)
+            .maybeSingle();
+          if (dRow) d = dRow;
+        } catch {}
+      }
       let driverUid = d?.unique_id || "";
       if (!driverUid && d?.current_location_name) {
         try {
@@ -1176,7 +1202,24 @@ export async function GET(request: Request) {
         activeQuery = activeQuery.in("status", ["pending", "assigned", "in_progress"]);
       }
 
-      const { data, error } = await activeQuery.limit(1).maybeSingle();
+      let { data, error } = await activeQuery.limit(1).maybeSingle();
+
+      if (error) {
+        console.warn("[GET /api/bookings customer_phone] fallback to BOOKING_SUMMARY_COLUMNS:", error.message);
+        let fallbackActiveQuery = admin
+          .from("bookings")
+          .select(BOOKING_SUMMARY_COLUMNS)
+          .or(custOrClause)
+          .order("created_at", { ascending: false });
+        if (isActiveOnly) {
+          fallbackActiveQuery = fallbackActiveQuery.in("status", ["pending", "assigned", "in_progress"]);
+        }
+        const fallbackRes = await fallbackActiveQuery.limit(1).maybeSingle();
+        if (fallbackRes.data) {
+          data = fallbackRes.data;
+          error = null;
+        }
+      }
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE_HEADERS });
 

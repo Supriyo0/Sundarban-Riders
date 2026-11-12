@@ -38,8 +38,14 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val APP_URL = "https://109.122.56.24.sslip.io/app"
+        private const val APP_URL = "https://sundarbanrider.in/app"
         private var pendingBookingId: String? = null
+
+        // WebResourceError error codes
+        private const val ERROR_UNKNOWN_URL_SCHEME = -10
+        private const val ERROR_CONNECT = -6
+        private const val ERROR_HOST_LOOKUP = -2
+        private const val ERROR_TIMEOUT = -8
     }
 
     private lateinit var webView: WebView

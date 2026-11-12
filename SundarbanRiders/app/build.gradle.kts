@@ -11,7 +11,7 @@ android {
         applicationId = "com.sundarbanriders.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 24
+        versionCode = 25
         versionName = "3.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -30,8 +30,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("release")
             ndk {
                 debugSymbolLevel = "FULL"

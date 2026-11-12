@@ -2183,13 +2183,10 @@ function MobileAppPageContent() {
             const pCoords = extractPickupCoordinates(item);
             if (coords && coords[0] !== 0 && pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {
               const dKm = calculateDistanceKm(coords[0], coords[1], pCoords[0], pCoords[1]);
-              if (dKm > 6.0) {
-                // Strictly ignore rides farther than 6.0 km
+              if (dKm > 10.0) {
+                // Ignore rides confirmed farther than 10.0 km
                 return false;
               }
-            } else if (!pCoords) {
-              // Reject rides without valid pickup coordinates
-              return false;
             }
             return true;
           });

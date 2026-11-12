@@ -816,7 +816,8 @@ export async function GET(request: Request) {
       } else {
         query = query.or(`booking_number.eq.${cleanId},booking_number.eq.#${cleanId},booking_number.ilike.%${cleanId}%`);
       }
-      let { data, error } = await query.maybeSingle();
+      let { data: primaryData, error } = await query.maybeSingle();
+      let data: any = primaryData;
 
       // Ultra-resilience: If join query with drivers fails (e.g. missing columns or schema differences), fallback to BOOKING_SUMMARY_COLUMNS
       if (error) {
@@ -829,7 +830,7 @@ export async function GET(request: Request) {
         }
         const fallbackRes = await fallbackQuery.maybeSingle();
         if (fallbackRes.data) {
-          data = fallbackRes.data;
+          data = fallbackRes.data as any;
           error = null;
         }
       }
@@ -1202,7 +1203,8 @@ export async function GET(request: Request) {
         activeQuery = activeQuery.in("status", ["pending", "assigned", "in_progress"]);
       }
 
-      let { data, error } = await activeQuery.limit(1).maybeSingle();
+      let { data: primaryData, error } = await activeQuery.limit(1).maybeSingle();
+      let data: any = primaryData;
 
       if (error) {
         console.warn("[GET /api/bookings customer_phone] fallback to BOOKING_SUMMARY_COLUMNS:", error.message);
@@ -1216,7 +1218,7 @@ export async function GET(request: Request) {
         }
         const fallbackRes = await fallbackActiveQuery.limit(1).maybeSingle();
         if (fallbackRes.data) {
-          data = fallbackRes.data;
+          data = fallbackRes.data as any;
           error = null;
         }
       }

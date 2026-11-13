@@ -705,8 +705,15 @@ export function DriverActiveTripMap({
   useEffect(() => {
     return () => {
       if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
+        try {
+          mapInstanceRef.current.remove();
+        } catch {}
         mapInstanceRef.current = null;
+      }
+      if (mapContainerRef.current) {
+        try {
+          (mapContainerRef.current as any)._leaflet_id = null;
+        } catch {}
       }
     };
   }, []);

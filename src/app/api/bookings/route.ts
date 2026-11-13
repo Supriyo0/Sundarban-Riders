@@ -5,8 +5,8 @@ let lastStaleCleanupTime = 0;
 const bookingPollCache = new Map<string, { data: any; timestamp: number }>();
 let pendingBookingsCache: { data: any; timestamp: number } | null = null;
 const ID_CACHE_TTL = 1500;
-const PENDING_CACHE_TTL = 3000;
-const BOOKING_SUMMARY_COLUMNS = "id, booking_number, customer_name, customer_phone, pickup_location, drop_location, estimated_fare, status, driver_id, created_at, updated_at, feedback";
+const PENDING_CACHE_TTL = 1000;
+const BOOKING_SUMMARY_COLUMNS = "id, booking_number, customer_name, customer_phone, pickup_location, drop_location, estimated_fare, status, driver_id, created_at, updated_at, feedback, cancelled_by";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { decrypt } from "@/lib/whatsapp/encryption";
@@ -1590,8 +1590,8 @@ export async function PATCH(request: Request) {
     const rawBId = (bookingId || "").replace(/^#/, "").trim();
     const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawBId);
     
-    let { data: booking, error: fetchErr } = await withRetry(async () => {
-      let fetchBookingQuery = admin.from("bookings").select("*");
+    let { data: rawBooking, error: fetchErr } = await withRetry(async () => {
+      let fetchBookingQuery = admin.from("bookings").select(`${BOOKING_SUMMARY_COLUMNS}, start_coords, end_coords, pickup_lat, pickup_lng, drop_lat, drop_lng, final_fare, driver_phone, estimated_distance_km, actual_distance_km`);
       if (isBIdUuid) {
         fetchBookingQuery = fetchBookingQuery.or(`id.eq.${rawBId},booking_number.eq.${rawBId},booking_number.eq.#${rawBId}`);
       } else {
@@ -1599,6 +1599,7 @@ export async function PATCH(request: Request) {
       }
       return fetchBookingQuery.limit(1).maybeSingle();
     });
+    let booking: any = rawBooking;
 
     // Fallback: If not found by ID/number and this is a driver cancellation or completion, find driver's active ride
     if (!booking && (action === "cancel" || action === "complete")) {
@@ -1778,7 +1779,7 @@ export async function PATCH(request: Request) {
       }
 
       // Check if cancelled by customer
-      if (booking.status === "cancelled" || booking.cancelled_by === "customer") {
+      if (booking.status === "cancelled" || (booking as any).cancelled_by === "customer") {
         return NextResponse.json(
           {
             error: "booking_cancelled_by_customer",

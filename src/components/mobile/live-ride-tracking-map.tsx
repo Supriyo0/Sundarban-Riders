@@ -595,7 +595,17 @@ export function LiveRideTrackingMap({
 
   useEffect(() => {
     return () => {
-      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
+      if (mapInstanceRef.current) {
+        try {
+          mapInstanceRef.current.remove();
+        } catch {}
+        mapInstanceRef.current = null;
+      }
+      if (mapContainerRef.current) {
+        try {
+          (mapContainerRef.current as any)._leaflet_id = null;
+        } catch {}
+      }
     };
   }, []);
 

@@ -1725,8 +1725,16 @@ function MobileAppPageContent() {
               if (pendingDC) setDropCoords(pendingDC);
               if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
               setActiveBookingId(b.id);
-              setSearchStatus("searching");
-              setSearchCountdown(180);
+              const createdMs = b.created_at ? new Date(b.created_at).getTime() : Date.now();
+              const elapsedSec = Math.floor((Date.now() - createdMs) / 1000);
+              const remainingSec = Math.max(0, 180 - elapsedSec);
+              if (remainingSec === 0) {
+                setSearchStatus("unaccepted");
+                setSearchCountdown(0);
+              } else {
+                setSearchStatus("searching");
+                setSearchCountdown(remainingSec);
+              }
               setPhase("passenger_home");
               if (typeof window !== "undefined") {
                 localStorage.setItem("sr_active_booking_id", b.id);
@@ -2220,11 +2228,11 @@ function MobileAppPageContent() {
         }
       };
 
-      // Check immediately and then every 3500ms when visible
+      // Check immediately and then every 1800ms when visible (ultra-responsive driver popup)
       checkPendingBookings();
       pollInterval = setInterval(() => {
         checkPendingBookings();
-      }, 3500);
+      }, 1800);
 
       // Instantly trigger check when driver returns to tab or turns screen on
       const handleTabFocus = () => {
@@ -4962,75 +4970,96 @@ function MobileAppPageContent() {
                     if (rideToAccept.bookingNumber) acceptedRideIdsRef.current.add(rideToAccept.bookingNumber);
                     isAcceptingRef.current = rideToAccept.id;
 
-                    isAcceptingRef.current = rideToAccept.id;
-                    const toastId = toast.loading("রাইড গ্রহণ যাচাই করা হচ্ছে...");
+                    const effectivePhone = session?.phone || session?.driverPhone || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").phone : "") || "";
+                    const effectiveName = session?.driverName || session?.name || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverName : "") || "সুন্দরবন চালক";
+                    const effectiveDriverId = session?.driverId || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverId : "") || "";
+                    const effectiveToto = session?.totoNumber || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").totoNumber : "") || "WB-96-T-8421";
 
-                    try {
-                      const effectivePhone = session?.phone || session?.driverPhone || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").phone : "") || "";
-                      const effectiveName = session?.driverName || session?.name || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverName : "") || "সুন্দরবন চালক";
-                      const effectiveDriverId = session?.driverId || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").driverId : "") || "";
-                      const effectiveToto = session?.totoNumber || (typeof window !== "undefined" ? JSON.parse(localStorage.getItem("sr_mobile_session") || "{}").totoNumber : "") || "WB-96-T-8421";
+                    const pCoords = extractPickupCoordinates(rideToAccept) || rideToAccept.pickupCoords || [21.8760, 88.1920];
+                    const dCoords = extractDropCoordinates(rideToAccept) || rideToAccept.dropCoords || [pCoords[0] + 0.015, pCoords[1] + 0.015];
+                    const startMs = Date.now();
 
-                      const res = await fetch("/api/bookings", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          action: "accept",
-                          bookingId: rideToAccept.id || rideToAccept.bookingNumber,
-                          driverId: effectiveDriverId,
-                          driverName: effectiveName,
-                          driverPhone: effectivePhone,
-                          totoNumber: effectiveToto,
-                          driverCoords: driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : undefined,
-                        }),
-                      });
-                      const data = await res.json();
-                      if (!res.ok) {
-                        toast.dismiss(toastId);
-                        isAcceptingRef.current = null;
-                        activeAlertBookingIdRef.current = null;
-                        setIncomingRide(null);
-                        declinedBookingIdsRef.current.add(rideToAccept.id);
-                        toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি গ্রহণ করা সম্ভব হয়নি।");
-                        return;
-                      }
+                    const acceptedRideObj = {
+                      ...rideToAccept,
+                      pickup: rideToAccept.pickup || "পিকআপ লোকেশন",
+                      drop: rideToAccept.drop || "গন্তব্য",
+                      pickupCoords: pCoords,
+                      dropCoords: dCoords,
+                      distanceKm: typeof rideToAccept.distanceKm === "number" ? rideToAccept.distanceKm : 1.5,
+                      estimatedFare: rideToAccept.estimatedFare || rideToAccept.fare || 50,
+                      status: "heading_pickup",
+                      tripStartTime: startMs,
+                      trip_start_time: startMs,
+                    };
 
-                      toast.dismiss(toastId);
-                      acceptedRideIdsRef.current.add(rideToAccept.id);
-                      if (rideToAccept.bookingNumber) acceptedRideIdsRef.current.add(rideToAccept.bookingNumber);
-                      isAcceptingRef.current = null;
-
-                      const currentBooking = data?.booking || rideToAccept;
-                      const pCoords = extractPickupCoordinates(currentBooking) || rideToAccept.pickupCoords || [21.8760, 88.1920];
-                      const dCoords = extractDropCoordinates(currentBooking) || rideToAccept.dropCoords || [pCoords[0] + 0.015, pCoords[1] + 0.015];
-                      const startMs = Date.now();
-
-                      const acceptedRideObj = {
-                        ...rideToAccept,
-                        pickup: currentBooking.pickup_location || rideToAccept.pickup,
-                        drop: currentBooking.drop_location || rideToAccept.drop,
-                        pickupCoords: pCoords,
-                        dropCoords: dCoords,
-                        distanceKm: typeof rideToAccept.distanceKm === "number" ? rideToAccept.distanceKm : 1.5,
-                        estimatedFare: rideToAccept.estimatedFare || rideToAccept.fare || 50,
-                        status: "heading_pickup",
-                        tripStartTime: startMs,
-                        trip_start_time: startMs,
-                      };
-
-                      setActiveRide(acceptedRideObj);
-                      setIncomingRide(null);
-                      activeAlertBookingIdRef.current = null;
-                      if (typeof window !== "undefined") {
-                        localStorage.setItem("sr_active_ride", JSON.stringify(acceptedRideObj));
-                      }
-                      playSuccessSound();
-                      toast.success("অনুরোধ গ্রহণ করা হয়েছে! যাত্রীর নির্দিষ্ট স্থানে যান।");
-                    } catch (err) {
-                      toast.dismiss(toastId);
-                      isAcceptingRef.current = null;
-                      toast.error("নেটওয়ার্ক দুর্বল থাকায় গ্রহণ করা যায়নি। আবার স্লাইড করুন।");
+                    // 1. INSTANT 0ms OPTIMISTIC UI TRANSITION (Never freeze driver on loading toast!)
+                    setActiveRide(acceptedRideObj);
+                    setIncomingRide(null);
+                    activeAlertBookingIdRef.current = null;
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem("sr_active_ride", JSON.stringify(acceptedRideObj));
                     }
+                    playSuccessSound();
+                    toast.success("অনুরোধ গ্রহণ করা হয়েছে! যাত্রীর নির্দিষ্ট স্থানে যান।");
+
+                    // 2. Background server synchronization with 8s abort watchdog
+                    const abortCtrl = new AbortController();
+                    const abortTimer = setTimeout(() => abortCtrl.abort(), 8000);
+
+                    fetch("/api/bookings", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "accept",
+                        bookingId: rideToAccept.id || rideToAccept.bookingNumber,
+                        driverId: effectiveDriverId,
+                        driverName: effectiveName,
+                        driverPhone: effectivePhone,
+                        totoNumber: effectiveToto,
+                        driverCoords: driverLiveCoords && driverLiveCoords[0] !== 0 ? driverLiveCoords : undefined,
+                      }),
+                      signal: abortCtrl.signal,
+                    })
+                      .then(async (res) => {
+                        clearTimeout(abortTimer);
+                        const data = await res.json();
+                        if (!res.ok) {
+                          // Server rejected (e.g. already taken or expired) — cleanly revert
+                          isAcceptingRef.current = null;
+                          activeAlertBookingIdRef.current = null;
+                          setActiveRide(null);
+                          if (typeof window !== "undefined") {
+                            localStorage.removeItem("sr_active_ride");
+                          }
+                          declinedBookingIdsRef.current.add(rideToAccept.id);
+                          toast.error(data.message || data.error || "দুঃখিত! এই রাইডটি ইতিমধ্যে অন্য একজন চালক গ্রহণ করেছেন।");
+                          return;
+                        }
+
+                        isAcceptingRef.current = null;
+                        if (data?.booking) {
+                          const currentBooking = data.booking;
+                          const refreshedPCoords = extractPickupCoordinates(currentBooking) || pCoords;
+                          const refreshedDCoords = extractDropCoordinates(currentBooking) || dCoords;
+                          const confirmedRideObj = {
+                            ...acceptedRideObj,
+                            pickup: currentBooking.pickup_location || acceptedRideObj.pickup,
+                            drop: currentBooking.drop_location || acceptedRideObj.drop,
+                            pickupCoords: refreshedPCoords,
+                            dropCoords: refreshedDCoords,
+                            passengerPhone: currentBooking.customer_phone || acceptedRideObj.passengerPhone,
+                          };
+                          setActiveRide(confirmedRideObj);
+                          if (typeof window !== "undefined") {
+                            localStorage.setItem("sr_active_ride", JSON.stringify(confirmedRideObj));
+                          }
+                        }
+                      })
+                      .catch((err) => {
+                        clearTimeout(abortTimer);
+                        isAcceptingRef.current = null;
+                        console.warn("[app] Background accept sync error (offline resilient):", err);
+                      });
                   }}
                 />
 

@@ -151,6 +151,9 @@ class MainActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
 
+            // Eliminates white flash on cold start by matching Sundarban theme green
+            setBackgroundColor(0xFF064E3B.toInt())
+
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true

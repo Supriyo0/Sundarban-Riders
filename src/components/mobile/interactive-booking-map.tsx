@@ -1000,7 +1000,12 @@ export function InteractiveBookingMap({
             passengerCount,
           });
         } else {
-          // 1. INSTANT OPTIMISTIC FARE: Provide baseline distance & fare immediately so user can tap confirm without delay!
+          // Keep loading state active ("রুট ও ভাড়া গণনা হচ্ছে...") until exact road route resolves!
+          setIsCalculatingRoute(true);
+          setRouteError(null);
+
+          // 1. Initial visual geometry: immediately draw direct path so user always sees line while exact curves load
+          applyRouteGeometry([pCoords, dCoords]);
           setDistanceKm(baselineDist);
           setRoadDurationMin(baselineDuration);
           const initialFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
@@ -1016,10 +1021,7 @@ export function InteractiveBookingMap({
             passengerCount,
           });
 
-          // 2. FAST BACKGROUND ROUTE SNAP: Single 3.5-second attempt to fetch real road curves
-          setIsCalculatingRoute(true);
-          setRouteError(null);
-
+          // 2. Fetch exact street road route from /api/route (OSRM / Mapbox) with 10s generous timeout
           let controller: AbortController | null = null;
           try {
             if (routeAbortControllerRef.current) {
@@ -1027,7 +1029,7 @@ export function InteractiveBookingMap({
             }
             controller = new AbortController();
             routeAbortControllerRef.current = controller;
-            const safetyTimer = setTimeout(() => controller?.abort(), 3500);
+            const safetyTimer = setTimeout(() => controller?.abort(), 12000);
 
             fetch(
               `/api/route?fromLat=${pCoords[0]}&fromLng=${pCoords[1]}&toLat=${dCoords[0]}&toLng=${dCoords[1]}&_t=${Date.now()}`,
@@ -1036,11 +1038,11 @@ export function InteractiveBookingMap({
               .then((res) => (res.ok ? res.json() : null))
               .then((data) => {
                 clearTimeout(safetyTimer);
-                if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2) {
+                if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 0) {
                   applyRouteGeometry(data.coordinates);
                   routeClientCache.set(cacheKey, {
-                    distanceKm: data.distanceKm,
-                    durationMin: data.durationMin,
+                    distanceKm: data.distanceKm || baselineDist,
+                    durationMin: data.durationMin || baselineDuration,
                     coordinates: data.coordinates,
                   });
                   if (data?.riverCrossing) {
@@ -1064,7 +1066,9 @@ export function InteractiveBookingMap({
                   });
                 }
               })
-              .catch(() => {})
+              .catch((err) => {
+                console.warn("[InteractiveBookingMap] /api/route fetch error:", err);
+              })
               .finally(() => {
                 setIsCalculatingRoute(false);
               });
@@ -1714,10 +1718,12 @@ export function InteractiveBookingMap({
 
       try {
         const L = await getLeaflet();
+        if (!isMounted || !mapContainerRef.current) return;
 
-        if (mapContainerRef.current) {
+        // Strip any residual Leaflet identifier from prior mounts
+        try {
           (mapContainerRef.current as any)._leaflet_id = null;
-        }
+        } catch {}
 
         let initialCenter: [number, number] = DEFAULT_REGION_HUB;
         if (hasValidPickup && pickupCoords[0] !== 0 && !isNaN(pickupCoords[0])) {
@@ -1751,6 +1757,9 @@ export function InteractiveBookingMap({
 
         let map: any = null;
         try {
+          if (mapContainerRef.current) {
+            (mapContainerRef.current as any)._leaflet_id = null;
+          }
           map = L.map(mapContainerRef.current, {
             center: initialCenter,
             zoom: 15,
@@ -1918,6 +1927,11 @@ export function InteractiveBookingMap({
           mapInstanceRef.current.remove();
         } catch {}
         mapInstanceRef.current = null;
+      }
+      if (mapContainerRef.current) {
+        try {
+          (mapContainerRef.current as any)._leaflet_id = null;
+        } catch {}
       }
     };
   }, []);

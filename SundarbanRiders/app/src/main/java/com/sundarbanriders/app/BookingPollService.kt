@@ -282,6 +282,7 @@ class BookingPollService : Service() {
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setAutoCancel(true)
+                .setTimeoutAfter(18000L) // Auto dismiss after 18s if ignored
                 .setSound(soundUri)
                 .setVibrate(longArrayOf(0, 450, 200, 450, 200, 600))
                 .setFullScreenIntent(pendingIntent, true)

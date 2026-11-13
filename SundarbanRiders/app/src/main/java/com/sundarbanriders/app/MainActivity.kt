@@ -115,8 +115,18 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            NotificationManagerCompat.from(this).cancelAll()
+        } catch (ignored: Exception) {}
+    }
+
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent == null) return
+        try {
+            NotificationManagerCompat.from(this).cancelAll()
+        } catch (ignored: Exception) {}
         val bookingId = intent.getStringExtra("booking_id")
             ?: intent.data?.lastPathSegment
         if (!bookingId.isNullOrEmpty()) {
@@ -200,7 +210,33 @@ class MainActivity : ComponentActivity() {
                 private fun handleExternalUrl(url: String): Boolean {
                     val uri = Uri.parse(url)
                     val scheme = uri.scheme?.lowercase() ?: ""
-                    if (scheme == "whatsapp" || scheme == "intent" || scheme == "tel" || scheme == "mailto" ||
+                    val host = uri.host?.lowercase() ?: ""
+
+                    // 1. Google Maps & Navigation (open native Google Maps app or external browser)
+                    if (scheme == "geo" || scheme == "google.navigation" ||
+                        host.contains("maps.google") || (host.contains("google.com") && uri.path?.contains("/maps") == true) ||
+                        url.contains("maps.app.goo.gl")) {
+                        try {
+                            val mapIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                setPackage("com.google.android.apps.maps")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(mapIntent)
+                            return true
+                        } catch (e: Exception) {
+                            try {
+                                val browserIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(browserIntent)
+                                return true
+                            } catch (ignored: Exception) {}
+                        }
+                        return true
+                    }
+
+                    // 2. WhatsApp, Tel, Mailto, SMS, Intent
+                    if (scheme == "whatsapp" || scheme == "intent" || scheme == "tel" || scheme == "mailto" || scheme == "sms" ||
                         url.contains("wa.me") || url.contains("api.whatsapp.com") || url.contains("chat.whatsapp.com")) {
                         try {
                             val intent = if (scheme == "intent") {
@@ -222,6 +258,20 @@ class MainActivity : ComponentActivity() {
                         }
                         return true // HANDLED! Do not attempt to load in WebView!
                     }
+
+                    // 3. Catch-all: Any scheme that is NOT http/https should NEVER be loaded in WebView
+                    if (scheme != "http" && scheme != "https") {
+                        try {
+                            val genericIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            startActivity(genericIntent)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Unhandled scheme: $scheme")
+                        }
+                        return true
+                    }
+
                     return false // Let WebView load HTTP/HTTPS in-place
                 }
 
@@ -229,8 +279,9 @@ class MainActivity : ComponentActivity() {
                     val reqUrl = request?.url?.toString() ?: ""
                     Log.w(TAG, "Web error: ${error?.description} (code ${error?.errorCode}) on $reqUrl")
 
-                    // 1. Intercept unknown scheme (e.g. whatsapp://) so it NEVER replaces the webpage with ERR_UNKNOWN_URL_SCHEME!
-                    if (error?.errorCode == ERROR_UNKNOWN_URL_SCHEME || reqUrl.startsWith("whatsapp:") || reqUrl.startsWith("intent:")) {
+                    // 1. Intercept unknown schemes (whatsapp://, geo://, etc.) so it NEVER replaces the webpage with ERR_UNKNOWN_URL_SCHEME!
+                    if (error?.errorCode == ERROR_UNKNOWN_URL_SCHEME || reqUrl.startsWith("whatsapp:") || reqUrl.startsWith("intent:") ||
+                        reqUrl.startsWith("geo:") || reqUrl.startsWith("google.navigation:")) {
                         handleExternalUrl(reqUrl)
                         if (view?.canGoBack() == true) {
                             view.goBack()
@@ -496,12 +547,12 @@ class MainActivity : ComponentActivity() {
                     .setContentTitle(title)
                     .setContentText(body)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                    .setPriority(NotificationCompat.PRIORITY_MAX)
-                    .setCategory(NotificationCompat.CATEGORY_CALL)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(NotificationCompat.CATEGORY_EVENT)
                     .setAutoCancel(true)
+                    .setTimeoutAfter(15000L) // Automatically dismiss from top shade after 15 seconds
                     .setSound(soundUri)
                     .setVibrate(longArrayOf(0, 450, 200, 450, 200, 600))
-                    .setFullScreenIntent(pendingIntent, true)
                     .setContentIntent(pendingIntent)
                     .addAction(
                         R.mipmap.ic_launcher,

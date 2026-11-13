@@ -193,7 +193,20 @@ const processDocumentFile = (file: File): Promise<string> => {
 function MobileAppPageContent() {
   // App Phase: 'splash' | 'permissions' | 'select_role' | 'otp_login' | 'kyc_form' | 'kyc_pending' | 'rider_home' | 'passenger_home'
   const [phase, setPhase] = useState<string>("splash");
-  const [role, setRole] = useState<"rider" | "passenger">("rider");
+  const [role, setRole] = useState<"rider" | "passenger">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("sr_mobile_session");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.role === "passenger" || parsed.role === "rider") {
+            return parsed.role;
+          }
+        }
+      } catch {}
+    }
+    return "passenger";
+  });
   const [session, setSession] = useState<MobileSession | null>(null);
   const [bottomNavTab, setBottomNavTab] = useState<MobileNavTab>("home");
   const [isSoundMuted, setIsSoundMuted] = useState(false);
@@ -993,10 +1006,32 @@ function MobileAppPageContent() {
       setSearchCountdown(0);
       return;
     }
+
+    const syncWithRealClock = () => {
+      if (searchStatus !== "searching") return;
+      const startedAt = typeof window !== "undefined" ? Number(localStorage.getItem("sr_search_started_at") || 0) : 0;
+      if (startedAt > 0) {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        const remaining = Math.max(0, 180 - elapsed);
+        setSearchCountdown(remaining);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", syncWithRealClock);
+      document.addEventListener("visibilitychange", syncWithRealClock);
+    }
+
     if (searchStatus === "searching") {
       if (searchCountdown > 0) {
         timer = setTimeout(() => {
-          setSearchCountdown((prev) => Math.max(0, prev - 1));
+          const startedAt = typeof window !== "undefined" ? Number(localStorage.getItem("sr_search_started_at") || 0) : 0;
+          if (startedAt > 0) {
+            const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+            setSearchCountdown(Math.max(0, 180 - elapsed));
+          } else {
+            setSearchCountdown((prev) => Math.max(0, prev - 1));
+          }
         }, 1000);
       } else {
         // Countdown reached 0 (time is up):
@@ -1084,7 +1119,13 @@ function MobileAppPageContent() {
         }
       }
     }
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", syncWithRealClock);
+        document.removeEventListener("visibilitychange", syncWithRealClock);
+      }
+    };
   }, [searchStatus, searchCountdown, activeBookingId, passengerBooking]);
 
   // Passenger Live Polling: Check if any driver accepted the ride (from App or WhatsApp)
@@ -1467,10 +1508,16 @@ function MobileAppPageContent() {
         } else if (b.status === "cancelled") {
           if (pollTimer) clearInterval(pollTimer);
           setActiveRide(null);
+          isAcceptingRef.current = null;
+          activeAlertBookingIdRef.current = null;
+          setIncomingRide(null);
+          setPhase("rider_home");
+          setIsOnline(true);
           if (typeof window !== "undefined") {
             localStorage.removeItem("sr_active_ride");
+            localStorage.removeItem("sr_live_driver_loc");
           }
-          toast.warning("যাত্রী রাইড বাতিল করেছেন।");
+          toast.warning("যাত্রী রাইড বাতিল করেছেন। নতুন বুকিং গ্রহণ করতে প্রস্তুত।");
         }
       } catch (err) {
         console.warn("Driver poll error:", err);
@@ -4706,6 +4753,11 @@ function MobileAppPageContent() {
 
                   // 1. Instantly clear local active ride state (Zero-delay cancellation UI)
                   setActiveRide(null);
+                  isAcceptingRef.current = null;
+                  activeAlertBookingIdRef.current = null;
+                  setIncomingRide(null);
+                  setPhase("rider_home");
+                  setIsOnline(true);
                   if (typeof window !== "undefined") {
                     localStorage.removeItem("sr_active_ride");
                     localStorage.removeItem("sr_live_driver_loc");
@@ -4742,6 +4794,11 @@ function MobileAppPageContent() {
                 }}
                 onCancelledByCustomer={() => {
                   setActiveRide(null);
+                  isAcceptingRef.current = null;
+                  activeAlertBookingIdRef.current = null;
+                  setIncomingRide(null);
+                  setPhase("rider_home");
+                  setIsOnline(true);
                   if (typeof window !== "undefined") {
                     localStorage.removeItem("sr_active_ride");
                     localStorage.removeItem("sr_live_driver_loc");
@@ -5325,8 +5382,14 @@ function MobileAppPageContent() {
         completedAt={driverCompletedRide.completedAt || new Date().toISOString()}
         onBookAnother={() => {
           setDriverCompletedRide(null);
+          setActiveRide(null);
+          isAcceptingRef.current = null;
+          activeAlertBookingIdRef.current = null;
+          setIncomingRide(null);
           if (typeof window !== "undefined") {
             localStorage.removeItem("sr_driver_completed_ride");
+            localStorage.removeItem("sr_active_ride");
+            localStorage.removeItem("sr_live_driver_loc");
           }
           setPhase("rider_home");
           setIsOnline(true);

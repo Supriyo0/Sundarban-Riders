@@ -1221,8 +1221,8 @@ function MobileAppPageContent() {
 
     if ((searchStatus === "searching" || targetBookingId) && !passengerBooking) {
       checkBookingAcceptance();
-      // Responsive polling (2500ms) with document.hidden guard
-      pollInterval = setInterval(checkBookingAcceptance, 2500);
+      // Ultra-responsive acceptance polling (1500ms) with document.hidden guard
+      pollInterval = setInterval(checkBookingAcceptance, 1500);
       if (typeof window !== "undefined") {
         window.addEventListener("focus", checkBookingAcceptance);
         document.addEventListener("visibilitychange", checkBookingAcceptance);
@@ -1437,7 +1437,7 @@ function MobileAppPageContent() {
     pollInterval = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       pollRideStatus();
-    }, 2800);
+    }, 1800);
     return () => {
       isMounted = false;
       if (pollInterval) clearInterval(pollInterval);
@@ -1765,28 +1765,34 @@ function MobileAppPageContent() {
           if (data?.booking) {
             const b = data.booking;
             if (b.status === "pending") {
-              setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
-              setDropText(b.drop_location || "");
-              const pendingPC = extractPickupCoordinates(b);
-              const pendingDC = extractDropCoordinates(b);
-              if (pendingPC) setPickupCoords(pendingPC);
-              if (pendingDC) setDropCoords(pendingDC);
-              if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
-              setActiveBookingId(b.id);
               const createdMs = b.created_at ? new Date(b.created_at).getTime() : Date.now();
               const elapsedSec = Math.floor((Date.now() - createdMs) / 1000);
               const remainingSec = Math.max(0, 180 - elapsedSec);
               if (remainingSec === 0) {
-                setSearchStatus("unaccepted");
+                // Expired search: clear and do NOT restore past search locations!
+                setActiveBookingId(null);
+                setSearchStatus("idle");
                 setSearchCountdown(0);
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("sr_active_booking_id");
+                  localStorage.removeItem("sr_search_status");
+                }
               } else {
+                setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
+                setDropText(b.drop_location || "");
+                const pendingPC = extractPickupCoordinates(b);
+                const pendingDC = extractDropCoordinates(b);
+                if (pendingPC) setPickupCoords(pendingPC);
+                if (pendingDC) setDropCoords(pendingDC);
+                if (b.estimated_fare) setTripFare(Number(b.estimated_fare));
+                setActiveBookingId(b.id);
                 setSearchStatus("searching");
                 setSearchCountdown(remainingSec);
-              }
-              setPhase("passenger_home");
-              if (typeof window !== "undefined") {
-                localStorage.setItem("sr_active_booking_id", b.id);
-                localStorage.setItem("sr_search_status", "searching");
+                setPhase("passenger_home");
+                if (typeof window !== "undefined") {
+                  localStorage.setItem("sr_active_booking_id", b.id);
+                  localStorage.setItem("sr_search_status", "searching");
+                }
               }
             } else if (b.status === "assigned" || b.status === "in_progress") {
               setPickupText(b.pickup_location || "আপনার পিকআপ অবস্থান");
@@ -2052,8 +2058,8 @@ function MobileAppPageContent() {
     }
     const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 1.5;
 
-    // Regional radius matching WhatsApp dispatch radar (15 km)
-    if (!isDirectTapped && hasValidPickup && dKm > 15.0) {
+    // Regional radius strictly 5 km (Uber-style local toto radius)
+    if (!isDirectTapped && hasValidPickup && dKm > 5.0) {
       activeAlertBookingIdRef.current = null;
       return;
     }
@@ -2266,8 +2272,8 @@ function MobileAppPageContent() {
             const pCoords = extractPickupCoordinates(item);
             if (coords && coords[0] !== 0 && pCoords && pCoords[0] !== 0 && pCoords[1] !== 0) {
               const dKm = calculateDistanceKm(coords[0], coords[1], pCoords[0], pCoords[1]);
-              if (dKm > 15.0) {
-                // Ignore rides confirmed farther than 15.0 km
+              if (dKm > 5.0) {
+                // Ignore rides confirmed farther than 5.0 km (strictly within 5km radius)
                 return false;
               }
             }
@@ -5931,8 +5937,7 @@ function MobileAppPageContent() {
         {/* ------------------------------------------------------------- */}
         {(searchStatus === "searching" || searchStatus === "unaccepted") && !passengerBooking && (
           <div
-            className="fixed inset-0 z-50 flex flex-col justify-end pointer-events-none animate-in fade-in duration-300"
-            style={{ background: "rgba(15,23,42,0.3)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
+            className="fixed bottom-0 left-0 right-0 z-50 pointer-events-none flex flex-col justify-end animate-in slide-in-from-bottom duration-300"
           >
             <div className="pointer-events-auto mx-3 mb-24 rounded-3xl bg-white/98 shadow-2xl border border-slate-200 animate-in slide-in-from-bottom-8 duration-500 ease-out overflow-hidden max-h-[85dvh] overflow-y-auto">
               {searchStatus === "searching" ? (

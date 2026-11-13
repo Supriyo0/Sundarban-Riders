@@ -178,7 +178,7 @@ export async function GET(req: Request) {
         try {
           const res = await fetch(url, {
             headers: { "User-Agent": "SundarbanRiders/2.0" },
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(6000),
           });
           if (res.ok) {
             const data = await res.json();

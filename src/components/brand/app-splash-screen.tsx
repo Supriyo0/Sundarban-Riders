@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Sparkles, ShieldCheck, Zap, Navigation2 } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
@@ -12,17 +12,34 @@ interface AppSplashScreenProps {
 
 export function AppSplashScreen({
   onComplete,
-  minDurationMs = 2400,
+  minDurationMs = 2000,
 }: AppSplashScreenProps) {
-  const [progress, setProgress] = useState(12);
+  const [progress, setProgress] = useState(15);
   const [statusMessage, setStatusMessage] = useState("🛰️ স্যাটেলাইট রোড নেটওয়ার্ক সংযোগ হচ্ছে...");
   const [locationFound, setLocationFound] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  const hasFinishedRef = useRef(false);
 
   useEffect(() => {
     let isCancelled = false;
     let detectedLocation: [number, number] | null = null;
     const startTime = Date.now();
+
+    const finishSplash = () => {
+      if (hasFinishedRef.current) return;
+      hasFinishedRef.current = true;
+      setIsFadingOut(true);
+      setTimeout(() => {
+        onCompleteRef.current?.(detectedLocation || undefined);
+      }, 300);
+    };
+
+    // Absolute Safety Timeout: guarantees splash NEVER hangs even on slow devices / re-renders
+    const hardTimeout = setTimeout(() => {
+      finishSplash();
+    }, Math.max(minDurationMs + 400, 2400));
 
     // 1. Proactively acquire pure hardware satellite GPS during splash screen ONLY if permissions were already granted
     const acquirePureGps = async () => {
@@ -118,10 +135,8 @@ export function AppSplashScreen({
 
         if (next >= 100) {
           clearInterval(interval);
-          setIsFadingOut(true);
-          setTimeout(() => {
-            onComplete?.(detectedLocation || undefined);
-          }, 350);
+          clearTimeout(hardTimeout);
+          finishSplash();
           return 100;
         }
 
@@ -132,8 +147,9 @@ export function AppSplashScreen({
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      clearTimeout(hardTimeout);
     };
-  }, [minDurationMs, locationFound, onComplete]);
+  }, [minDurationMs]);
 
   return (
     <div

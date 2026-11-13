@@ -1038,8 +1038,8 @@ export function InteractiveBookingMap({
             clearTimeout(safetyTimer);
             const data = res.ok ? await res.json() : null;
 
-            // STRICT REQUIREMENT: Only accept real road route geometry (more than 2 points, isExactRoadRoute: true)
-            if (data?.isExactRoadRoute && Array.isArray(data.coordinates) && data.coordinates.length > 2) {
+            // If valid route coordinates returned (road curve or direct connector)
+            if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length >= 2) {
               applyRouteGeometry(data.coordinates);
               routeClientCache.set(cacheKey, {
                 distanceKm: data.distanceKm || baselineDist,
@@ -1070,29 +1070,59 @@ export function InteractiveBookingMap({
               return;
             }
 
-            // Route was straight line fallback or incomplete: retry if within 2 minutes (120s)
+            // Retry up to 3 times on transient network error, otherwise fallback cleanly to baseline distance
             const elapsed = Date.now() - routeCalculationStartMs;
-            if (elapsed < 120000) {
+            if (elapsed < 10000) {
               setIsCalculatingRoute(true);
               routeRetryTimerRef.current = setTimeout(() => {
                 void attemptFetchRoadRoute();
-              }, 3000);
+              }, 2500);
             } else {
+              applyRouteGeometry([pCoords, dCoords]);
+              setDistanceKm(baselineDist);
+              setRoadDurationMin(baselineDuration);
+              const computedFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
+              onRouteSelectedRef.current?.({
+                pickup: pText || "Current Location",
+                drop: dText || "Drop Location",
+                distanceKm: baselineDist,
+                estimatedFare: computedFare.totalFare,
+                rideTier: "standard",
+                pickupCoords: pCoords,
+                dropCoords: dCoords,
+                paymentMode: "cash",
+                passengerCount,
+              });
               setIsCalculatingRoute(false);
-              setRouteError("রাস্তার রুট পাওয়া যায়নি, পুনরায় চেষ্টা করুন");
+              setRouteError(null);
             }
           } catch (err: any) {
             clearTimeout(safetyTimer);
             if (err?.name === "AbortError") return;
             const elapsed = Date.now() - routeCalculationStartMs;
-            if (elapsed < 120000) {
+            if (elapsed < 10000) {
               setIsCalculatingRoute(true);
               routeRetryTimerRef.current = setTimeout(() => {
                 void attemptFetchRoadRoute();
-              }, 3000);
+              }, 2500);
             } else {
+              applyRouteGeometry([pCoords, dCoords]);
+              setDistanceKm(baselineDist);
+              setRoadDurationMin(baselineDuration);
+              const computedFare = calculateTotoFare(baselineDist, passengerCount, pricingConfig);
+              onRouteSelectedRef.current?.({
+                pickup: pText || "Current Location",
+                drop: dText || "Drop Location",
+                distanceKm: baselineDist,
+                estimatedFare: computedFare.totalFare,
+                rideTier: "standard",
+                pickupCoords: pCoords,
+                dropCoords: dCoords,
+                paymentMode: "cash",
+                passengerCount,
+              });
               setIsCalculatingRoute(false);
-              setRouteError("রাস্তার রুট পাওয়া যায়নি, পুনরায় চেষ্টা করুন");
+              setRouteError(null);
             }
           }
         };

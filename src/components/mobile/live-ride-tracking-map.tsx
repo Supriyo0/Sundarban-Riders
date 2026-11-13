@@ -621,8 +621,8 @@ export function LiveRideTrackingMap({
   const displayFare = effectiveRideStep === "in_trip" && serverFare > 0
     ? Math.round(serverFare)
     : (tripFare || serverFare || 20);
-  const displayKm = effectiveRideStep === "in_trip" && serverKm > 0
-    ? serverKm.toFixed(1)
+  const displayKm = effectiveRideStep === "in_trip"
+    ? Number(serverKm || liveMeterKm || 0).toFixed(2)
     : (tripDistance !== undefined && tripDistance !== null ? Number(tripDistance).toFixed(1) : "0.0");
 
   // If ride is arrived/completed: Show completion modal with UPI QR + Cash Settlement

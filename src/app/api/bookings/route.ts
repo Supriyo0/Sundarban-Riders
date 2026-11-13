@@ -1582,12 +1582,12 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "bookingId and action required" }, { status: 400 });
     }
 
-    // 1. Fetch current booking state safely without invalid UUID cast errors
+    // 1. Fetch current booking state safely using canonical summary columns
     const rawBId = (bookingId || "").replace(/^#/, "").trim();
     const isBIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawBId);
     
     let { data: rawBooking, error: fetchErr } = await withRetry(async () => {
-      let fetchBookingQuery = admin.from("bookings").select(`${BOOKING_SUMMARY_COLUMNS}, start_coords, end_coords, pickup_lat, pickup_lng, drop_lat, drop_lng, final_fare, driver_phone, estimated_distance_km, actual_distance_km`);
+      let fetchBookingQuery = admin.from("bookings").select(BOOKING_SUMMARY_COLUMNS);
       if (isBIdUuid) {
         fetchBookingQuery = fetchBookingQuery.or(`id.eq.${rawBId},booking_number.eq.${rawBId},booking_number.eq.#${rawBId}`);
       } else {
@@ -1910,7 +1910,7 @@ export async function PATCH(request: Request) {
             .update(updateData)
             .eq("id", booking.id)
             .in("status", ["pending", "searching"])
-            .select()
+            .select(BOOKING_SUMMARY_COLUMNS)
             .maybeSingle();
         });
         assigned = res.data;

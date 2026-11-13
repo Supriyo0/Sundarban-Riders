@@ -36,7 +36,10 @@ class BookingPollService : Service() {
         private const val TAG = "BookingPollService"
         private const val NOTIF_FOREGROUND_ID = 9001
         private const val NOTIF_ALERT_BASE_ID = 9500
-        private const val POLL_INTERVAL_MS = 3500L
+        private const val POLL_INTERVAL_MS = 5000L
+
+        @Volatile
+        var isActivityInForeground = false
 
         const val PREF_NAME = "sr_booking_service_pref"
         const val PREF_DRIVER_PHONE = "driver_phone"
@@ -153,7 +156,11 @@ class BookingPollService : Service() {
         serviceScope.launch {
             while (isActive && isPolling) {
                 try {
-                    pollPendingBookings()
+                    // Only poll in background native service if user is not currently in the app foreground.
+                    // When in foreground, WebView already handles responsive polling, avoiding radio socket congestion.
+                    if (!isActivityInForeground) {
+                        pollPendingBookings()
+                    }
                 } catch (t: Throwable) {
                     Log.w(TAG, "Polling loop error: ${t.message}")
                 }

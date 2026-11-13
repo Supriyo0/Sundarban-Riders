@@ -605,6 +605,7 @@ function MobileAppPageContent() {
   const isAcceptingRef = useRef<string | null>(null);
   const acceptedRideIdsRef = useRef<Set<string>>(new Set());
   const lastAlertedTimeRef = useRef<Map<string, number>>(new Map());
+  const lastRideNotificationTimeRef = useRef<number>(0);
   const lastOnlineToggleTimeRef = useRef<number>(0);
   const [driverLiveCoords, setDriverLiveCoords] = useState<[number, number] | null>(() => {
     if (typeof window !== "undefined") {
@@ -1869,18 +1870,17 @@ function MobileAppPageContent() {
     return () => clearInterval(interval);
   }, [otpSent, otpTimer]);
 
-  // Incoming Ride Countdown Timer & Audio
+  // Incoming Ride Countdown Timer & Audio (Guards against rapid-fire duplicate alerts)
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (incomingRide) {
-      playRideAlertSound();
-      showLocalRideAlertNotification(
-        "🛺 নতুন টোটো রাইড রিকোয়েস্ট!",
-        `পিকআপ: ${incomingRide.pickup_location || "কাছাকাছি এলাকা"} • ভাড়া: ₹${incomingRide.fare || "30"}`,
-        incomingRide.id
-      );
+      // Repeat audio chime smoothly every 5s while modal is active, guarded by 3s throttle
       const soundInterval = setInterval(() => {
-        playRideAlertSound();
+        const now = Date.now();
+        if (now - lastRideNotificationTimeRef.current >= 3000) {
+          lastRideNotificationTimeRef.current = now;
+          playRideAlertSound();
+        }
       }, 5000);
 
       interval = setInterval(() => {
@@ -1888,7 +1888,7 @@ function MobileAppPageContent() {
           if (prev <= 1) {
             clearInterval(interval);
             clearInterval(soundInterval);
-            // 30 seconds finished: stop loud alarm and permanently dismiss so it never pops up again!
+            // 2 minutes finished: dismiss so it never pops up again
             if (incomingRide?.id) {
               declinedBookingIdsRef.current.add(incomingRide.id);
               ignoredBookingIdsRef.current.add(incomingRide.id);
@@ -2069,21 +2069,27 @@ function MobileAppPageContent() {
     }
 
     setAlertCountdown(120);
-    playRideAlertSound();
-    if (typeof navigator !== "undefined" && navigator.vibrate) {
-      try {
-        navigator.vibrate([400, 150, 400, 150, 600]);
-      } catch {}
+
+    const now = Date.now();
+    const canPlayAlert = (now - lastRideNotificationTimeRef.current >= 3000);
+    if (canPlayAlert) {
+      lastRideNotificationTimeRef.current = now;
+      playRideAlertSound();
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        try {
+          navigator.vibrate([400, 150, 400, 150, 600]);
+        } catch {}
+      }
+
+      // Immediately wake up app and bring over any other apps
+      bringAppToForeground();
+
+      showLocalRideAlertNotification(
+        "🔔 নতুন রাইড অনুরোধ এসেছে!",
+        `পিকআপ: ${b.pickup_location || "পিকআপ"} • ভাড়া: ₹${displayFare}`,
+        b.id
+      );
     }
-
-    // Immediately wake up app and bring over any other apps
-    bringAppToForeground();
-
-    showLocalRideAlertNotification(
-      "🔔 নতুন রাইড অনুরোধ এসেছে!",
-      `পিকআপ: ${b.pickup_location || "পিকআপ"} • ভাড়া: ₹${displayFare}`,
-      b.id
-    );
 
     const initialTripDist = typeof b.estimated_distance_km === "number"
       ? b.estimated_distance_km
@@ -2199,6 +2205,7 @@ function MobileAppPageContent() {
 
     if (phase === "rider_home" && isOnline && !activeRide) {
       const checkPendingBookings = async () => {
+        if (typeof document !== "undefined" && document.hidden) return;
         try {
           if (activeRide || isAcceptingRef.current || incomingRide) {
             return;
@@ -2275,11 +2282,11 @@ function MobileAppPageContent() {
         }
       };
 
-      // Check immediately and then every 1800ms when visible (ultra-responsive driver popup)
+      // Check immediately and then every 2500ms when visible (ultra-responsive driver popup without network congestion)
       checkPendingBookings();
       pollInterval = setInterval(() => {
         checkPendingBookings();
-      }, 1800);
+      }, 2500);
 
       // Instantly trigger check when driver returns to tab or turns screen on
       const handleTabFocus = () => {

@@ -117,9 +117,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        BookingPollService.isActivityInForeground = true
         try {
             NotificationManagerCompat.from(this).cancelAll()
         } catch (ignored: Exception) {}
+    }
+
+    override fun onPause() {
+        super.onPause()
+        BookingPollService.isActivityInForeground = false
     }
 
     private fun handleIncomingIntent(intent: Intent?) {

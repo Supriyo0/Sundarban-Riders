@@ -416,12 +416,15 @@ export function DriverActiveTripMap({
   const isFetchingRouteRef = useRef<boolean>(false);
 
   // When status transitions (e.g. from heading_pickup to on_trip after OTP verification),
-  // immediately reset lastFetchedOrigin, zoom in to street level 18, and trigger road route recalculation
+  // immediately reset route, zoom in to street level 18, and trigger road route recalculation
   useEffect(() => {
     if (lastStatusRef.current !== status) {
       lastStatusRef.current = status;
       lastFetchedOriginRef.current = null;
       setRouteLoaded(false);
+      setRouteCoords([]);
+      if (routeLineRef.current) routeLineRef.current.setLatLngs([]);
+      if (routeCasingRef.current) routeCasingRef.current.setLatLngs([]);
       if (status === "on_trip") {
         setIsFollowMode(true);
         if (mapInstanceRef.current && currentFrom?.[0]) {
@@ -459,7 +462,7 @@ export function DriverActiveTripMap({
           { cache: "no-store" }
         );
         const data = await res.json();
-        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length > 2 && data.isExactRoadRoute) {
+        if (data?.coordinates && Array.isArray(data.coordinates) && data.coordinates.length >= 2) {
           setRouteCoords(data.coordinates);
           setRouteLoaded(true);
           lastFetchedOriginRef.current = origin;

@@ -806,10 +806,10 @@ export function LiveRideTrackingMap({
           </span>
           <div className="min-w-0">
             <p className="text-xs font-black text-slate-900 leading-tight flex items-center gap-1.5 truncate">
-              <span>{rideStep === "in_trip" ? "🛺 যাত্রা চলছে (On Trip)" : "🛺 চালক পিকআপে আসছেন"}</span>
+              <span>{effectiveRideStep === "in_trip" ? "🛺 যাত্রা চলছে (On Trip)" : "🛺 চালক পিকআপে আসছেন"}</span>
             </p>
-            <p className="text-[10px] font-bold leading-tight mt-0.5 truncate" style={{ color: rideStep === "in_trip" ? "#059669" : "#0284c7" }}>
-              {rideStep === "in_trip"
+            <p className="text-[10px] font-bold leading-tight mt-0.5 truncate" style={{ color: effectiveRideStep === "in_trip" ? "#059669" : "#0284c7" }}>
+              {effectiveRideStep === "in_trip"
                 ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • 💰 ₹${displayFare} • 🕒 ${currentClockTime || "লাইভ"}`
                 : etaMinutes !== null
                 ? `আনুমানিক ~${etaMinutes} মিনিটে পৌঁছাবেন`
@@ -885,7 +885,7 @@ export function LiveRideTrackingMap({
                 <>
                   <ChevronUp className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
                   <span className="text-emerald-700 font-black">
-                    {rideStep === "in_trip"
+                    {effectiveRideStep === "in_trip"
                       ? `ভাড়া ₹${displayFare} • ${displayKm} কিমি • বিবরণ দেখতে উপরে তুলুন ⌃`
                       : "চালকের বিবরণ ও OTP দেখতে উপরে তুলুন ⌃"}
                   </span>
@@ -912,7 +912,7 @@ export function LiveRideTrackingMap({
                     </span>
                   </div>
                   <p className="text-[10.5px] font-bold text-emerald-600 truncate mt-0.5">
-                    {rideStep === "in_trip"
+                    {effectiveRideStep === "in_trip"
                       ? `⏱️ ${formatDuration(elapsedSeconds)} • 📏 ${displayKm} কিমি • লাইভ ট্র্যাকার`
                       : `রাইড OTP: ${otp || "5821"}`}
                   </p>
@@ -938,7 +938,7 @@ export function LiveRideTrackingMap({
             /* FULL EXPANDED VIEW */
             <>
               {/* ── 4-PILLAR LIVE TRAVELING HUD: DURATION, DISTANCE, TIME, FARE (When in_trip) ── */}
-              {rideStep === "in_trip" && (
+              {effectiveRideStep === "in_trip" && (
                 <div className="px-3.5 pt-3 pb-2.5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white border-b border-white/10">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-1.5">
@@ -1008,7 +1008,7 @@ export function LiveRideTrackingMap({
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
                       </span>
                       <span>
-                        {rideStep === "in_trip"
+                        {effectiveRideStep === "in_trip"
                           ? "🛺 গন্তব্যের পথে যাত্রা চলছে..."
                           : etaMinutes !== null && etaMinutes <= 2
                           ? "⚡ চালক আর ~২ মিনিটে পৌঁছাবেন!"
@@ -1148,7 +1148,7 @@ export function LiveRideTrackingMap({
                 </button>
 
                 {/* Cancel (only before trip starts — strictly hidden once ride is in progress) */}
-                {rideStep !== "in_trip" && (booking as any)?.status !== "in_progress" && onCancelRide && (
+                {effectiveRideStep !== "in_trip" && (booking as any)?.status !== "in_progress" && onCancelRide && (
                   <button
                     type="button"
                     onClick={onCancelRide}

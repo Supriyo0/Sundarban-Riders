@@ -1965,7 +1965,8 @@ function MobileAppPageContent() {
     if (declinedBookingIdsRef.current.has(b.id)) return;
     if (acceptedRideIdsRef.current.has(b.id)) return;
     if (b.booking_number && acceptedRideIdsRef.current.has(b.booking_number)) return;
-    if (!isDirectTapped && activeAlertBookingIdRef.current === b.id) return;
+    // Only suppress if this exact booking is ALREADY open as incomingRide
+    if (incomingRide && incomingRide.id === b.id) return;
     activeAlertBookingIdRef.current = b.id;
 
     const pCoords = extractPickupCoordinates(b);
@@ -1996,8 +1997,8 @@ function MobileAppPageContent() {
     }
     const dKm = hasValidPickup ? calculateDistanceKm(curCoords[0], curCoords[1], pLat, pLng) : 1.5;
 
-    // Strict local radius: only ignore if confirmed > 10.0 km away
-    if (!isDirectTapped && hasValidPickup && dKm > 10.0) {
+    // Regional radius matching WhatsApp dispatch radar (15 km)
+    if (!isDirectTapped && hasValidPickup && dKm > 15.0) {
       activeAlertBookingIdRef.current = null;
       return;
     }
@@ -2061,13 +2062,20 @@ function MobileAppPageContent() {
       isHandling = true;
       try {
         const savedSession = typeof window !== "undefined" ? localStorage.getItem("sr_mobile_session") : null;
+        let effectiveRole = role;
         if (savedSession) {
           try {
             const parsed = JSON.parse(savedSession);
-            if (parsed.role === "rider") {
-              setSession(parsed);
+            if (parsed.role) {
+              effectiveRole = parsed.role;
+              if (parsed.role === "rider") setSession(parsed);
             }
           } catch {}
+        }
+        // NEVER switch a passenger into rider mode upon tapping any notification!
+        if (effectiveRole === "passenger" || role === "passenger") {
+          clearPendingBooking().catch(() => {});
+          return;
         }
         setRole("rider");
         setPhase("rider_home");
@@ -4659,7 +4667,7 @@ function MobileAppPageContent() {
         {activeRide && (
           <div
             className="w-full flex-1 relative overflow-hidden"
-            style={{ minHeight: "calc(100dvh - 114px)", height: "calc(100dvh - 114px)" }}
+            style={{ minHeight: "calc(100vh - 114px)", height: "calc(100vh - 114px)" }}
           >
             <AppErrorBoundary>
               <DriverActiveTripMap
